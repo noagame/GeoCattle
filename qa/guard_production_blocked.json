@@ -1,0 +1,15 @@
+{
+  "run_id": "4053d6fa842a",
+  "at": "2026-10-07T14:38:19.162450+00:00",
+  "base_url": "http://localhost:8080",
+  "environment": "production",
+  "checks": [],
+  "passed": 0,
+  "failed": 0,
+  "aborted": true,
+  "error": "Guard: sólo APP_ENV=simulation y SIMULATION_ENABLED=true permiten ejecutar QA",
+  "limits": [
+    "No acredita pruebas de terreno, hardware, WAN ni SLA.",
+    "Roles y otro predio sólo ejecutados si SMOKE_*_USERNAME están provisionados."
+  ]
+}

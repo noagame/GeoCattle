@@ -1,0 +1,32 @@
+# Configuración local AU915. Confirmar plan/canales contra el gateway y nodos reales.
+[logging]
+level = "info"
+
+[postgresql]
+dsn = "postgres://chirpstack:$CHIRPSTACK_DB_PASSWORD@chirpstack-database/chirpstack?sslmode=disable"
+max_open_connections = 10
+min_idle_connections = 0
+
+[redis]
+servers = ["redis://redis/"]
+tls_enabled = false
+cluster = false
+
+[network]
+net_id = "000000"
+enabled_regions = ["au915_0"]
+
+[api]
+bind = "0.0.0.0:8080"
+secret = "$CHIRPSTACK_API_SECRET"
+
+[integration]
+enabled = ["mqtt"]
+
+[integration.mqtt]
+server = "tcp://broker:1883/"
+username = "$MQTT_USERNAME"
+password = "$MQTT_PASSWORD"
+json = true
+qos = 1
+

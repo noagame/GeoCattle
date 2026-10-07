@@ -1,0 +1,36 @@
+{
+  "run_id": "7de8f52af560",
+  "at": "2026-10-07T14:30:48.940249+00:00",
+  "base_url": "http://127.0.0.1:8000",
+  "environment": "simulation",
+  "checks": [
+    {
+      "check": "GET /health HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Guard local y remoto de simulación",
+      "passed": true
+    },
+    {
+      "check": "Login owner y token CSRF",
+      "passed": true
+    },
+    {
+      "check": "Cookie HttpOnly y SameSite",
+      "passed": true
+    },
+    {
+      "check": "GET /auth/me HTTP 401",
+      "passed": false
+    }
+  ],
+  "passed": 4,
+  "failed": 1,
+  "aborted": true,
+  "error": "HTTP inesperado 401 en GET /auth/me",
+  "limits": [
+    "No acredita pruebas de terreno, hardware, WAN ni SLA.",
+    "Roles y otro predio sólo ejecutados si SMOKE_*_USERNAME están provisionados."
+  ]
+}

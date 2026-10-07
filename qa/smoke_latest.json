@@ -1,0 +1,556 @@
+{
+  "run_id": "7de252375630",
+  "at": "2026-10-07T14:55:41.709258+00:00",
+  "base_url": "http://127.0.0.1:8080",
+  "environment": "simulation",
+  "checks": [
+    {
+      "check": "GET /health HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Guard local y remoto de simulación",
+      "passed": true
+    },
+    {
+      "check": "Login owner y token CSRF",
+      "passed": true
+    },
+    {
+      "check": "Cookie HttpOnly y SameSite",
+      "passed": true
+    },
+    {
+      "check": "GET /auth/me HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Sesión recuperable",
+      "passed": true
+    },
+    {
+      "check": "Cinco sesiones confirmadas antes de respuesta",
+      "passed": true
+    },
+    {
+      "check": "GET /dashboard HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Dashboard contiene base de 70 bovinos",
+      "passed": true
+    },
+    {
+      "check": "Resumen corresponde a lista",
+      "passed": true
+    },
+    {
+      "check": "Sin sesión GET dashboard 401",
+      "passed": true
+    },
+    {
+      "check": "Sin CSRF escritura 403",
+      "passed": true
+    },
+    {
+      "check": "Origen externo escritura 403",
+      "passed": true
+    },
+    {
+      "check": "GET /animals/cebd6ed9-a540-4271-a2a3-04ab74baffde HTTP 403",
+      "passed": true
+    },
+    {
+      "check": "POST /sectors HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "POST /animals HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "POST /animals HTTP 409",
+      "passed": true
+    },
+    {
+      "check": "POST /devices HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "POST /assignments HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "POST /assignments HTTP 409",
+      "passed": true
+    },
+    {
+      "check": "POST /geofences HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "POST /geofences HTTP 409",
+      "passed": true
+    },
+    {
+      "check": "POST /geofences HTTP 422",
+      "passed": true
+    },
+    {
+      "check": "POST /geofences HTTP 422",
+      "passed": true
+    },
+    {
+      "check": "GET /geofences HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Errores conservan versión activa",
+      "passed": true
+    },
+    {
+      "check": "POST /pasture-assignments HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /animals/e516e866-b5e2-449c-9cab-07944a8ef8d1 HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Lectura interior asociada y vigente",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /animals/e516e866-b5e2-449c-9cab-07944a8ef8d1 HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Borde se incluye en geocerca",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /events HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Primer exterior no confirma salida",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /events HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Sin fix rompe dos exteriores consecutivos",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /events HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Dos exteriores generan una salida crítica",
+      "passed": true
+    },
+    {
+      "check": "Evento conserva lectura y geocerca causantes",
+      "passed": true
+    },
+    {
+      "check": "GET /devices HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /devices HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Deduplicación global y recibo intacto",
+      "passed": true
+    },
+    {
+      "check": "POST /events/9e13047e-5153-4324-b06d-37a438ec1012/actions HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Reconocer no resuelve condición",
+      "passed": true
+    },
+    {
+      "check": "Acción conserva actor y fecha",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /events HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "GNSS nulo no resuelve salida",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /events HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Regreso válido resuelve y conserva atención",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /animals/e516e866-b5e2-449c-9cab-07944a8ef8d1 HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "GNSS nulo muestra geocerca desconocida",
+      "passed": true
+    },
+    {
+      "check": "Calidad desconocida no se pinta normal",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /devices HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /animals/e516e866-b5e2-449c-9cab-07944a8ef8d1 HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Tardío sólo completa historia",
+      "passed": true
+    },
+    {
+      "check": "GET /devices HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Tardío no rejuvenece comunicación",
+      "passed": true
+    },
+    {
+      "check": "GET /animals/e516e866-b5e2-449c-9cab-07944a8ef8d1/history HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Historia única y ordenada",
+      "passed": true
+    },
+    {
+      "check": "Fuente simulada y campos independientes",
+      "passed": true
+    },
+    {
+      "check": "GET /animals/e516e866-b5e2-449c-9cab-07944a8ef8d1/history HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "GET /animals/e516e866-b5e2-449c-9cab-07944a8ef8d1/history HTTP 422",
+      "passed": true
+    },
+    {
+      "check": "POST /devices/a5806448-62a9-4e29-ad0f-e3350c7c7cd9/config HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /devices HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Guardar T sólo solicita configuración",
+      "passed": true
+    },
+    {
+      "check": "POST /devices/a5806448-62a9-4e29-ad0f-e3350c7c7cd9/config HTTP 409",
+      "passed": true
+    },
+    {
+      "check": "POST /devices/a5806448-62a9-4e29-ad0f-e3350c7c7cd9/config HTTP 422",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /devices HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Nodo confirma T aplicado",
+      "passed": true
+    },
+    {
+      "check": "POST /geofences HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /geofences HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Geocerca conserva versión anterior",
+      "passed": true
+    },
+    {
+      "check": "POST /pasture-assignments HTTP 409",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /animals/e516e866-b5e2-449c-9cab-07944a8ef8d1 HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Nueva versión conserva asignación vigente",
+      "passed": true
+    },
+    {
+      "check": "POST /simulation/scenarios HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "GET /events HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "GET /animals/e516e866-b5e2-449c-9cab-07944a8ef8d1 HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Temporizador independiente genera ausencia",
+      "passed": true
+    },
+    {
+      "check": "Ausencia usa 3T+30 segundos",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "GET /events HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Paquete nuevo resuelve ausencia",
+      "passed": true
+    },
+    {
+      "check": "Ingesta sin credencial 401",
+      "passed": true
+    },
+    {
+      "check": "Ingesta credencial inválida 401",
+      "passed": true
+    },
+    {
+      "check": "GET /notifications HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Salida local conserva aviso en cola",
+      "passed": true
+    },
+    {
+      "check": "GET /audit HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Cambios y reconocimiento auditados",
+      "passed": true
+    },
+    {
+      "check": "POST /maintenance HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "Mantenimiento registra responsable de sesión",
+      "passed": true
+    },
+    {
+      "check": "GET /maintenance HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Mantenimiento recuperable por dispositivo",
+      "passed": true
+    },
+    {
+      "check": "GET /reports HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Reporte identifica origen simulado",
+      "passed": true
+    },
+    {
+      "check": "Rol viewer puede consultar predio 200",
+      "passed": true
+    },
+    {
+      "check": "Rol viewer no administra animales 403",
+      "passed": true
+    },
+    {
+      "check": "Viewer no modifica atención 403",
+      "passed": true
+    },
+    {
+      "check": "Viewer no registra mantenimiento 403",
+      "passed": true
+    },
+    {
+      "check": "Rol operator puede consultar predio 200",
+      "passed": true
+    },
+    {
+      "check": "Rol operator no administra animales 403",
+      "passed": true
+    },
+    {
+      "check": "Operator puede revisar sin alterar condición",
+      "passed": true
+    },
+    {
+      "check": "Operator registra mantenimiento autorizado",
+      "passed": true
+    },
+    {
+      "check": "Sesión de otro predio consulta dashboard",
+      "passed": true
+    },
+    {
+      "check": "Lista otro predio no filtra datos ajenos",
+      "passed": true
+    },
+    {
+      "check": "Otro predio no consulta animal 403",
+      "passed": true
+    },
+    {
+      "check": "Otro predio no modifica evento 403",
+      "passed": true
+    },
+    {
+      "check": "Otro predio no registra mantenimiento ajeno 403",
+      "passed": true
+    },
+    {
+      "check": "POST /animals HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "POST /assignments HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "Reasignación conserva asociación histórica",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "Deduplicación anterior a resolver asignación",
+      "passed": true
+    },
+    {
+      "check": "POST /ingest/telemetry HTTP 201",
+      "passed": true
+    },
+    {
+      "check": "Nueva captura pertenece a animal reasignado",
+      "passed": true
+    },
+    {
+      "check": "PATCH /devices/a5806448-62a9-4e29-ad0f-e3350c7c7cd9 HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "Retiro técnico explícito",
+      "passed": true
+    },
+    {
+      "check": "PATCH /animals/e516e866-b5e2-449c-9cab-07944a8ef8d1 HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "PATCH /animals/d2d4ce19-3e3a-40f8-98bf-bf3af019e324 HTTP 200",
+      "passed": true
+    },
+    {
+      "check": "POST /auth/logout HTTP 204",
+      "passed": true
+    },
+    {
+      "check": "Logout invalida sesión 401",
+      "passed": true
+    }
+  ],
+  "passed": 135,
+  "failed": 0,
+  "aborted": false,
+  "error": null,
+  "limits": [
+    "No acredita pruebas de terreno, hardware, WAN ni SLA.",
+    "Roles y otro predio sólo ejecutados si SMOKE_*_USERNAME están provisionados."
+  ]
+}

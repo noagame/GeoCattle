@@ -1,0 +1,43 @@
+[[regions]]
+id = "au915_0"
+description = "AU915 canales 0-7 y 64; validar en terreno"
+common_name = "AU915"
+
+[regions.gateway]
+force_gws_private = true
+
+[regions.gateway.backend]
+enabled = "mqtt"
+
+[regions.gateway.backend.mqtt]
+topic_prefix = "au915_0"
+server = "tcp://broker:1883"
+username = "$MQTT_USERNAME"
+password = "$MQTT_PASSWORD"
+qos = 1
+clean_session = false
+client_id = "geocattle-au915"
+keep_alive_interval = "30s"
+
+[regions.network]
+installation_margin = 10
+rx_window = 0
+rx1_delay = 1
+rx1_dr_offset = 0
+rx2_dr = 8
+rx2_frequency = 923300000
+downlink_tx_power = -1
+adr_disabled = false
+min_dr = 0
+max_dr = 5
+enabled_uplink_channels = [0, 1, 2, 3, 4, 5, 6, 7, 64]
+
+[regions.network.rejoin_request]
+enabled = false
+max_count_n = 0
+max_time_n = 0
+
+[regions.network.class_b]
+ping_slot_dr = 8
+ping_slot_frequency = 0
+

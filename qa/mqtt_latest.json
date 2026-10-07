@@ -1,0 +1,90 @@
+{
+  "run_id": "84b359bcbcac",
+  "at": "2026-10-07T14:56:39.669258+00:00",
+  "environment": "simulation",
+  "broker": "127.0.0.1:1884",
+  "application_backend": "PostgreSQL/PostGIS",
+  "transport_spool": "SQLite WAL/FULL",
+  "checks": [
+    {
+      "check": "Broker real rechaza conexión anónima",
+      "passed": true
+    },
+    {
+      "check": "Publicador autenticado y suscrito",
+      "passed": true
+    },
+    {
+      "check": "Ingestor real suscrito con tópico QA aislado",
+      "passed": true
+    },
+    {
+      "check": "Broker confirma publicación QoS1",
+      "passed": true
+    },
+    {
+      "check": "ACK de aplicación confirma commit PostgreSQL",
+      "passed": true
+    },
+    {
+      "check": "Lectura real persistida antes del ACK",
+      "passed": true
+    },
+    {
+      "check": "Redelivery produce ACK duplicado sin nueva fila",
+      "passed": true
+    },
+    {
+      "check": "Redelivery no altera recepción original",
+      "passed": true
+    },
+    {
+      "check": "Cola confirmada queda vacía",
+      "passed": true
+    },
+    {
+      "check": "Ingestor detenido para prueba de recuperación",
+      "passed": true
+    },
+    {
+      "check": "SQLite conserva pendiente al reabrir",
+      "passed": true
+    },
+    {
+      "check": "Reinicio drena cola a PostgreSQL una sola vez",
+      "passed": true
+    },
+    {
+      "check": "Replay conserva hora original de recepción",
+      "passed": true
+    },
+    {
+      "check": "Replay tardío no retrocede estado reciente",
+      "passed": true
+    },
+    {
+      "check": "Cola recuperada se vacía sólo tras commit",
+      "passed": true
+    },
+    {
+      "check": "Contrato inválido queda en cuarentena durable",
+      "passed": true
+    },
+    {
+      "check": "Redelivery inválido conserva una cuarentena",
+      "passed": true
+    },
+    {
+      "check": "Cuarentena no escribe telemetría ni confirma commit",
+      "passed": true
+    }
+  ],
+  "passed": 18,
+  "failed": 0,
+  "aborted": false,
+  "error": null,
+  "limits": [
+    "No prueba radio, firmware ni codec LoRaWAN físico.",
+    "Recuperación usa reinicio real del ingestor y arribo controlado; no corta WAN ni PostgreSQL."
+  ]
+}

@@ -1,0 +1,1756 @@
+0001: Segundo informe de desarrollo GeoCattle
+0002: Diseño del sistema, viabilidad y flujo de caja
+0003: Prototipo académico con hardware disponible y solución integrada para el cliente final
+0004: Proyecto de Título TIHI84Ingeniería en InformáticaBoris Baier y Fabián Del VillarAcadémico guía Roberto Alveal Ortega4 de octubre de 2026
+0005: Resumen ejecutivo
+0006: GeoCattle integra localización GNSS, actividad y temperatura superficial en un collar con comunicación LoRaWAN. La solución concentra el historial y las reglas de geocerca en un servidor local para que la supervisión predial continúe durante interrupciones de Internet. El canal celular permite avisos y acceso remoto cuando existe conectividad.
+0007: La base de 70 collares, estación solar y servidor suma $4.080.352 CLP. El estudio incorpora puesta en marcha, soporte y reposiciones durante 60 meses para ambas perspectivas. En el escenario base el VAN económico del productor es negativo y un solo cliente no sostiene una empresa dedicada. El despliegue comercial se condiciona a validar ahorro, cobertura, costos y disposición a pagar; la demostración académica puede continuar como piloto.
+0008: La demostración académica empleará ESP32 y material de universidad y disponible, complementado con GNSS ATGM336H, ADXL345 y DS18B20 de la compra registrada. Se propone un enlace XBee validado y un notebook local. Los cinco totales visibles de compra suman $16.690, interpretados como CLP según el contexto, sujetos al comprobante. El cliente utiliza un diseño diferente Wio E5 y LoRaWAN; sus ensayos de campo y energía se validan por separado.
+0009: Base económica: componentes integrados.xlsx, hoja Componentes, filas 7 a 63. Tipo de cambio del archivo: 983,84 CLP/USD. Los precios se conservan como referencias del listado recibido.
+0010: Contenido del informe
+0011: I Introducción y alcance3
+0012: II Tecnologías herramientas y presupuesto8
+0013: II.1 Viabilidad y flujos de caja13
+0014: III Procesos y arquitectura de la solución26
+0015: IV Indicadores KPI y niveles de servicio SLA33
+0016: V Plan de pruebas y aseguramiento de calidad35
+0017: VI Plan de implementación y mantención38
+0018: VII Cronograma y organización del trabajo40
+0019: VIII Conclusiones y recomendaciones41
+0020: IX Referencias bibliográficas42
+0021: X Anexos de componentes datos y trazabilidad45
+0022: Organización de los entregables
+0023: El informe desarrolla dos realizaciones de hardware que comparten contratos de datos, reglas y aplicación. Ante el comité se integra material de laboratorio y la compra registrada. Para el cliente se dimensiona el listado integrado de 70 bovinos, con LoRaWAN, estación solar, enlace entre sitios y servidor. Los presupuestos y las pruebas físicas se mantienen separados.
+0024: Las fotografías IoT Proporcionado por la Universidad 1 a 5, IoT Disponible 1 a 11 e IoT comprado documentan la base académica. El Excel gobierna el presupuesto del cliente. Las placas Heltec y T Beam mencionadas en documentos históricos no se atribuyen al inventario fotografiado.
+0025: Convenciones de lectura
+0026: Una selección de componentes define la base de diseño. La disponibilidad se verifica mediante inventario y recepción. Un desempeño se acredita mediante ensayo. Una meta de servicio se convierte en compromiso cuando el productor y el equipo la autorizan en un acta. Estas etapas se registran por separado para mantener trazabilidad.
+0027: CLP significa pesos chilenos; GNSS, sistema global de navegación por satélite; DIIO, Dispositivo de Identificación Individual Oficial; MCU, microcontrolador; PCB, placa de circuito impreso; PCBA, placa ensamblada; KPI, indicador de desempeño; SLA, acuerdo de nivel de servicio; RTO, tiempo de recuperación; RPO, pérdida temporal máxima de datos.
+0028: I Introducción y alcance
+0029: El problema identificado en la formulación de GeoCattle es la dependencia de recorridos y conteos presenciales para localizar bovinos y detectar ausencias. El caso de estudio describe aproximadamente 70 animales en 120 hectáreas con sectores de bosque y cursos de agua. Esos antecedentes orientan el diseño; el mapa, la ubicación de la estación y las zonas de sombra deberán confirmarse en terreno [1].
+0030: Objetivo general
+0031: Diseñar e implementar un sistema IoT de monitoreo bovino que capture ubicación, temperatura superficial, actividad y estado técnico, transmita la información por LoRaWAN y la presente mediante una aplicación web con geocercas, historial y alertas para apoyar la revisión del rebaño.
+0032: Objetivos específicos
+0033: • Integrar el prototipo académico con material disponible y especificar el collar del cliente con su BOM final.
+0034: • Persistir lecturas y asociaciones históricas entre el módulo y el DIIO, con identificación de duplicados y datos vencidos.
+0035: • Implementar consulta por animal y sector, geocercas versionadas y atención auditable de eventos.
+0036: • Demostrar la cadena con un nodo real inicialmente y validar una preserie del diseño final antes de completar 70 collares.
+0037: • Establecer costos referenciales separados, pruebas de aceptación y procedimientos de operación y mantenimiento.
+0038: Alcance funcional
+0039: Se incluyen registro de animales, orientación carne o leche, asignación de módulos, configuración de zonas, telemetría periódica, mapas, historial, eventos de salida, pérdida de comunicación, batería baja y anomalías configuradas. Una regla preventiva puede solicitar revisión presencial. La temperatura es superficial y la actividad es un índice de movimiento; su interpretación requiere contexto y no representa diagnóstico clínico.
+0040: El collar se vincula al DIIO en el servidor. El dispositivo GeoCattle no reemplaza ni modifica la identificación oficial. La falta de señal indica pérdida de información y debe investigarse; por sí sola no confirma abigeato [18].
+0041: Presentación académica y despliegue al cliente
+0042: Dimensión
+0043: Comité académico
+0044: Cliente final
+0045: Cantidad
+0046: Un nodo real inicial según cantidades visibles; segundo sujeto a inventario
+0047: 70 collares del listado integrado
+0048: Hardware
+0049: ESP32 ATGM336H ADXL345 DS18B20 y material de laboratorio
+0050: Wio E5 LC76G LIS2DW12 TMP112 y PCB propia
+0051: Recepción
+0052: Par XBee compatible y notebook; Wi Fi LAN como alternativa
+0053: LoRaWAN LPS8N estación solar y puente CPE210
+0054: Software
+0055: Cadena completa y simulación identificada
+0056: Operación local y avisos por salida celular
+0057: Evidencia
+0058: Paquetes logs eventos y demostración de fallas
+0059: Cobertura autonomía continuidad y aceptación
+0060: Resultado
+0061: Verificación de funciones y explicación del diseño
+0062: Monitoreo del predio y soporte documentado
+0063: Los equipos académicos son distintos de los collares comerciales. Se reutilizan contratos y software, pero un resultado con ESP32/XBee no acredita alcance ni consumo de Wio E5/LoRaWAN. La compra fotografiada muestra una unidad de GNSS, una de ADXL345 y una sonda DS18B20. Un segundo nodo completo requiere confirmar otro GNSS, sensor térmico, MCU y radio; no se presupone su existencia.
+0064: Ruta de validación
+0065: El prototipo académico se integra con los equipos identificados. En una línea separada del diseño final se construyen y ensayan dos unidades Wio E5 y después una preserie de 5 a 10, incluida en los 70. Tras medir cobertura, consumo y montaje durante 2 a 4 semanas, se libera el resto. Los módulos académicos se conservan como material de prueba y no se cuentan dentro de los 70 collares finales.
+0066: Estado de desarrollo
+0067: Los documentos anteriores contienen modelos y decisiones de diseño. En GeoCattle_v0.1 se localizaron manifiestos de dependencias y archivos de configuración, sin código de backend, firmware ni suite de pruebas que acrediten una implementación completa. El avance verificable de esta actualización es la especificación integrada y su presupuesto. La aprobación de funciones debe respaldarse con registros de ejecución.
+0068: Una demostración mediante datos simulados tendrá origen explícito y almacenamiento separado. Las pruebas simuladas sirven para validar reglas e interfaz; las mediciones del collar real, cobertura y autonomía se obtienen en banco y campo.
+0069: Inventario académico de universidad y material disponible
+0070: Fuente fotográfica
+0071: Identificación visual
+0072: Uso en GeoCattle
+0073: Universidad 1
+0074: KY028 temperatura; KY036 tacto; KY025 y KY024 magnéticos; KY037 KY038 sonido y KY026 llama
+0075: KY028 puede apoyar ensayo térmico de banco. Los demás no integran el núcleo de localización.
+0076: Universidad 2
+0077: MQ7 y MQ3 según etiquetas; anotación MQ2
+0078: Material de laboratorio ajeno a la telemetría requerida; no se agrega al módulo.
+0079: Universidad 3
+0080: XBee PRO S2C y Explorer USB; ADXL345; RFID y Bluetooth
+0081: Radio de recepción y adaptación, más ADXL345 como reserva, previa prueba de unidades.
+0082: Universidad 4
+0083: MMA7361 según etiqueta; sensores IR PIR distancia y reloj
+0084: Acelerómetro analógico alternativo sujeto a ficha; no sustituye GNSS.
+0085: Universidad 5
+0086: ESP8266 ESP32 CAM y otros sensores según etiquetas
+0087: Controladores alternativos y periféricos de apoyo; cantidad exacta por inventario.
+0088: Disponible 1 a 4
+0089: Miniprotoboard; adaptador rotulado SUK N41; USB serial; ESP8266MOD
+0090: Interconexión y programación. La foto 2 muestra un adaptador sin módulo instalado.
+0091: Disponible 5
+0092: Placa ESP32 de desarrollo con base de bornes
+0093: MCU principal del nodo académico; GPIO y revisión se registran antes de cablear.
+0094: Disponible 6 y 7
+0095: Adafruit cargador MCP73871 visto por ambas caras
+0096: Un mismo equipo por apariencia; no se cuentan dos cargadores sin inventario.
+0097: Disponible 8
+0098: Digi XBee S2 con antena
+0099: Radio del nodo propuesta; emparejar con radio compatible de universidad.
+0100: Disponible 9 y 10
+0101: LCD de caracteres con adaptador I2C, visto por ambas caras
+0102: Pantalla opcional de banco; no se cuentan dos LCD por dos fotografías.
+0103: Disponible 11
+0104: Placa Seeed Grove con zócalos y conectores
+0105: Adaptación de banco pendiente de modelo exacto; no identificada como gateway LoRa.
+0106: Las etiquetas permiten reconocer familias, pero el inventario registra modelo impreso, cantidad, prueba y asignación al proyecto. Se fotografía cada unidad que se retira del laboratorio. Los dispositivos visibles sirven a la demostración; su exposición permanente en animales requiere alimentación y montaje seguros adicionales.
+0107: Componentes comprados y presupuesto académico
+0108: Partida de la captura
+0109: Cantidad visible
+0110: Total mostrado
+0111: Kit Dupont de 40 pines de 10 cm
+0112: 1 kit
+0113: $3.006
+0114: Resistencias 4,7 kΩ de 1 W y 1%
+0115: 1 lote de 50
+0116: $3.734
+0117: GNSS ATGM336H GPS y BDS con antena
+0118: 1 conjunto
+0119: $4.924
+0120: Sonda DS18B20 de 1 m con módulo
+0121: 1 conjunto
+0122: $1.185
+0123: Módulo acelerómetro ADXL345
+0124: 1 pieza
+0125: $3.841
+0126: Suma de los cinco totales
+0127: $16.690
+0128: Fuente: IoT comprado.jpeg, captura fechada el 1 de octubre de 2026. Se interpreta el signo $ como CLP por el contexto presupuestario chileno; el comprobante confirma moneda e importe. Se suman los totales mostrados por línea y no los precios inferiores del producto. No se añaden otra vez impuestos o cargos que puedan estar incluidos en esos totales.
+0129: La captura muestra el estado Verificando tu pago en varias líneas; el registro se presenta como compra informada por el equipo con comprobación de pago y recepción en el inventario. La ausencia de flete desglosado no acredita flete cero. El presupuesto tampoco incluye batería, caja, sujeción ni notebook comprado.
+0130: Aporte de equipos y gasto incremental
+0131: Concepto
+0132: Tratamiento económico
+0133: Material universitario
+0134: Aporte o préstamo en especie. Desembolso por nueva adquisición $0 si se mantiene el préstamo; registrar devolución y valor de reposición por separado.
+0135: ESP32 XBee cargador y adaptadores disponibles
+0136: Equipo existente. Nueva compra $0 bajo reutilización; valor patrimonial o histórico no informado.
+0137: Complementos comprados
+0138: Base visible $16.690 según captura, sujeta a comprobante y recepción.
+0139: Montaje energía y piezas faltantes
+0140: Cotizar sólo faltantes después de inventario; no usar precios del lote de 70.
+0141: Escenario base más 15% de reserva
+0142: Reserva ilustrativa $2.504; base más reserva $19.194. Excluye faltantes sin precio.
+0143: El presupuesto académico es independiente de la inversión de $4.080.352 del cliente. No se suman los equipos prestados como nueva compra ni se reutilizan en el lote final por suposición. La comparación económica distingue una demostración de laboratorio de una instalación completa.
+0144: Integración del prototipo académico
+0145: Figura 1 Topología académica propuesta con ESP32 XBee y servidor existente. Hardware diferente del cliente [25][26].
+0146: El ESP32 disponible adquiere el ATGM336H mediante UART, el ADXL345 por I2C y el DS18B20 mediante 1 Wire. La resistencia de 4,7 kΩ actúa como pull up cuando el módulo adquirido no la incorpora; se inspecciona la placa para evitar duplicación. GNSS y radio necesitan UART separados o una planificación de puertos compatible con la revisión de ESP32.
+0147: Se propone el XBee S2 disponible como radio del nodo y un XBee universitario compatible como coordinador, conectado al notebook mediante Explorer USB. Se comprueban número de parte, protocolo y firmware con XCTU. Un S2 y un S2C pueden comunicarse con perfiles Zigbee compatibles, pero compartir marca o banda no garantiza interoperabilidad. La UART y GPIO deben respetar 3,3 V; no se aplica 5 V desde un adaptador por suposición [25][26].
+0148: Si el par XBee no queda validado, el ESP32 puede transmitir por Wi Fi a una LAN local; la demostración declara ese transporte. Ambas rutas publican el mismo contrato lógico por un adaptador serial o MQTT. No se presenta una prueba XBee o Wi Fi como validación de LoRaWAN, Dragino o radio predial de 120 hectáreas.
+0149: La alimentación inicial será USB de banco. El MCP73871 disponible se evalúa sólo con una celda 1S adecuada, polaridad, corriente y salida comprobadas; su salida LOAD no se supone regulada a 3,3 V. No se añade un panel solar al nodo académico por disponer de un cargador USB solar. La batería no está identificada en las fotografías revisadas [28].
+0150: La demo utiliza un nodo físico inicialmente, identificador propio y DIIO de ensayo. Un segundo animal puede representarse con simulación separada hasta confirmar otra unidad completa. Se prueban GNSS al aire libre, actividad, temperatura de contacto, duplicados, pérdida de enlace e interfaz. El montaje de protoboard se mantiene en banco.
+0151: II Selección de tecnologías y metodología
+0152: Alternativa
+0153: Ventaja para GeoCattle
+0154: Costo o restricción de diseño
+0155: XBee o Wi Fi académico
+0156: Usa equipos disponibles y comprados
+0157: Validación de laboratorio; no demuestra cobertura LoRaWAN del cliente
+0158: LoRaWAN local
+0159: Gateway multicanal y gestión de dispositivos
+0160: Requiere firmware compatible claves plan regional y servidor de red
+0161: Celular por collar
+0162: Comunicación directa por operador
+0163: Añade módem y abono por animal; cobertura y energía dependen del operador
+0164: Para el cliente se selecciona LoRaWAN porque el listado recibido incorpora Wio E5 HF y Dragino LPS8N AU915. Ambos extremos deben usar el mismo plan regional, máscara de canales y versión compatible. Para academia se usa un adaptador XBee/serial o Wi Fi/MQTT; el backend conserva el contrato. La plataforma final mantendrá ChirpStack en el predio para evitar dependencia externa [4][5][14].
+0165: Comparación de software
+0166: Decisión
+0167: Selección y justificación
+0168: Interfaz
+0169: React y Leaflet por mapa geográfico y gestión de animales. Grafana puede apoyar métricas de soporte, pero no sustituye los flujos de asignación y atención.
+0170: Datos
+0171: PostgreSQL/PostGIS por relaciones temporales, transacciones y geocercas. SQLite sería útil en una demo reducida, pero exigiría migración para conservar las mismas reglas.
+0172: Servidor
+0173: FastAPI en Python para validación y API. La selección se vincula al diseño anterior; las versiones efectivas se fijarán en una liberación reproducible.
+0174: Red local
+0175: MQTT desacopla recepción e ingestión. QoS 1 exige deduplicación y no equivale a confirmación de persistencia.
+0176: Metodología de trabajo
+0177: Se adopta desarrollo incremental con entregas completas: adquirir una lectura, transmitirla, persistirla, evaluarla y mostrarla. Cada incremento tiene una prueba y revisión cruzada. El firmware, la PCB y el contrato se versionan juntos cuando un cambio afecta señales, unidades o codificación. El enfoque reduce integración tardía y permite reservar pruebas de terreno para un conjunto que ya pasó el banco.
+0178: La factibilidad técnica depende del cierre eléctrico y de cobertura; la económica, de completar el costo instalado; la implementativa, de disponibilidad de piezas, fabricación y tiempo de pruebas. No se asignan notas comparativas sin cotizaciones equivalentes ni ensayos.
+0179: Componentes del collar y herramientas de desarrollo
+0180: Bloque
+0181: Componentes finales
+0182: Integración prevista
+0183: Control y radio
+0184: Seeed Wio E5 HF
+0185: STM32WLE5 con radio integrada; firmware propio y LoRaWAN clase A
+0186: Ubicación
+0187: Quectel LC76GPAMD y AHGG.241
+0188: UART para datos GNSS; verificar variante y requisitos de antena
+0189: Movimiento
+0190: ST LIS2DW12TR
+0191: I2C y señal de interrupción para detectar actividad
+0192: Temperatura
+0193: TI TMP112AIDRLR
+0194: I2C y contacto térmico externo a la fuente de calor electrónica
+0195: Energía
+0196: TLV75533 TPS22919 BQ24040
+0197: Regulación 3,3 V, desconexión de carga y carga de celda 1S
+0198: Protección
+0199: BQ29700 CSD85302L y NTC Murata
+0200: Protección de batería y supervisión térmica de la celda
+0201: Memoria y RF
+0202: W25Q32JVSSIQ TX915 FPC e IPEX
+0203: Flash SPI y antena LoRa con adaptación y conexión verificadas
+0204: Construcción
+0205: PCB FR4 4 capas de 60 × 45 mm y PCBA
+0206: Huella stackup retornos RF y ensamblaje trazable
+0207: Montaje
+0208: 21700 de 5.000 mAh caja 100 × 100 × 60 mm y correa 38 mm
+0209: Retención batería acolchado fijaciones broches hebillas y sellos
+0210: El Wio E5 admite desarrollo sobre su MCU integrada. El firmware AT de fábrica no representa por sí solo la adquisición autónoma de GNSS, acelerómetro y temperatura. Se programa una aplicación propia mediante SWD con el ST Link del listado, conservando el registro de la versión y el procedimiento de recuperación. Si se optara por conservar AT y añadir un MCU externo, ese cambio requeriría actualizar la BOM y el presupuesto [4].
+0211: C/C++ y STM32CubeIDE/CubeWL son herramientas propuestas para firmware; Git controla fuentes y liberaciones. Para servidor se prevén Linux, despliegue reproducible de servicios, FastAPI, PostgreSQL/PostGIS, Mosquitto, ChirpStack y Redis. Las dependencias de ChirpStack se verifican antes del despliegue [14].
+0212: La PCB de 60 × 45 mm pertenece al listado actual y sustituye la geometría preliminar de antecedentes. Una BOM no fija pines ni acredita ERC, DRC, huellas liberadas o montaje funcional; esas evidencias preceden al envío a fabricación.
+0213: Energía autonomía y seguridad del collar
+0214: Alimentación y carga
+0215: Se conserva la celda Li ion 21700 de 5.000 mAh del listado. El TLV75533 es un regulador lineal de 3,3 V: no eleva la tensión cuando la batería cae por debajo del margen de regulación. El umbral de batería baja y el apagado deben mantener la operación del MCU, GNSS y radio durante sus picos. Se ensaya la descarga completa del sistema; la capacidad nominal de la celda no equivale a capacidad utilizable a 3,3 V [9].
+0216: El BQ24040 carga una celda de litio y no ofrece la gestión PowerPath del diseño anterior. La carga se realizará con el collar retirado y las cargas del sistema desconectadas conforme al circuito validado, para no interferir con la terminación. El NTC debe medir la celda; el BQ29700 y el MOSFET doble se verifican como conjunto, incluidos umbrales y polaridad. La protección contra sobrecarga no reemplaza el control térmico [10][11].
+0217: Modelo cuantitativo de autonomía
+0218: Para planificar ensayos se usa Qdía = 24 × Ipromedio, en mAh/día, y días = Cutilizable / Qdía. Con 5.000 mAh nominales y una fracción ilustrativa del 70%, Cutilizable = 3.500 mAh. Ese factor es un supuesto de sensibilidad, no una propiedad medida de la batería o del regulador.
+0219: Corriente media hipotética
+0220: Consumo diario
+0221: Autonomía calculada
+0222: 1 mA
+0223: 24 mAh
+0224: 145,8 días
+0225: 5 mA
+0226: 120 mAh
+0227: 29,2 días
+0228: 10 mA
+0229: 240 mAh
+0230: 14,6 días
+0231: 20 mA
+0232: 480 mAh
+0233: 7,3 días
+0234: Las cifras muestran cuánto cambia la autonomía con el consumo total. Se medirá corriente de reposo, adquisición GNSS, procesamiento, transmisión y recepción LoRaWAN. También se registra tiempo hasta fix y número de intentos fallidos. Una meta inicial propuesta de 7 días se valida con configuración definida, sin extrapolar desde la corriente de un componente.
+0235: Montaje y medida térmica
+0236: El TMP112 debe instalarse con una ruta térmica definida hacia la superficie de interés y aislamiento frente al MCU y la batería. Una lectura en la PCB puede representar la caja y el ambiente. Se evalúan contacto, presión, roce, orientación, barro, exposición y calentamiento solar antes de fijar umbrales. El NTC de batería y el TMP112 tienen funciones distintas [7][8].
+0237: La correa debe permitir ajuste y revisión con el encargado del ganado. La caja, el sellador y los tornillos no acreditan un grado IP. Se verifican masa total, aristas, retención y estanqueidad antes del ensayo sobre animales. El collar no llevará panel solar.
+0238: Estación solar radioenlace y servidor local
+0239: La estación remota recibe LoRaWAN mediante el LPS8N y envía tráfico por Ethernet a un CPE210. El segundo CPE se ubica en la sede del predio, enlazado al switch y al Lenovo M710q. El RUT200 proporciona salida celular al sitio base; los collares no necesitan una SIM individual [5][12][13].
+0240: Equipo
+0241: Cantidad
+0242: Condición de integración
+0243: LPS8N AU915
+0244: 1
+0245: Equipo de interior; requiere gabinete protegido. Entrada USB C 5 V 2 A según fabricante.
+0246: Antena LoRa exterior y coaxial
+0247: 1 juego
+0248: Verificar banda ganancia pérdidas conectores y puesta a tierra.
+0249: TP Link CPE210
+0250: 2
+0251: Puente 2,4 GHz con línea de vista. Alimentación PoE pasiva 24 V por extremo.
+0252: Panel y EPEVER MPPT
+0253: 300 W y 30 A
+0254: Confirmar modelo tensión de circuito abierto y cableado compatibles.
+0255: AGM de ciclo profundo
+0256: 12 V 150 Ah
+0257: Protecciones perfil de carga AGM y profundidad de descarga controlada.
+0258: Lenovo M710q
+0259: i5 8 GB HDD 500 GB
+0260: Separar servicios copias y monitoreo de disco; medir capacidad real.
+0261: RUT200 y antena MIMO
+0262: 1 y 1
+0263: Verificar variante regional SIM señal y conectores antes de instalar.
+0264: UPS switch y respaldo
+0265: 1 juego
+0266: Definir capacidad puertos y medio de copia; no asumir redundancia del disco.
+0267: Dimensionamiento solar ilustrativo
+0268: El cálculo inicial se limita al gateway, CPE remoto y convertidores; el servidor y el CPE base requieren energía en la sede. Con carga remota hipotética de 20 W: 20 × 24 = 480 Wh/día. Con 3 horas solares equivalentes y rendimiento global de 0,70: 300 × 3 × 0,70 = 630 Wh/día. El balance de 150 Wh/día depende de estación del año, sombra y pérdidas; no garantiza operación invernal.
+0269: La AGM contiene 12 × 150 = 1.800 Wh nominales. Con 50% de descarga y 85% de rendimiento quedan 765 Wh útiles, equivalentes a 38,3 h para 20 W. Con 30 W la autonomía baja a 25,5 h y el consumo diario de 720 Wh supera el aporte solar del ejemplo. La compra del panel y batería se condiciona a medir la carga y calcular el peor período del sitio.
+0270: El convertidor de 24 V del listado se asigna al CPE remoto. Se confirma si el CPE base incluye su inyector de red y si puede alimentarse con la UPS. El PoE pasivo del CPE210 y el USB C del LPS8N no son intercambiables.
+0271: Presupuesto referencial y alcance económico
+0272: Partida
+0273: CLP
+0274: USD al tipo del archivo
+0275: 70 collares y suministros comunes
+0276: $2.650.419
+0277: 2.693,95
+0278: Estación solar y radioenlace
+0279: $1.013.363
+0280: 1.030,01
+0281: Servidor y conectividad
+0282: $416.570
+0283: 423,41
+0284: Total original recalculado
+0285: $4.080.352
+0286: 4.147,37
+0287: Reserva propuesta 15%
+0288: $612.053
+0289: 622,11
+0290: Base más reserva
+0291: $4.692.405
+0292: 4.769,48
+0293: La suma exacta es 4.080.351,80704 CLP; los totales de presentación se redondean al peso. Se recalcularon cantidad × precio unitario y los subtotales de la hoja, coincidiendo con sus valores almacenados. El tipo de cambio 983,84 CLP/USD se conserva como supuesto del archivo y no se presenta como cotización de divisas vigente. Los anexos reproducen las 43 partidas presupuestadas [2].
+0294: Costo por collar y equipos compartidos
+0295: Medida
+0296: CLP
+0297: Interpretación
+0298: Partidas directas por collar
+0299: $35.500
+0300: Piezas con cantidad 70; excluye rollos bolsas consumibles y herramientas.
+0301: Promedio del bloque collares
+0302: $37.863
+0303: Subtotal del bloque dividido entre 70; incorpora insumos comunes.
+0304: Costo del conjunto por bovino
+0305: $58.291
+0306: Total dividido entre 70; incluye estación y servidor compartidos.
+0307: Dos unidades iniciales del diseño final
+0308: $71.000
+0309: Costo marginal teórico de piezas comerciales; distinto del presupuesto académico.
+0310: Las dos unidades iniciales Wio E5 pertenecen a la validación del cliente y pueden incluirse en los 70. Los equipos académicos ESP32/XBee se presupuestan aparte. Una compra inicial del diseño final requiere precios de baja cantidad, mínimos de rollos y bolsas, fabricación y fletes; su costo no se obtiene dividiendo una bolsa de 100 por las unidades utilizadas.
+0311: Costo instalado y costos recurrentes
+0312: Costo instalado = base BOM + ingeniería y validación + logística e impuestos aplicables + instalación + reserva aprobada. El listado no desglosa esas condiciones comerciales. La reserva cubre incertidumbre de planificación y no sustituye partidas conocidas que deben cotizarse.
+0313: OPEX mensual = plan SIM + notificaciones según consumo + electricidad del sitio base + horas de soporte y mantención + reposiciones y copias. Cada término se contratará o medirá; no se informa un retorno de inversión sin esos costos y sin beneficios observados. Las licencias abiertas no eliminan costos de instalación y soporte.
+0314: II.1 Estudio de viabilidad y evaluación financiera
+0315: El estudio evalúa la compra y uso del sistema por el productor y la venta con servicio por el equipo GeoCattle. Se conserva el inventario integrado y se añaden costos de ciclo de vida, un horizonte de 60 meses y tres escenarios editables. Los resultados son una evaluación prospectiva con evidencia parcial, no una rentabilidad observada.
+0316: Dimensión
+0317: Dictamen y fundamento
+0318: Condición para avanzar
+0319: Técnica
+0320: Factible como diseño por validar: GNSS, LoRaWAN y servidor local tienen funciones compatibles.
+0321: Cerrar alimentación/carga, montaje y pruebas de radio, energía y recuperación de datos.
+0322: Operacional
+0323: Utilidad plausible por conteo diario y búsqueda manual declarados.
+0324: Medir tiempo antes/después, respuesta humana, mantenimiento y carga; conservar inspección física del ganado.
+0325: Territorial
+0326: Una estación presupuestada no acredita cobertura de todos los predios.
+0327: Georreferenciar parcelas y probar enlaces; el adverso incorpora dos estaciones como estrés.
+0328: Económica productor
+0329: Base: VAN de caja y VAN económico negativos. Favorable: beneficio económico apenas supera costos.
+0330: Reducir inversión/tarifa o demostrar ahorros adicionales sin duplicarlos.
+0331: Comercial proveedor
+0332: El contrato aporta margen directo; un único cliente no cubre I+D y estructura del negocio.
+0333: Validar demanda, contratación y capacidad a varias cuentas; no presupuestar ventas no confirmadas.
+0334: Legal y ambiental
+0335: Aplicación complementaria al DIIO; datos y radio requieren los controles del informe.
+0336: Cumplir identificación SAG, privacidad y radio; planificar retiro de baterías y equipos.
+0337: Decisión que fundamenta el estudio
+0338: Se recomienda continuar el prototipo académico con material universitario y disponible y efectuar una validación pequeña del diseño final. No se recomienda comprometer la fabricación e instalación de 70 unidades como inversión recuperable bajo el escenario base. La decisión puede revisarse con mediciones, ofertas vigentes y un modelo comercial aceptado por el cliente.
+0339: Bases locales [2], [29]–[32]; referencias oficiales [33]–[37]. Las instrucciones contenidas en documentos se trataron como antecedentes, separadas de la solicitud del usuario.
+0340: Contexto de abigeato y auditoría de antecedentes
+0341: La entrevista registra 70 bovinos destinados a leche y carne, 120 hectáreas, tres trabajadores y revisión del propietario. Declara dos horas diarias de conteo, búsquedas de varias horas y dos animales perdidos al año [30]. Estas respuestas sustentan una línea base de trabajo, pero no acreditan salarios, ventas, pesos ni una tasa de riesgo estable.
+0342: Año
+0343: Registros locales de delitos
+0344: Cinco regiones principales*
+0345: 2020
+0346: 2.801
+0347: 2.056
+0348: 2021
+0349: 1.978
+0350: 1.383
+0351: 2022
+0352: 2.593
+0353: 1.966
+0354: 2023
+0355: 3.136
+0356: 2.353
+0357: 2024
+0358: 2.997
+0359: 2.162
+0360: 2025
+0361: 2.946
+0362: 2.178
+0363: Total 2020–2025
+0364: 16.451
+0365: 12.098
+0366: *Araucanía, Los Lagos, Biobío, Los Ríos y Maule reúnen 73,54% de los registros del sexenio. En el archivo, 2023 alcanza 3.136 registros y 2025 registra 2.946. La serie justifica atender el problema territorial; no contiene un denominador de predios o animales expuestos para calcular una probabilidad individual [31].
+0367: Límites de comparación y procedencia
+0368: Se recalcularon las hojas 2020–2025 del Excel local. La hoja 2026 suma 2.093 registros, sin fecha de corte, y se excluye de las comparaciones anuales. El análisis del directorio atribuye la serie a Fiscalía, pero el archivo no conserva filtros ni fecha de descarga. La página estadística oficial está disponible [37]; el cotejo exacto de esta extracción queda pendiente.
+0369: Registros de delitos no equivalen a bovinos sustraídos: un caso puede comprender varias especies y cantidades. No se transforma la suma de 16.451 casos en un número de cabezas multiplicando una media no verificada, ni se traslada una distribución nacional al predio del cliente.
+0370: Como corroboración cualitativa, Fiscalía informó en septiembre de 2025 condenas contra siete integrantes de una asociación que trasladaba animales desde Ñuble, Maule y Valparaíso hacia Santiago para faenarlos [35]. El caso respalda la existencia de operaciones organizadas; no mide la eficacia de GeoCattle ni el riesgo anual del cliente.
+0371: Valor del animal y beneficio patrimonial atribuible
+0372: Variable de valoración
+0373: Valor
+0374: Evidencia o supuesto
+0375: Novillo gordo, Temuco
+0376: 3.062 CLP/kg vivo
+0377: ODEPA: promedio general, 29-09-2026, sin IVA [33].
+0378: Vaca gorda, Temuco
+0379: 2.305 CLP/kg vivo
+0380: Misma feria, fecha y base de precio [33].
+0381: Peso representativo
+0382: 450 kg
+0383: Supuesto editable; no peso del animal del cliente.
+0384: Composición del grupo
+0385: 50% novillos / 50% vacas
+0386: Supuesto editable; leche/carne declarados no determinan esta proporción.
+0387: Valor proxy por animal
+0388: $1.207.575
+0389: 450 × (0,5 × 3.062 + 0,5 × 2.305).
+0390: Pérdida anual de referencia
+0391: 2 animales
+0392: Declaración del productor [30], por verificar con historial.
+0393: Reducción de pérdidas
+0394: 0 / 25 / 50%
+0395: Hipótesis adversa/base/favorable; no resultado de ensayo.
+0396: El boletín ODEPA consultado cubre la semana 23–29 de septiembre de 2026. Se emplea ganado vivo como referencia de activo comercializable. Una vaca lechera de genética y producción conocidas puede requerir otra valorización: esta proxy no sustituye una cotización individual de reposición [33].
+0397: Beneficio esperado sin prometer prevención
+0398: Pérdida patrimonial evitada mensual = animales perdidos/año × valor unitario × reducción atribuible / 12. En la base: 2 × $1.207.575 × 25% / 12 = $50.316 CLP/mes. Es un valor esperado, no un ingreso mensual recibido ni una garantía de recuperar ganado robado.
+0399: El análisis patrimonial del directorio suma valor de reposición con leche bruta y crías futuras [32]. Para este estudio no se usa esa cifra como ahorro de caja: la producción exige costos, horizonte y descuento, y puede duplicar pérdidas si se agrega nuevamente el animal sustituto. Incorporar lucro cesante requeriría margen neto y duración real de la interrupción.
+0400: El flujo de caja deja en cero la reposición de ganado evitada porque no hay compras futuras acreditadas. El flujo económico sí incorpora la pérdida esperada de activo. Si existen facturas y un presupuesto regular de reemplazos, se puede modificar la fracción que libera caja sin sumar ese beneficio dos veces.
+0401: Supuestos y escenarios de evaluación
+0402: Variable
+0403: Adverso
+0404: Base
+0405: Favorable
+0406: Estado
+0407: Costo instalado/reposiciones
+0408: ×1,20
+0409: ×1,00
+0410: ×0,95
+0411: Estrés, no ofertas.
+0412: Estaciones solares
+0413: 2
+0414: 1
+0415: 1
+0416: Cantidad por cobertura.
+0417: Ahorro de tiempo de conteo
+0418: 10%
+0419: 25%
+0420: 60%
+0421: Meta por medir.
+0422: Tiempo que libera pagos
+0423: 0%
+0424: 50%
+0425: 100%
+0426: Evitar salario/pago real.
+0427: Reducción patrimonial por pérdidas
+0428: 0%
+0429: 25%
+0430: 50%
+0431: Hipótesis causal.
+0432: Tarifa/collar/mes
+0433: $2.500
+0434: $1.500
+0435: $1.000
+0436: Pruebas de precio.
+0437: Reposición collar por año
+0438: 10%
+0439: 5%
+0440: 2%
+0441: Sin historial de fallas.
+0442: Soporte directo/cliente/mes
+0443: 4 h
+0444: 2 h
+0445: 1 h
+0446: Productividad por medir.
+0447: Incobrabilidad servicio proveedor
+0448: 5%
+0449: 0%
+0450: 0%
+0451: Estrés de cartera.
+0452: Entradas comunes explícitas
+0453: Se evalúan 70 bovinos, 2 h/día de conteo y 30 días/mes. La hora liberada se valoriza en $6.000 y la hora técnica en $8.000; son supuestos de planificación, no remuneraciones observadas. Se usa una tasa real anual de 12%, con sensibilidad de 8% y 16%, y precios constantes sin inflación proyectada.
+0454: El costo de entregar la instalación incorpora logística, campaña de radio, puesta en servicio y cuatro repuestos. Se aplica una sola contingencia de 15% sobre ese costo ampliado. El precio supone margen de 25% sobre venta, no recargo de 25% sobre costo. Los equipos pasan a ser del cliente, que paga reposiciones; el servicio empieza en el mes 3.
+0455: Los costos comunes de un negocio dedicado se fijan en $1.800.000/mes como hipótesis: administración/comercial $900.000, espacio/herramientas $300.000 y mantenimiento de plataforma $600.000. El soporte de cada cliente se calcula aparte. No se supone una cartera futura, subvención, préstamo ni venta de equipos al final del horizonte.
+0456: Cada escenario cambia un conjunto de condiciones; no se asignan probabilidades ni se interpreta la base como pronóstico. Las comparaciones son una fotografía de publicación; editar el Excel recalcula el escenario activo, pero no modifica automáticamente las tablas del Word.
+0457: Inversión instalada y formación del precio
+0458: Partida de base
+0459: CLP
+0460: Origen
+0461: Componentes integrados originales
+0462: $4.080.352
+0463: 43 partidas del Excel [2].
+0464: Instalación y capacitación: 24 h × $8.000
+0465: $192.000
+0466: Supuesto.
+0467: Programación/identificación/pruebas: 70 × $3.000
+0468: $210.000
+0469: Supuesto; PCBA ya está en BOM.
+0470: Logística inicial
+0471: $250.000
+0472: Supuesto; transporte real pendiente.
+0473: Campaña inicial de cobertura
+0474: $120.000
+0475: Supuesto.
+0476: Cuatro collares de repuesto: 4 × costo directo
+0477: $141.999
+0478: Precio fuente; cantidad adicional supuesta.
+0479: Subtotal instalado antes de reserva
+0480: $4.994.351
+0481: Suma sin margen comercial.
+0482: Contingencia 15%
+0483: $749.153
+0484: Una reserva sobre subtotal ampliado.
+0485: Costo de entregar el sistema
+0486: $5.743.504
+0487: Proveedor; no incluye I+D general.
+0488: Precio hipotético al productor
+0489: $7.658.005
+0490: Costo ÷ 0,75; margen sobre venta 25%.
+0491: I+D pendiente del equipo
+0492: $3.360.000
+0493: 420 h futuras × $8.000.
+0494: El precio instalado base es $7.658.005 CLP, equivalente a $109.400 por bovino al distribuir también estación, servidor y servicio de puesta en marcha. Los componentes directos de un collar suman $35.500; ambas cifras responden a alcances distintos. El cliente paga 50% en M1 y 50% en M2; el proveedor compra y entrega el conjunto en M1.
+0495: La I+D futura se compone de 300 h de software, 80 h de electrónica y 40 h de validación. Se carga al negocio en M0; no se duplica en el costo directo del contrato. La compra académica visible de $16.690 y los aportes de universidad/disponibles se mantienen separados. No se considera el costo de reemplazo de los equipos prestados como un nuevo pago.
+0496: Condición comercial pendiente
+0497: La BOM no declara IVA incluido/excluido ni flete. Se conservan sus montos y se explicita esa limitación en toda la evaluación. SII señala IVA general de 19% [34]; si el precio supuesto fuera neto y el comprador no recuperara crédito fiscal, el estrés inicial sería $1.455.021 adicionales. No se aplica ese recargo automáticamente ni se afirma un flujo después de impuestos.
+0498: Operación y reinversiones durante el ciclo de vida
+0499: Pago o reserva
+0500: Base
+0501: Quién paga y cuándo
+0502: Servicio GeoCattle
+0503: 70 × $1.500 = $105.000/mes
+0504: Productor, desde M3; ingresos proveedor.
+0505: Datos celulares y electricidad
+0506: $15.000 + $5.000 = $20.000/mes
+0507: Productor, desde M3; supuestos.
+0508: Fallas/pérdidas de collares
+0509: $11.229/mes
+0510: Productor: 70 × 5% × $38.500 / 12; reserva esperada.
+0511: Baterías de los 70 collares
+0512: $734.300
+0513: Productor M26 (24 meses de servicio); una vez.
+0514: Batería AGM + cambio
+0515: $285.960
+0516: Productor M38 (36 meses de servicio).
+0517: Renovación 70 collares + mini PC
+0518: $2.847.315
+0519: Productor M50 (48 meses de servicio).
+0520: Soporte directo proveedor
+0521: 2 h × $8.000 = $16.000/mes
+0522: Equipo, desde M3; supuesto.
+0523: Administración directa proveedor
+0524: $10.000/mes
+0525: Equipo, desde M3; supuesto.
+0526: Visita a terreno proveedor
+0527: $60.000 trimestrales
+0528: Equipo, cada tercer mes de servicio.
+0529: Estructura común del negocio
+0530: $1.800.000/mes
+0531: Equipo, desde M1; supuesto sin ventas futuras.
+0532: El recambio completo de collares incluye batería; en M50 no se vuelve a cargar el cambio programado de celdas. La vida útil presupuestada es una reserva de prudencia, no una duración demostrada. Las reposiciones por fallas se mantienen además de la renovación general: representan incidentes que pueden ocurrir antes de ella. La compra inicial de cuatro repuestos no se vuelve a repetir mensualmente.
+0533: La tabla de caja mensual ubica las inversiones discretas en su mes. Los pagos trimestrales de visitas no se confunden con su promedio mensual de $20.000 para calcular el umbral de operación. El costo directo mensual promedio del servicio base es $46.000 por cliente.
+0534: Se supone que el productor compra renovaciones a costo de planificación, sin margen adicional para GeoCattle. Si el equipo cotiza y vende esos recambios, deberán añadirse cobros y costos simétricos a ambas perspectivas. No están cotizados seguros, certificaciones externas, cargos por alto volumen de avisos ni una segunda estación confirmada; su necesidad exige revisar el caso antes de contratar.
+0535: Método del flujo de caja y evaluación económica
+0536: Perspectiva del productor
+0537: Ahorro de tiempo económico = 2 h/día × 30 días × $6.000/h × reducción medida. En la base 25% libera 15 h/mes y valoriza $90.000/mes. La fracción que evita pagos se supone 50%, por lo que sólo $45.000/mes entra a caja. El resto es tiempo disponible cuyo uso alternativo se valora en el flujo económico.
+0538: Flujo de caja = pagos de trabajo evitados + compras de ganado evitadas acreditadas − instalación − tarifa − datos/energía − fallas y renovaciones. Flujo económico = valor total del tiempo liberado + reducción esperada del activo perdido − los mismos costos. Son dos medidas alternativas: no se suman sus resultados.
+0539: Perspectiva del equipo proveedor
+0540: Flujo incremental del contrato = cobros de instalación + servicio cobrado − costos de entrega − soporte − administración directa − visitas. Indica si un contrato aporta fondos a una estructura existente con capacidad disponible. Flujo del negocio = flujo del contrato − I+D futura − estructura común; corresponde al equipo que debe financiar el desarrollo y una empresa dedicada.
+0541: Descuento y criterios
+0542: VAN = suma, para t = 0…60, de Fₜ / (1 + 0,12)^(t/12). La tasa mensual equivalente es (1 + 0,12)^(1/12) − 1 = 0,9489%. Un VAN positivo indica creación de valor bajo los supuestos y tasa elegidos. Beneficio/costo económico divide beneficios y costos descontados; valores menores que uno no cubren los costos.
+0543: La recuperación sostenida exige que el saldo acumulado llegue a cero y permanezca no negativo hasta M60; así una inversión de renovación posterior no queda fuera del indicador. No se informa TIR como resumen porque existen pagos iniciales y reinversiones que pueden producir cambios de signo y una interpretación ambigua.
+0544: Las cifras son incrementales respecto a continuar con el manejo actual, antes de impuestos a la renta y financiamiento. No se suman todos los ingresos lecheros del predio ni se inventa saldo bancario inicial. La necesidad de fondos es el máximo déficit acumulado del proyecto; no equivale a insolvencia del productor o del equipo, cuyas otras actividades no están modeladas.
+0545: Implementación: Excel adjunto, hojas Supuestos/Costos/Productor/Proveedor/Resumen. Se verificaron los tres escenarios con cálculo independiente y conciliación entre pagos del cliente y facturación del equipo.
+0546: Flujo del productor: escenario base
+0547: Período
+0548: Ahorro efectivo caja
+0549: Pagos del proyecto
+0550: Neto de caja
+0551: Neto económico
+0552: Año 1
+0553: $450.000
+0554: $9.020.296
+0555: ($8.570.296)
+0556: ($7.617.140)
+0557: Año 2
+0558: $540.000
+0559: $1.634.749
+0560: ($1.094.749)
+0561: $49.038
+0562: Año 3
+0563: $540.000
+0564: $2.369.049
+0565: ($1.829.049)
+0566: ($685.262)
+0567: Año 4
+0568: $540.000
+0569: $1.920.709
+0570: ($1.380.709)
+0571: ($236.922)
+0572: Año 5
+0573: $540.000
+0574: $4.482.064
+0575: ($3.942.064)
+0576: ($2.798.277)
+0577: CLP constantes; paréntesis indican cifras negativas. M0 del productor es cero. Años 1–5 corresponden a M1–12, M13–24, M25–36, M37–48 y M49–60.
+0578: Lectura del primer año
+0579: M1 y M2 desembolsan $3.829.003 cada uno por la instalación. Desde M3 el ahorro efectivo de trabajo es $45.000/mes y los pagos ordinarios son $136.229/mes, incluyendo la reserva de fallas. El neto de caja ordinario es −$91.229/mes. El beneficio económico incluye $90.000 de tiempo y $50.316 de activo, con neto ordinario de $4.088/mes antes de renovaciones.
+0580: Indicador a 60 meses
+0581: Resultado base
+0582: VAN caja
+0583: ($14.079.232)
+0584: VAN económico esperado
+0585: ($9.921.954)
+0586: Beneficio / costo económico
+0587: 0,38 veces
+0588: Recuperación sostenida de inversión
+0589: No se alcanza en caja ni en valor económico.
+0590: Déficit acumulado de caja al horizonte
+0591: ($16.816.868)
+0592: Costo mensual servicio
+0593:  $105.000, más datos/energía y reposiciones.
+0594: Aunque el flujo económico ordinario es levemente positivo, resulta insuficiente para amortizar inversión inicial y reposiciones. El ahorro en salarios no es un hecho constatado: si las tareas las realiza el propietario sin reducir pagos, la liberación de tiempo no aumenta caja. Bajo esa condición, el VAN de caja base empeora a −$16.041.947.
+0595: No hay evidencia para incorporar productividad lechera mayor, más peso de venta o detección clínica como ganancias adicionales. Esos beneficios pueden investigarse después con registros y comparación, evitando superposición con el valor del animal.
+0596: Comparación de escenarios del productor
+0597: Indicador
+0598: Adverso
+0599: Base
+0600: Favorable
+0601: Precio inicial instalado
+0602: $11.054.194
+0603: $7.658.005
+0604: $7.275.105
+0605: Servicio mensual
+0606: $175.000
+0607: $105.000
+0608: $70.000
+0609: VAN de caja
+0610: ($23.878.834)
+0611: ($14.079.232)
+0612: ($4.285.689)
+0613: VAN económico esperado
+0614: ($22.308.662)
+0615: ($9.921.954)
+0616: $103.434
+0617: Beneficio/costo económico
+0618: 0,07
+0619: 0,38
+0620: 1,01
+0621: Recuperación sostenida económica
+0622: No alcanza
+0623: No alcanza
+0624: M52
+0625: Recuperación sostenida caja
+0626: No alcanza
+0627: No alcanza
+0628: No alcanza
+0629: Figura 2. Saldo acumulado del proyecto: caja y evaluación económica. Las pérdidas evitadas esperadas no son cobros mensuales.
+0630: El favorable exige ahorro de 60% del tiempo de conteo, liberación real de todos esos pagos, reducción patrimonial de 50%, costo inicial 5% menor y tarifa de $1.000/collar/mes. Su VAN económico de $103.434 deja un margen muy estrecho; el VAN de caja sigue siendo −$4.285.689. No se debe presentar ese caso como rentabilidad demostrada.
+0631: Umbrales de viabilidad y sensibilidad del productor
+0632: Tasa real anual
+0633: VAN económico base
+0634: VAN económico favorable
+0635: 8,0%
+0636: ($10.301.766)
+0637: $627.057
+0638: 12,0%
+0639: ($9.921.954)
+0640: $103.434
+0641: 16,0%
+0642: ($9.598.603)
+0643: ($350.457)
+0644: La base permanece negativa al cambiar la tasa entre 8% y 16%. El favorable pasa de $627.057 a −$350.457. La conveniencia de ese caso depende de parámetros aún no medidos y puede desaparecer por costos pequeños o variaciones de eficacia. Una tasa menor no corrige la insuficiencia de ahorro de la base.
+0645: Ahorro y reducción de pérdidas requeridos
+0646: Prueba manteniendo las otras variables de base
+0647: Umbral o resultado
+0648: Ahorro de conteo necesario para VAN económico = 0
+0649: 88,2% del tiempo original, frente al 25% supuesto.
+0650: Reducción patrimonial necesaria con ahorro de tiempo 25%
+0651: 138,0%; supera 100% y no es factible por sí sola.
+0652: VAN económico base sin beneficio por abigeato
+0653: ($12.116.516)
+0654: VAN económico favorable sin beneficio por abigeato
+0655: ($4.285.689)
+0656: Tarifa favorable máxima para VAN económico = 0
+0657: $72.371/mes en total; unos $1.034/collar.
+0658: Tarifa base que igualaría VAN económico a cero
+0659: Negativa: ni servicio gratuito compensa todos los costos con esos beneficios.
+0660: Los umbrales son resultados condicionales del mismo flujo, no metas garantizadas. El ahorro de 88,2% requerido en la base difícilmente puede justificarse sin rediseñar la operación y conservar revisión presencial. La tarifa máxima favorable de $72.371/mes es económica; no implica disponibilidad de caja del cliente ni una oferta sostenible para el equipo.
+0661: Qué evidencia puede cambiar el dictamen
+0662: Pesos y categorías reales pueden modificar el valor patrimonial. Compras de ganado sustituto, contratación evitada y búsquedas registradas pueden convertir una parte del beneficio en ahorro de caja. La pérdida esperada sólo aumenta si se acredita exposición mayor; no se incrementa para forzar un VAN positivo. Tampoco se agrega leche futura bruta: se exige margen neto, horizonte de interrupción y ausencia de doble conteo.
+0663: Flujo del proveedor: contrato y negocio completo
+0664: Período
+0665: Cobros totales
+0666: Costos directos
+0667: I+D + estructura
+0668: Caja del negocio
+0669: M0
+0670: $0
+0671: $0
+0672: $3.360.000
+0673: ($3.360.000)
+0674: Año 1
+0675: $8.708.005
+0676: $6.183.504
+0677: $21.600.000
+0678: ($19.075.499)
+0679: Año 2
+0680: $1.260.000
+0681: $552.000
+0682: $21.600.000
+0683: ($20.892.000)
+0684: Año 3
+0685: $1.260.000
+0686: $552.000
+0687: $21.600.000
+0688: ($20.892.000)
+0689: Año 4
+0690: $1.260.000
+0691: $552.000
+0692: $21.600.000
+0693: ($20.892.000)
+0694: Año 5
+0695: $1.260.000
+0696: $552.000
+0697: $21.600.000
+0698: ($20.892.000)
+0699: Figura 3. Contrato incremental y negocio dedicado con un único cliente de 70 animales.
+0700: El VAN incremental del contrato base es $4.453.658. Incluye margen de instalación y servicio, suponiendo capacidad disponible y costos comunes financiados por otras actividades. Con I+D inicial de $3.360.000 y estructura de $1.800.000/mes, el VAN del negocio es −$80.964.372; un cliente no financia una empresa dedicada.
+0701: El ingreso mensual base de $105.000 deja $59.000 antes de costos comunes, tras soporte $16.000, administración directa $10.000 y visitas promedio $20.000. En caja las visitas se pagan cada trimestre. No se denomina utilidad neta al margen directo porque aún faltan estructura e impuestos.
+0702: Viabilidad comercial y necesidades de financiamiento
+0703: Indicador del proveedor
+0704: Adverso
+0705: Base
+0706: Favorable
+0707: VAN contrato incremental
+0708: $7.252.533
+0709: $4.453.658
+0710: $3.182.986
+0711: VAN negocio dedicado
+0712: ($78.165.498)
+0713: ($80.964.372)
+0714: ($82.235.045)
+0715: Margen mensual servicio por cliente
+0716: $104.250
+0717: $59.000
+0718: $32.000
+0719: Clientes equivalentes para equilibrio operativo
+0720: 18
+0721: 31
+0722: 57
+0723: El escenario adverso del productor tiene una tarifa mayor y por eso deja más margen al proveedor: las perspectivas no siempre mejoran juntas. El equilibrio operativo base es techo($1.800.000 / $59.000) = 31 clientes de 70 animales, unos 2.170 collares. Este cálculo no incluye nueva contratación, más infraestructura ni adquisición comercial de esa cartera; no demuestra que esos clientes existan o puedan atenderse al mismo costo.
+0724: Para un solo cliente, el servicio tendría que aportar al menos $1.846.000/mes (aproximadamente $26.371/collar) para sostener sólo estructura y costos directos promedios, sin recuperar I+D. Esa tarifa no es coherente con los beneficios ilustrativos del productor. Se debe explorar capacidad compartida, alianzas de mantención o un alcance comercial menor antes de diseñar un negocio exclusivo.
+0725: Necesidad de fondos: base
+0726: CLP
+0727: Interpretación
+0728: Productor: máximo déficit acumulado
+0729: $16.816.868
+0730: $16,82 millones a M60; no saldo bancario real.
+0731: Equipo: máximo déficit hasta M3
+0732: $7.074.501
+0733: Financia I+D, compra antes de cobro final y estructura inicial.
+0734: Equipo: máximo déficit a M60
+0735: $106.003.499
+0736: $106,00 millones si insiste en una empresa con un solo cliente.
+0737: Condiciones de oferta y financiación
+0738: Las necesidades calculadas no se convierten en un préstamo aprobado. Anticipos mayores o compras escalonadas pueden reducir el déficit de entrega, pero no corregir pérdidas operativas. Para contratar se deben definir alcance por parcela, propiedad de equipos, precio y condición IVA, vigencia de cotización, soporte incluido, garantía, renovación y límites de respuesta a alertas.
+0739: No se incorporan subvenciones ni ventas futuras para compensar resultados. Si aparece un aporte verificable, se evalúa por separado su efecto en caja del beneficiario y se mantiene visible el costo económico total. El modelo no estima demanda nacional a partir del número de delitos.
+0740: Plan de validación y uso de los resultados
+0741: Etapa
+0742: Evidencia que debe producir
+0743: Decisión de salida
+0744: Línea base predial
+0745: Registro diario de conteo/búsqueda, pagos, horas del dueño, historial DIIO/pérdidas y mapa de parcelas.
+0746: Confirmar variables y costo de operación actual; sin porcentajes de ahorro presumidos.
+0747: Demostración académica
+0748: ESP32/XBee y sensores inventariados; recepción, geocerca y alertas con tiempos trazables.
+0749: Acreditar funciones de software; no extrapolar radio/autonomía al collar LoRaWAN.
+0750: Dos unidades del diseño final
+0751: Consumo/carga, GNSS, radio por parcela, montaje, temperatura superficial y continuidad.
+0752: Resolver riesgos eléctricos/mecánicos antes de fabricar lote; dos unidades pueden integrar los 70.
+0753: Piloto operativo
+0754: Al menos cuatro semanas de tiempos y tareas comparables; energía, disponibilidad, soporte y aceptación.
+0755: Actualizar ahorro, fracción que libera caja, tarifas y fallas. Cuatro semanas no prueban reducción de abigeato.
+0756: Evaluación de pérdidas
+0757: Seguimiento más largo y referencia comparable; documentar detección, respuesta y exposición.
+0758: Estimar atribución con cautela; mantener caso de eficacia nula mientras falte evidencia.
+0759: Decisión comercial
+0760: Cotizaciones por cantidades reales, presupuesto fiscal, precio aceptado y cartera/capacidad.
+0761: Desplegar sólo si valor y financiación están sustentados; recalcular cobertura para cada sitio.
+0762: Libro editable y trazabilidad
+0763: El Excel incluye Resumen, Supuestos, Costos, Productor, Proveedor y Evidencia. Supuestos!D5 selecciona un único escenario. Las entradas azules sobre ámbar se modifican con documentación; las fórmulas y vínculos se recalculan. Si cambia el número de bovinos, también se deben recomponer las cantidades de la BOM; el control de consistencia señala discrepancias.
+0764: Las hojas mensuales cubren M0–M60; Resumen agrega cinco años y muestra VAN, recuperación sostenida, necesidad de fondos y equilibrio comercial. Evidencia conserva las series locales, precios ODEPA y límites de uso. Los controles concilian instalación, servicio y saldos acumulados; los importes del Word corresponden al escenario publicado el 4 de octubre de 2026.
+0765: Conclusión económica del estudio
+0766: El problema y la utilidad de información oportuna están sustentados como necesidad. La viabilidad técnica y el valor económico requieren pruebas; la rentabilidad del productor y la sostenibilidad de una empresa con un solo cliente no quedan demostradas en la base. El favorable es una condición exigente y frágil, útil para fijar qué medir. La decisión fundada es avanzar por etapas y actualizar el flujo con evidencia.
+0767: III Procesos de negocio y supervisión
+0768: El proceso actual depende de la inspección del propietario. El diseño incorpora observación periódica y reglas, pero conserva la decisión humana de revisar al animal. Se representan tres procesos principales mediante eventos, tareas, subprocesos colapsados y compuertas exclusivas de BPMN. Los carriles distribuyen responsabilidades dentro de un mismo proceso; las flechas continuas representan secuencia [15].
+0769: Figura 4 P01 Supervisar ganado con SP01 y SP02. Diseño propuesto de elaboración propia.
+0770: P01 Supervisar ganado
+0771: El disparador es una lectura programada o un control temporizado. SP01 adquiere sensores, codifica, recibe, valida y persiste la observación. SP02 identifica la asignación vigente, evalúa geocerca y condiciones aplicables y actualiza el estado. Cada lectura conserva su calidad por variable: sin fix GNSS puede haber temperatura válida y comunicación reciente.
+0772: Con datos evaluables se actualizan estado y eventos. Con datos incompletos se presenta el estado desconocido o degradado. El control de comunicación ejecuta una revisión periódica independiente: cuando un módulo deja de transmitir no se espera un nuevo mensaje para abrir el evento.
+0773: Reglas para datos recientes y eventos
+0774: Se considera vigente una posición válida cuya edad no supera 2T + 30 s, donde T es el intervalo activo del dispositivo. Para salida se requieren dos posiciones válidas consecutivas fuera de la zona asignada; el borde se considera dentro mediante ST_Covers. Una muestra inválida rompe la consecutividad y no demuestra regreso. La tolerancia espacial se configura después de medir error GNSS [17].
+0775: Una lectura tardía completa el historial sin sustituir el estado más reciente. La falta de comunicación se calcula con la recepción de un paquete nuevo y autenticado, no con cualquier reenvío duplicado. El evento técnico y la atención humana conservan estados independientes.
+0776: Atención de alertas y configuración del predio
+0777: Figura 5 P02 Atender alertas con SP03 y SP04. El camino sin resolución conserva el seguimiento.
+0778: SP03 registra el evento, lo publica en el panel y encola el aviso externo cuando existe conectividad. SP04 reúne evidencia de nuevas lecturas y de la revisión presencial. Una condición resuelta conserva la ocurrencia y su auditoría; una condición activa permanece visible aunque el propietario reconozca haberla visto. La inspección puede abrir un nuevo ciclo de revisión.
+0779: La atención se registra como pendiente, reconocida, en revisión o concluida. La condición se registra como activa o resuelta. Los intentos externos guardan fecha, canal, resultado y error. Entrega aceptada por un proveedor no equivale a lectura por el destinatario. Un fallo externo no elimina la alerta local.
+0780: Figura 6 P03 Configurar predio y asignaciones con SP05 y SP06.
+0781: SP05 valida pertenencia al predio, identidad DIIO, módulo habilitado, geometría y vigencia. SP06 guarda una nueva versión en una transacción y registra autor y fecha. Si hay duplicidad, superposición o una edición concurrente obsoleta, el propietario corrige el borrador y la configuración activa se conserva.
+0782: La reasignación cierra un intervalo y abre otro. Un paquete antiguo se relaciona con la asignación válida en su hora de observación. Las credenciales LoRaWAN identifican el dispositivo; el DIIO se resuelve en el servidor, por lo que cambiar un collar no borra la historia del animal.
+0783: Casos de uso de la solución
+0784: Figura 7 Casos de uso UML principales. CU05 incluye CU06 para evaluar una lectura aceptada [16].
+0785: Caso
+0786: Actor y resultado esperado
+0787: CU01 Registrar y asociar
+0788: Propietario. Animal identificado y módulo asignado sin vigencias superpuestas.
+0789: CU02 Configurar geocercas
+0790: Propietario. Polígono validado versionado y recuperable.
+0791: CU03 Consultar rebaño
+0792: Propietario. Mapa y lista por sector con calidad y antigüedad.
+0793: CU04 Consultar historial
+0794: Propietario. Lecturas y eventos por período con paginación.
+0795: CU05 Recibir telemetría
+0796: Servidor de red. Lectura persistida una sola vez con asociación histórica.
+0797: CU06 Evaluar condiciones
+0798: Aplicación. Reglas sobre lecturas válidas y control temporizado de comunicación.
+0799: CU07 Atender alertas
+0800: Propietario. Reconocimiento revisión y conclusión registrados.
+0801: CU08 Configurar muestreo
+0802: Propietario y soporte. Cambio solicitado aplicado y confirmado por el dispositivo.
+0803: CU09 Enviar avisos
+0804: Servicio externo. Intentos y resultado conservados sin bloquear operación local.
+0805: CU10 Ejecutar simulación
+0806: Equipo. Datos de ensayo identificados y separados de operación.
+0807: CU09 es una integración complementaria y CU10 corresponde al entorno de pruebas; ambos tienen fichas en el anexo. La consulta de un período no implica que el sistema ya haya acumulado ese tiempo de datos. Todas las operaciones de escritura validan sesión y autorización por predio en el servidor.
+0808: Componentes lógicos y arquitectura de software
+0809: Figura 8 Componentes y dependencias de la aplicación. Las flechas discontinuas señalan dependencias lógicas.
+0810: En el cliente el firmware adquiere variables y conserva un buffer en flash. ChirpStack valida la sesión LoRaWAN y entrega la carga útil al ingestor. En academia un adaptador XBee/serial o Wi Fi/MQTT ocupa esa entrada. El ingestor valida, deduplica y persiste el mismo contrato. Las reglas, API, interfaz y avisos son compartidos a nivel de diseño; no se traslada una medición del hardware académico al comercial.
+0811: Se propone MQTT QoS 1 entre servicios y una cola persistente antes de la base de datos. El ingestor confirma su propia persistencia; un acuse MQTT o LoRaWAN no se interpreta como escritura de aplicación. La unicidad de dispositivo, sesión y secuencia controla reentregas y evita duplicar eventos.
+0812: Contratos de la API
+0813: Operación
+0814: Regla de aceptación
+0815: POST /animals y /assignments
+0816: DIIO único y pertenencia al predio; asociación temporal sin superposición.
+0817: POST /geofences
+0818: Geometría válida versión esperada y confirmación de impacto.
+0819: GET /animals y /history
+0820: Autorización paginación y filtros temporales UTC.
+0821: POST /events/{id}/actions
+0822: Actor acción y fecha; no cerrar una condición mediante reconocimiento.
+0823: POST /devices/{id}/config
+0824: Validar intervalo y versión; distinguir solicitada enviada y aplicada.
+0825: Ingestión interna
+0826: Credencial de servicio; no exponer un ingreso anónimo de telemetría.
+0827: Las respuestas de error no presentan acciones como exitosas. Las escrituras usan transacciones. La simulación no comparte credenciales, tópicos ni base con el piloto. Las pruebas de autorización incluyen cuentas de otro predio y acceso a identificadores ajenos.
+0828: Modelo lógico de datos
+0829: Figura 9 Modelo relacional resumido. PK indica clave primaria y FK clave foránea. Los números expresan cardinalidad de referencia.
+0830: El modelo separa identidad, configuración, observación y atención. Predio pertenece a un propietario; sector agrupa geocercas versionadas y animales. Dispositivo identifica el hardware y DevEUI. Asignación relaciona animal y módulo mediante un intervalo. Telemetría conserva observación, recepción, calidad y secuencia. Evento referencia la lectura y geocerca utilizadas cuando corresponde. Acción y notificación son registros separados asociados al evento.
+0831: Integridad y consultas espaciales
+0832: DIIO y DevEUI son únicos. Una restricción de exclusión temporal o una transacción con bloqueo impide dos asignaciones simultáneas del mismo módulo y animal. La deduplicación global usa device_id, session_id y seq antes de resolver la asignación; no depende solamente del animal asociado. Se agrega índice sobre animal y hora observada y un índice GiST para geometrías.
+0833: Las posiciones y polígonos se conservan en WGS84 con SRID 4326. GeoJSON intercambia longitud y latitud; la conversión a Leaflet adapta su orden de entrada. El borde se incluye con ST_Covers. Las distancias se calculan en metros mediante geography o una proyección adecuada, sin interpretar grados como metros [17][20].
+0834: Las fechas se guardan con zona horaria en UTC y se muestran en America/Santiago. Un control comprueba que las claves asociadas pertenezcan al mismo predio. Los valores nulos indican ausencia de medida y no sustituyen una coordenada inválida por cero. El diccionario completo del diseño se presenta en el anexo 2.
+0835: Topología comunicaciones y capacidad
+0836: Figura 10 Topología propuesta del predio. La salida celular está en la sede; la captura LoRaWAN permanece local.
+0837: Los nodos usan LoRaWAN clase A y activación OTAA con claves únicas. La máscara de canales AU915 se alinea con los canales del gateway y la configuración regional del servidor. Se documentan tasa de datos, potencia, antenas, pérdidas y restricciones vigentes. Un nodo móvil requiere comprobar la respuesta a ADR; no se fijan valores de ahorro o alcance sin ensayo [4][5][6].
+0838: Enlace
+0839: Protocolo y condición
+0840: Collar a gateway
+0841: LoRaWAN AU915; mensajes compactos con hora calidad y secuencia.
+0842: Gateway a sede
+0843: Ethernet y puente CPE210 2,4 GHz; línea de vista y PoE correctos.
+0844: Gateway a servidor de red
+0845: Backend soportado por LPS8N y ChirpStack, configurado en LAN.
+0846: Servicios locales
+0847: MQTT PostgreSQL y Redis; puertos internos y credenciales por servicio.
+0848: Usuario a aplicación
+0849: HTTPS en LAN; acceso remoto por canal autenticado y controlado.
+0850: Aviso externo
+0851: Canal contratado por HTTPS; costo recepción y reintentos registrados.
+0852: Carga cuantitativa
+0853: Con N nodos y período T, lecturas diarias = N × 86.400/T. Para 70 nodos: 20.160 al día con T = 300 s y 33.600 con T = 180 s; en 30 días son 604.800 y 1.008.000. Si lectura e índices ocuparan 1 kB por registro, serían aproximadamente 0,60 y 1,01 GB mensuales, antes de eventos, logs, copias y margen. Se mide el tamaño real antes de fijar retención.
+0854: Dos confirmaciones exteriores pueden requerir hasta 2T desde el cruce, más adquisición, transporte y procesamiento. Con T = 300 s, la ventana nominal es de hasta 605 s bajo el presupuesto de 5 s de proceso; con T = 180 s es 365 s. Una alerta rápida tras la detección no equivale a detectar instantáneamente el cruce. Se acuerda ese equilibrio con el productor.
+0855: El tamaño binario final y su tiempo en aire se calculan según tasa y límites regionales; no se reutiliza una estimación P2P como capacidad LoRaWAN. Los uplinks periódicos serán principalmente no confirmados, con dispersión temporal; los reintentos y downlinks se limitan y se ensayan bajo carga.
+0856: Infraestructura y arquitectura integrada
+0857: Figura 11 Infraestructura de energía y equipos. La sede requiere red eléctrica y respaldo separado de la estación solar.
+0858: El gabinete remoto aloja y protege un gateway de interior, conversiones, fusibles y cableado. Se separan RF, energía y acumulador según el montaje validado. El mástil requiere soporte y puesta a tierra adecuados al sitio. La antena exterior y los prensaestopas deben mantener la protección del gabinete. La altura y ubicación se eligen por mediciones de cobertura y perfil del terreno.
+0859: Figura 12 Arquitectura por capas con equipos y servicios del listado final.
+0860: En la sede, el Lenovo concentra servidor de red, broker, base, reglas y API; la UPS permite continuidad breve y apagado seguro. Es un punto único de falla que se mitiga con copias verificadas, monitoreo y procedimiento de reinstalación. Redis y PostgreSQL requeridos por ChirpStack se configuran para coexistir sin mezclar datos de red y negocio [14].
+0861: Una caída de Internet conserva procesamiento y consulta en la LAN si radio, puente y servidor siguen activos. Una caída del puente interrumpe el transporte al servidor y se registra como falla local. No se presume que el gateway conserva todos los paquetes durante ese corte: la recuperación se diseña mediante buffer del nodo y cola persistente de ingestión.
+0862: IV Indicadores KPI y medición SMART
+0863: Las metas siguientes son propuestas de aceptación. Cada indicador fija variable, cálculo, umbral, ventana, responsable y evidencia. Se medirán por etapa; la meta del cliente se ratifica tras la preserie. Boris coordina hardware y campo; Fabián coordina datos y plataforma; ambos revisan integración.
+0864: KPI
+0865: Cálculo y meta
+0866: Ventana y evidencia
+0867: K01 Entrega útil
+0868: ≥95% de paquetes únicos válidos recibidos / emitidos
+0869: Tres sesiones por sector con ≥100 emisiones por escenario; logs de Boris.
+0870: K02 Posición vigente
+0871: ≥95% de observaciones animal minuto con GNSS válido de edad ≤2T+30 s
+0872: Siete días de preserie; consultas registradas por Fabián.
+0873: K03 Procesamiento
+0874: p95 recepción a evento ≤2 s
+0875: ≥100 eventos controlados con reloj del mismo servidor; Fabián.
+0876: K04 Detección
+0877: Aviso local desde cruce ≤2T+5 s con GNSS y radio válidos
+0878: 20 cruces observados y relojes sincronizados; ambos.
+0879: K05 Integridad
+0880: 100% de lecturas únicas recuperadas sin duplicados
+0881: Corte de 30 min y 1.000 mensajes numerados; Fabián.
+0882: K06 Consulta
+0883: p95 GET de estado ≤1 s y error <1%
+0884: Cinco clientes 10 min sobre carga de 70 nodos; Fabián.
+0885: K07 Disponibilidad
+0886: ≥99% del tiempo bruto del servicio local
+0887: Piloto de siete días monitor cada minuto; ambos.
+0888: K08 Autonomía comercial
+0889: ≥7 días hasta umbral seguro con T=300 s
+0890: Dos ciclos por unidad Wio E5 inicial y muestra de preserie; Boris.
+0891: K09 Falsos avisos
+0892: ≤1 falso evento de salida por 100 horas animal
+0893: Observación acumulada ≥200 horas animal con referencia; Boris.
+0894: K10 Usabilidad
+0895: ≥4 de 5 tareas sin ayuda y mediana ≤30 s para localizar
+0896: Sesión con productor y bitácora de ayuda; ambos.
+0897: K11 Recuperación
+0898: RTO ≤2 h y RPO ≤24 h
+0899: Restauración en equipo limpio antes de piloto; Fabián.
+0900: K12 Carga de trabajo
+0901: Reducción ≥25% del tiempo de búsqueda y conteo
+0902: Comparar siete días base con siete días piloto; productor y equipo.
+0903: Los denominadores excluyen dispositivos retirados formalmente, pero se reportan por separado las bajas y sus motivos. La disponibilidad bruta incluye mantenimiento; la neta se informa además con su exclusión explícita. El 99% durante siete días permite 100,8 minutos de indisponibilidad; no es una afirmación de servicio ya conseguido.
+0904: La reducción de tiempo se mide con tareas y jornadas comparables, registrando cambios de manejo. No se atribuye a GeoCattle un ahorro observado antes de ese estudio. El KPI térmico inicial se limita a integridad y respuesta del sensor; un umbral preventivo exige validación del contacto y criterio especializado.
+0905: En academia se miden K03 K05 K06 y K10 con el ESP32 y el transporte declarado; GNSS y radio del prototipo tienen registros separados. K01 K02 K08 y EN01 para el cliente sólo se aceptan con su hardware final. No se exige autonomía de siete días a una demostración USB de banco.
+0906: Acuerdo propuesto de nivel de servicio
+0907: Campo de autorización
+0908: Definición propuesta
+0909: Servicio
+0910: Supervisión local GeoCattle y presentación de eventos.
+0911: Gestor
+0912: Equipo GeoCattle con responsable de operación designado en acta.
+0913: Cliente
+0914: Propietario del predio identificado durante aceptación.
+0915: Lugar y fecha
+0916: Se registran en el acta de habilitación del piloto y ratificación del servicio.
+0917: Resultado esperado
+0918: Ubicación reciente cuando existe GNSS y radio; historial y eventos trazables.
+0919: Activos críticos
+0920: Collares estación puente servidor base de datos LAN energía y respaldo.
+0921: Compromiso
+0922: Nivel propuesto y condición de medida
+0923: Horario
+0924: Captura y consulta local 24 × 7 durante el piloto. Soporte humano en horario acordado.
+0925: Disponibilidad
+0926: ≥99% bruto por siete días. Indisponibilidad: consulta funcional fallida durante más de un minuto; recepción y cobertura se informan además como K01 y K02.
+0927: Capacidad
+0928: 70 collares cada 180 a 300 s y cinco consultas concurrentes; validar carga y ráfagas.
+0929: Desempeño
+0930: p95 consulta ≤1 s y creación de evento ≤2 s desde recepción válida.
+0931: Mantenimiento
+0932: Ventana propuesta de hasta 30 min con aviso de 24 h; registrar duración real.
+0933: Continuidad
+0934: RTO objetivo de 2 h y RPO de 24 h con respaldo diario; pérdida potencial aceptada en acta.
+0935: Incidente crítico
+0936: Registro y atención inicial objetivo ≤2 h dentro del horario de soporte; escalar fuera de horario según acuerdo.
+0937: Entrega externa
+0938: Condicionada a Internet SIM proveedor y cobertura; sin SLA de entrega hasta contratar y ensayar.
+0939: El servicio se apoya en procesos de conteo, localización, revisión de anomalías y mantenimiento. Un fallo de radio o un GNSS sin fix se presenta como dato no disponible, aunque el panel siga operativo. Se evita usar la disponibilidad de la web como sustituto de disponibilidad de ubicación de todo el rebaño.
+0940: El acta de autorización debe fijar predio, responsables, contacto, horarios, mapa de cobertura, parámetros y aceptación de RTO/RPO. La revisión al cierre de la preserie compara metas y medidas y ajusta el acuerdo antes de completar los 70 collares. No hay un SLA contractual firmado en esta especificación.
+0941: V Plan de pruebas de software e integración
+0942: Cada prueba genera una ficha con ID, versión, precondiciones, datos, pasos, resultado esperado, resultado observado, fecha, responsable y evidencia. El resultado será aprobada, fallida o no ejecutada. Los defectos se clasifican por impacto y se reensayan después de la corrección; las metas no se sustituyen por una declaración de funcionamiento.
+0943: ID y nivel
+0944: Procedimiento
+0945: Criterio de aceptación
+0946: SW01 Unitarias
+0947: Evaluar puntos dentro borde fuera y GNSS nulo; dos exteriores consecutivos
+0948: Borde interior y salida tras dos válidos; nulo no equivale a normal.
+0949: SW02 Unitarias
+0950: Repetir sesión/secuencia y enviar lectura más antigua
+0951: Una persistencia; historial conserva tardía sin retroceder estado.
+0952: SW03 Integración
+0953: Registrar DIIO repetido reasignación y asociación solapada
+0954: Rechazar duplicado y solapamiento; asociación histórica correcta.
+0955: SW04 Integración
+0956: Editar polígono inválido y una versión obsoleta
+0957: Rechazo explícito; geometría activa íntegra.
+0958: SW05 Humo
+0959: Arrancar servicios recibir lectura consultar mapa y evento
+0960: Cadena completa sin errores críticos en log.
+0961: SW06 Alfa
+0962: Reconocer un evento activo y simular regreso
+0963: Atención persiste sin resolver artificialmente la condición.
+0964: SW07 Configuración
+0965: Cambiar T y desconectar nodo antes del downlink
+0966: Estado pendiente hasta confirmación aplicada; no mostrar cambio ficticio.
+0967: SW08 Seguridad
+0968: Sin sesión otro predio credencial inválida y texto HTML
+0969: 401/403 según caso; sin acceso ajeno ni ejecución de script.
+0970: SW09 Carga
+0971: Reproducir carga 70 nodos con cinco clientes durante 10 min
+0972: K03 y K06; sin pérdida ni errores inesperados.
+0973: SW10 Estrés
+0974: Aumentar carga gradualmente en entorno aislado
+0975: Registrar umbral de degradación y recuperar tras reducir carga.
+0976: SW11 Beta
+0977: Productor registra consulta filtra reconoce y revisa historial
+0978: K10; bitácora de tiempos y ayuda.
+0979: SW12 Avisos
+0980: Proveedor rechaza se agota reintento y vuelve Internet
+0981: Evento local íntegro; intentos visibles y aviso sin duplicación.
+0982: SW01 y SW02 se ejecutan automáticamente; las integrales combinan servicios reales y dispositivos. Los umbrales sintéticos de temperatura y actividad se identifican como datos de ensayo. La beta requiere tareas realistas y observación sin orientar las respuestas del productor.
+0983: Ambientes y criterio de salida
+0984: Desarrollo, simulación y piloto tienen bases y credenciales separadas. Antes de una demo se exige humo aprobado y ausencia de defectos críticos. Antes de la preserie se exigen integración, seguridad y recuperación aprobadas. La liberación de 70 requiere además radio, energía, montaje y aceptación predial.
+0985: Pruebas eléctricas radio y continuidad
+0986: ID
+0987: Prueba y registro
+0988: Aceptación propuesta
+0989: HW01 Carga
+0990: Medir corriente temperatura NTC terminación y protección de celda con sistema apagado
+0991: Cumplir ficha y circuito validado sin calentamiento fuera del límite.
+0992: HW02 Regulación
+0993: Barrido de batería y picos de TX GNSS; medir 3,3 V y reinicios
+0994: Operación estable hasta corte seguro documentado.
+0995: HW03 Sensores
+0996: Verificar GNSS al aire libre aceleración orientación y contacto térmico
+0997: Datos válidos unidades correctas y calibración registrada.
+0998: HW04 Autonomía
+0999: Dos ciclos reales con T=300 s y perfil documentado
+1000: K08; no extrapolar desde ensayo acelerado.
+1001: RF01 Interoperabilidad
+1002: OTAA AU915 canales claves reinicio y contadores
+1003: Join y uplinks válidos sin pérdida de identidad ni repetición aceptada.
+1004: RF02 Cobertura
+1005: ≥100 emisiones por escenario tres sesiones por sector; RSSI SNR obstáculos altura
+1006: K01 y mapa de zonas cubiertas y sombras; no inferir cobertura por hectáreas.
+1007: RF03 Ráfagas
+1008: Simular 70 emisores dispersos y eventos simultáneos
+1009: Latencias pérdidas y colas dentro de metas; reintentos acotados.
+1010: ME01 Montaje
+1011: Ensayo de fijación humedad suciedad y ajuste con responsable
+1012: Sin desprendimiento aristas o roce observado; retirar ante molestia.
+1013: EN01 Solar
+1014: Medir Wh de carga y aporte en período representativo
+1015: Balance y reserva compatibles con continuidad acordada.
+1016: CO01 Sin Internet
+1017: Cortar WAN 30 min con LAN y red local activos
+1018: Recepción persistencia y consulta local continúan; aviso externo pendiente.
+1019: CO02 Sin puente
+1020: Cortar radioenlace y reenviar buffer tras volver
+1021: K05; lectura histórica no altera frescura del estado.
+1022: CO03 Restauración
+1023: Restaurar respaldo en instancia limpia y comparar datos
+1024: K11; DIIO asociaciones geometrías lecturas y eventos coherentes.
+1025: CO04 Sin energía
+1026: Cortar alimentación controladamente y volver
+1027: UPS o apagado seguro; arranque sin corrupción y cola recuperable.
+1028: AC01 Nodo académico
+1029: Leer ATGM336H ADXL345 y DS18B20 desde ESP32
+1030: UART I2C y 1 Wire estables; sin fix se informa posición nula.
+1031: AC02 Enlace académico
+1032: Verificar firmware Zigbee con XCTU y recepción XBee; alternativa Wi Fi registrada
+1033: Tramas e identidad conservadas en adaptador serial y servidor local.
+1034: AC03 Banco académico
+1035: Desconectar USB y reiniciar nodo y receptor
+1036: Recuperación sin duplicar datos; sin acreditar autonomía ni alcance LoRaWAN.
+1037: Las sesiones de radio se prolongan hasta completar el número de emisiones: con período de cinco minutos, un único nodo no produce 100 mensajes en 30 minutos. Se registran configuración y tiempo efectivo. Las pruebas térmicas del sensor y las de seguridad de carga se ejecutan por separado.
+1038: Cada decisión de fabricación se apoya en una unidad ensamblada con el mismo regulador, antena, memoria y caja. La aceptación documental de una ficha de componente no prueba el comportamiento del conjunto ni autoriza declarar IP67 o autonomía comercial.
+1039: Normas estándares y controles aplicados
+1040: Referencia
+1041: Aplicación concreta y evidencia
+1042: BPMN 2 0 2 y UML 2 5 1
+1043: Notación de procesos casos de uso y componentes; revisión de coherencia de figuras [15][16].
+1044: LoRaWAN y RP002 1 0 5
+1045: Plan AU915 interoperabilidad clase A y OTAA; perfil documentado y RF01 [6].
+1046: GeoJSON RFC 7946
+1047: Orden longitud latitud geometrías y SRID; SW01 SW04 [20].
+1048: MQTT 3 1 1
+1049: QoS 1 reentrega y deduplicación; SW02 CO02 [21].
+1050: ISO IEC 25010
+1051: Referente de calidad funcional fiabilidad seguridad desempeño y usabilidad; familias SW HW CO. Sin declaración de certificación.
+1052: Control de acceso y auditoría
+1053: Privilegio mínimo por predio credenciales fuera del código sesiones y validación; SW08 y registro de cambios.
+1054: SUBTEL Resolución 1247 de 2026
+1055: Revisar banda potencia radiada antena informe RF y requisitos aplicables al equipo final; expediente antes de instalación [19].
+1056: Ley 19628 y Ley 21719
+1057: Finalidad acceso retención seguridad y derechos de datos personales. Preparar adecuación para la vigencia general de 21719 el 1 diciembre 2026 [22][23].
+1058: SAG y DIIO
+1059: Mantener identificación oficial y asociar el collar sin reemplazar el DIIO [18].
+1060: Protección animal y residuos
+1061: Evaluar montaje con encargado del ganado; separar baterías y electrónica y definir retiro por gestor apropiado.
+1062: La selección AU915 del gateway es una decisión de interoperabilidad; su configuración no acredita por sí sola cumplimiento en Chile. Se documenta potencia conducida, ganancia y pérdidas para calcular p.i.r.e., y se contrasta la emisión ocupada con la regulación vigente. La evaluación corresponde al equipo final, incluyendo antena y montaje.
+1063: Las ubicaciones bovinas no son automáticamente datos personales, pero cuentas, teléfonos, nombres y ubicaciones vinculadas a personas pueden serlo. Se limita la recopilación a la finalidad del servicio, se establecen permisos y retención y se protege el respaldo. Un dato histórico no se conserva indefinidamente por una supuesta obligación no identificada.
+1064: Se incorpora seguridad desde la configuración: claves únicas OTAA, control de contadores, restricciones de red, copias verificadas y respuesta a incidentes. Las recomendaciones de calidad y diseño son criterios para el proyecto; la conformidad o certificación requiere una evaluación específica.
+1065: VI Plan de implementación disponibilidad y continuidad
+1066: Preparación y puesta en marcha
+1067: El equipo realiza inventario de componentes con MPN, revisión, lote, cantidad, banda, batería y accesorio. Se libera esquema y PCB con ERC/DRC y revisión de fabricación, se construyen dos unidades y se documenta su identificación. Se instala el servidor de red y la aplicación local, se registran DevEUI y claves y se comprueba OTAA antes de integrar las reglas.
+1068: En paralelo se integra el prototipo académico ESP32/XBee con los complementos comprados y se demuestra lectura real, salida controlada, dato vencido y recuperación. En la línea comercial la preserie usa las unidades Wio E5 iniciales, añade hasta 5 a 10 y registra cobertura y mantenimiento. Con aceptación se completa el lote de 70 y se entrega capacitación, inventario, manual y acta.
+1069: Gestión de disponibilidad
+1070: Falla observada
+1071: Detección y respuesta
+1072: Comprobación de retorno
+1073: Nodo silencioso
+1074: Última recepción nueva excede 3T+30 s; revisar batería y antena
+1075: Paquete nuevo válido; evento resuelto y datos recientes.
+1076: Gateway o puente
+1077: Health check y caída simultánea de nodos; revisar energía enlace y canal
+1078: Recepción de prueba desde collar y persistencia.
+1079: API o base
+1080: Consulta funcional falla y cola crece; revisar proceso disco y credenciales
+1081: Escritura controlada y consulta tras reinicio.
+1082: Internet
+1083: WAN degradada; conservar evento local y cola de avisos
+1084: Proveedor confirma intento sin duplicar evento.
+1085: Energía
+1086: Tensión y reserva fuera de límite; apagado seguro si procede
+1087: Servicios y colas íntegros al volver.
+1088: Gestión de continuidad
+1089: La prevención incluye fusibles, revisión de tierra, monitoreo de carga, límites de cola, copias diarias y procedimiento de recuperación. La flash del collar conserva secuencias con control de integridad; al recuperar comunicación transmite un volumen limitado para no congestionar la red. Se distinguen lecturas pendientes y nuevos datos; una reentrega no rejuvenece la posición.
+1090: Ante pérdida del servidor se aísla la falla, se conserva el disco si es legible, se instala la misma versión en un equipo preparado, se restaura la copia verificada y se reinician servicios en orden. Se validan usuarios, geometrías, asignaciones y últimas lecturas, se reinyectan colas y se mide RTO/RPO. La reinstalación y la prueba de restauración preceden al piloto.
+1091: Plan de mantención configuración e incidentes
+1092: Frecuencia
+1093: Acción
+1094: Registro
+1095: Diaria en piloto
+1096: Revisar módulos vencidos cola avisos energía disco y copia
+1097: Bitácora operativa con responsable y observación.
+1098: Semanal
+1099: Inspeccionar correa caja fijación antenas y falsas alarmas
+1100: Ficha por equipo y motivo de intervención.
+1101: Por recarga
+1102: Retirar collar apagar revisar celda cargar e instalar
+1103: ID batería fecha tensión y responsable.
+1104: Mensual propuesta
+1105: Revisar respaldo configuración actualizaciones y consumo solar
+1106: Prueba de recuperación parcial y plan de cambio.
+1107: Por nueva versión
+1108: Revisión cruzada migración reversión y regresión
+1109: Versión aprobada pruebas y copia previa.
+1110: Por retiro
+1111: Revocar claves cerrar asignación y separar batería y electrónica
+1112: Acta de baja y disposición o reutilización.
+1113: Gestión de configuración
+1114: Cada elemento recibe un identificador: collar, DevEUI, PCB, firmware, batería, gateway, antena, CPE, servidor, versión de aplicación y esquema de datos. El registro enlaza número de parte, lote, configuración, ubicación y cambios. Las claves se custodian fuera del inventario compartido. Se conserva una copia de configuración del gateway y del router.
+1115: Gestión de cambios
+1116: Una solicitud describe problema, alcance, costo y pruebas afectadas. El equipo revisa impacto en electrónica, consumo, telemetría, seguridad y presupuesto. La modificación de esquema de mensaje o placa exige versión nueva, revisión y regresión; un cambio de geocerca conserva su versión anterior. El productor aprueba cambios de operación y el académico guía revisa los hitos de entrega. Se define reversión antes de desplegar.
+1117: Gestión de incidentes
+1118: Un incidente registra hora, activo, síntoma, severidad, responsable y evidencia. Se prioriza una interrupción de toda la captura, corrupción de datos o riesgo eléctrico; luego la falla de un nodo y finalmente una función no crítica. Se contiene el daño, se recupera el servicio y se informa la condición al propietario. El cierre documenta causa, medida correctiva y prueba que evita recurrencia.
+1119: Si el montaje produce roce o molestia, se retira el collar y se revisa antes de reinstalar. Una anomalía térmica de la batería suspende el uso del equipo. Los datos de continuidad se conservan para explicar períodos sin observación y no se completan con valores supuestos.
+1120: VII Cronograma ajustado y organización
+1121: Se propone una planificación relativa de ocho semanas desde la aprobación de la base. Los plazos académicos oficiales se incorporan con el docente; las fechas anteriores no se trasladan automáticamente. Compras y ensamblaje pueden modificar la ruta crítica, por lo que se revisa avance y evidencia semanalmente.
+1122: Fase
+1123: Semanas
+1124: Dependencia y entrega
+1125: Responsable
+1126: 1 Cierre de diseño
+1127: 1 y 2
+1128: MPN pinout energía RF ERC DRC BOM y presupuesto comercial
+1129: Boris con revisión de Fabián
+1130: 2 Plataforma local
+1131: 1 a 3
+1132: Contrato modelo migraciones ChirpStack API y simulación
+1133: Fabián con revisión de Boris
+1134: 3 Fabricación inicial
+1135: 3 y 4
+1136: Diseño liberado; dos unidades programadas e inventariadas
+1137: Boris
+1138: 4 Integración académica
+1139: 1 a 4
+1140: ESP32 XBee y compra; humo reglas fallas y guion de demo
+1141: Ambos
+1142: 5 Preserie predial
+1143: 5 a 7
+1144: Banco aprobado; 5 a 10 unidades y campaña de campo
+1145: Ambos y productor
+1146: 6 Lote de 70
+1147: 7 y 8
+1148: Preserie aceptada; fabricación instalación y capacitación
+1149: Ambos
+1150: 7 Cierre documental
+1151: 8
+1152: Actas medidas manual presupuesto y entrega académica
+1153: Ambos y guía
+1154: Dependencias y criterios de término
+1155: La ruta crítica comprende cierre eléctrico, fabricación inicial, interoperabilidad, ensayos de autonomía y preserie. El desarrollo de interfaz y las reglas puede avanzar con simulación, pero no reemplaza esos pasos. Si cobertura exige otra estación o la autonomía requiere otra regulación, se actualizan planos, BOM, costo y cronograma antes de ordenar el lote restante.
+1156: Hito
+1157: Evidencia necesaria
+1158: H1 Diseño liberado
+1159: Revisión eléctrica mecánica RF y fabricación; versiones y presupuesto.
+1160: H2 Demo académica
+1161: Lectura real persistida evento mapa y prueba de dato vencido.
+1162: H3 Preserie aceptada
+1163: K01 K02 K08 ME01 EN01 y continuidad medidos; defectos críticos cerrados.
+1164: H4 Cliente habilitado
+1165: 70 módulos trazables mapa de cobertura capacitación copias y SLA ratificado.
+1166: El equipo está integrado por Boris Baier y Fabián Del Villar según los antecedentes del proyecto. Se mantienen revisión cruzada y registro de decisiones. El académico guía orienta la evaluación y el productor valida uso y condiciones del predio; no se atribuye a terceros una aprobación que no esté documentada.
+1167: VIII Conclusiones y recomendaciones
+1168: El listado integrado permite definir una solución consistente para 70 bovinos: collar Wio E5 con GNSS y sensores, recepción LoRaWAN mediante Dragino, estación solar, radioenlace y servidor local. Esa base reemplaza la arquitectura provisional de placas de desarrollo y recepción P2P. La implementación deberá verificar firmware propio, perfiles LoRaWAN y contratos de datos antes de presentar interoperabilidad como conseguida.
+1169: El presupuesto de componentes es $4.080.352 CLP. El bloque de collares representa 65,0% del total; estación y servidor son compartidos. El promedio del conjunto por bovino, $58.291, expresa distribución de inversión y no un precio de venta ni costo de reposición de un collar. La reserva del 15% sitúa la planificación de componentes en $4.692.405 CLP, con partidas de puesta en marcha y OPEX que deben cotizarse por separado.
+1170: La demostración académica integra ESP32, XBee, sensores comprados y aportes del laboratorio; su base de compra visible es $16.690 según la captura. Los equipos académicos se conservan para ensayo y no se cuentan dentro de los 70 collares del cliente. Se reutilizan contratos y funciones de software. El diseño final requiere su propia validación de radio, consumo, contacto térmico y montaje antes de liberar el lote restante.
+1171: Las decisiones prioritarias son comprobar el margen del regulador de 3,3 V con la celda descargada, validar carga con el sistema apagado, fijar la interfaz térmica, cerrar antenas y canales y dimensionar la estación a partir de consumo y radiación del sitio. La lista de componentes no demuestra que la caja resista intemperie, que una estación cubra 120 hectáreas o que el sensor entregue temperatura corporal.
+1172: La operación local facilita consulta e historial durante un corte de Internet. Esa continuidad exige que el puente, servidor y energía sigan disponibles y que la recuperación de lecturas se pruebe. Las alertas externas requieren un canal contratado; su entrega no se incluye en el mismo supuesto de independencia de Internet.
+1173: El estudio financiero a 60 meses arroja VAN económico base del productor de −$9.921.954 y VAN del negocio proveedor de −$80.964.372 con un cliente. El favorable apenas alcanza $103.434 de VAN económico, sin recuperar caja. Se recomienda validar un piloto y revisar costo, tarifa y financiación antes del lote de 70; no se afirma prevención del abigeato ni diagnóstico clínico.
+1174: IX Referencias bibliográficas
+1175: [1] Baier B y Del Villar F 2026Informe_Proyecto_Titulo_Baier_DelVillar.docx; Informe_2_GeoCattle_completado.docx. Antecedentes del caso requerimientos y estructura.
+1176: [2] Listado de componentes integrado 2026componentes integrados.xlsx. Hoja Componentes filas 3 y 7 a 63. Documento recibido de base presupuestaria.
+1177: [3] Guía TIHI84 Unidad 2TIHI84_U2_EF2_GUÍA_ABPro.docx. Estructura académica y criterios de desarrollo.
+1178: [4] Seeed Studio Wio E5https://wiki.seeedstudio.com/LoRa-E5_STM32WLE5JC_Module/
+1179: [5] Dragino LPS8Nhttps://www.wiki.dragino.com/docs/LoRaWAN-Gateway/indoor-gateways/lps8n/
+1180: [6] LoRa Alliance RP002 1 0 5https://resources.lora-alliance.org/technical-specifications/rp002-1-0-5-lorawan-regional-parameters
+1181: [7] Quectel LC76Ghttps://www.quectel.com/product/gnss-lc76g-series/
+1182: [8] Texas Instruments TMP112https://www.ti.com/product/TMP112
+1183: [9] Texas Instruments TLV755Phttps://www.ti.com/product/TLV755P
+1184: [10] Texas Instruments BQ24040https://www.ti.com/product/BQ24040
+1185: [11] Texas Instruments BQ2970https://www.ti.com/product/BQ2970
+1186: [12] TP Link CPE210https://www.tp-link.com/za/business-networking/pharos-cpe/cpe210/
+1187: [13] Teltonika RUT200https://teltonika-networks.com/products/routers/rut200
+1188: [14] ChirpStack requisitoshttps://www.chirpstack.io/docs/chirpstack/requirements.html
+1189: [15] OMG BPMN 2 0 2https://www.omg.org/spec/BPMN/2.0.2/
+1190: [16] OMG UML 2 5 1https://www.omg.org/spec/UML/2.5.1/
+1191: [17] PostGIS ST Covershttps://postgis.net/docs/ST_Covers.html
+1192: [18] SAG Identificación animal oficialhttps://www.sag.gob.cl/ambitos-de-accion/identificacion-animal-oficial
+1193: Referencias normativas y criterios de interpretación
+1194: [19] SUBTEL Resolución exenta 1247 de 2026Texto rectificado al 17 de julio de 2026. https://www.bcn.cl/leychile/navegar?idNorma=1225920&idVersion=2026-07-17. Copia local SUBTEL1247_2026.pdf revisada en los antecedentes del proyecto.
+1195: [20] IETF RFC 7946GeoJSON. https://www.rfc-editor.org/rfc/rfc7946
+1196: [21] OASIS MQTT 3 1 1https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html
+1197: [22] Biblioteca del Congreso Nacional Ley 19628https://www.bcn.cl/leychile/navegar?idNorma=141599&idVersion=2023-05-09
+1198: [23] Biblioteca del Congreso Nacional Ley 21719https://www.bcn.cl/leychile/navegar?idNorma=1209272
+1199: [24] STMicroelectronics LIS2DW12https://www.st.com/en/mems-and-sensors/lis2dw12.html
+1200: [25] Digi Compatibilidad de XBeehttps://www.digi.com/support/knowledge-base/compatible-digi-xbee-products
+1201: [26] Espressif ESP32https://www.espressif.com/sites/default/files/documentation/esp32_datasheet_en.pdf
+1202: [27] Analog Devices DS18B20https://www.analog.com/en/products/DS18B20.html
+1203: [28] Adafruit cargador MCP73871https://learn.adafruit.com/usb-dc-and-solar-lipoly-charger/downloads
+1204: [29] Evidencia fotográfica académicaIoT Proporcionado por la Universidad 1 a 5.jpeg; IoT Disponible 1 a 11.jpeg; IoT comprado.jpeg. Identificación visual y captura comercial local.
+1205: Alcance de las fuentes técnicas
+1206: Las páginas de fabricantes respaldan funciones e integración de las familias de componentes. El número de parte exacto, la huella, la revisión y los accesorios se verifican en la liberación de ingeniería. La compatibilidad de un conjunto requiere un ensayo, incluso si sus partes pertenecen a familias documentadas.
+1207: Los precios del presupuesto proceden del Excel recibido y no se sustituyen por precios de catálogo de cantidades distintas. El archivo no incluye enlaces comerciales, condiciones de IVA o flete. La fecha de consulta de documentación web para esta actualización es el 4 de octubre de 2026. Los documentos locales describen el contexto y no acreditan compras ni mediciones.
+1208: Para radio se conserva la copia oficial de SUBTEL localizada en los antecedentes y se requiere revisión de aplicabilidad al equipo final. Las fichas de calidad, trazabilidad y privacidad se usan para definir controles concretos, sin declarar una certificación de producto o conformidad formal por citar una norma.
+1209: Referencias de viabilidad economía y abigeato
+1210: [30] Entrevista al productorGeoCattle_preguntas_y_respuestas.docx. Situación predial, horas de conteo y pérdidas declaradas; contrastadas con el informe local.
+1211: [31] Serie local de abigeatoToma_datos_ABIGEATO_2020-2026.xlsx. Recuento de las hojas 2020–2025, 19 jurisdicciones por año. Hoja 2026 excluida por falta de fecha de corte.
+1212: [32] Análisis económico-patrimonial localAnálisis y Evaluación del Impacto Económico-Patrimonial del Delito de Abigeato en Chile (2020–2025).docx y DataMining_Analisis_ProyectoTitulo.R. Antecedentes revisados; supuestos nacionales y lucro bruto no se trasladan al flujo.
+1213: [33] ODEPA y Asociación Gremial de Ferias GanaderasBoletín semanal, 23–29 de septiembre de 2026, cuadro 2, página 4. Temuco 29-09-2026: promedio general por kg vivo, sin IVA. https://bibliotecadigital.odepa.gob.cl/bitstreams/bb753e6d-4c98-4f78-a5fa-5a65c9f0902f/download
+1214: [34] Servicio de Impuestos Internos¿Cuál es la tasa del Impuesto al Valor Agregado (IVA)? Actualización 10-06-2025; tasa general 19%. https://www.sii.cl/preguntas_frecuentes/impuestos_mensuales/001_130_0572.htm
+1215: [35] Fiscalía de Chile, San CarlosFiscalía de San Carlos obtiene condenas contra asociación delictual dedicada al abigeato. Noticia regional, 16-09-2025. https://www.fiscaliadechile.cl/actualidad/noticias/regionales/fiscalia-de-san-carlos-obtiene-condenas-contra-asociacion-delictual
+1216: [36] Servicio Agrícola y GanaderoPrograma Oficial de Trazabilidad Animal. Identificación individual y movimientos; GeoCattle complementa el control oficial. https://sag.cl/ambitos-de-accion/programa-oficial-de-trazabilidad-animal
+1217: [37] Fiscalía de ChileEstadísticas interactivas. Portal público consultado; faltan filtros y fecha de descarga para reproducir la extracción del archivo local. https://www.fiscaliadechile.cl/estadisticas-interactivas
+1218: Trazabilidad de consulta y modelo
+1219: Consulta web: 4 de octubre de 2026. Las fuentes oficiales respaldan el contexto y la referencia de precios; no validan remuneraciones, eficacia de sensores ni tarifas propuestas. El modelo y sus escenarios se entregan en Flujo_Caja_GeoCattle_2026-10-04.xlsx. Las fórmulas fueron contrastadas con cálculo independiente; la comprobación numérica no sustituye validación de supuestos.
+1220: X Anexo 1 Presupuesto de collares
+1221: Transcripción de las cantidades y precios de la hoja Componentes. Los totales se calculan con toda la precisión de origen y se muestran con dos decimales. Las filas de Excel permiten ubicar cada partida.
+1222: Fila
+1223: Componente
+1224: Cant
+1225: Unitario CLP
+1226: Total CLP
+1227: 7
+1228: Módulo MCU + LoRa Seeed Wio-E5 HF
+1229: 70
+1230: $6.385,12
+1231: $446.958,51
+1232: 8
+1233: GPS/GNSS Quectel LC76GPAMD
+1234: 70
+1235: $5.768,94
+1236: $403.825,98
+1237: 9
+1238: Acelerómetro ST LIS2DW12TR
+1239: 70
+1240: $895,20
+1241: $62.663,72
+1242: 10
+1243: Sensor térmico TI TMP112AIDRLR
+1244: 70
+1245: $231,50
+1246: $16.204,83
+1247: 11
+1248: Regulador TI TLV75533PDBVR
+1249: 70
+1250: $112,26
+1251: $7.857,93
+1252: 12
+1253: Interruptor de alimentación TI TPS22919DCKR
+1254: 70
+1255: $98,38
+1256: $6.886,88
+1257: 13
+1258: Cargador Li-ion TI BQ24040DSQR
+1259: 70
+1260: $305,29
+1261: $21.369,99
+1262: 14
+1263: Protector de batería TI BQ29700DSER
+1264: 70
+1265: $454,04
+1266: $31.782,95
+1267: 15
+1268: MOSFET doble TI CSD85302L
+1269: 70
+1270: $286,20
+1271: $20.033,93
+1272: 16
+1273: Memoria Winbond W25Q32JVSSIQ
+1274: 70
+1275: $1.153,06
+1276: $80.714,23
+1277: 17
+1278: Antena GNSS AntennaHome AHGG.241
+1279: 70
+1280: $440,86
+1281: $30.860,11
+1282: 18
+1283: Antena LoRa Ebyte TX915-FPC-4510
+1284: 70
+1285: $1.180,61
+1286: $82.642,56
+1287: 19
+1288: Conector RF IPEX MHF I 20279-001E-01
+1289: 70
+1290: $118,06
+1291: $8.264,26
+1292: 20
+1293: NTC Murata NCP18XH103F03RB
+1294: 70
+1295: $98,38
+1296: $6.886,88
+1297: 21
+1298: Pasivos, adaptación RF, ESD, fusible y contactos (juego)
+1299: 70
+1300: $885,46
+1301: $61.981,92
+1302: 22
+1303: PCB FR-4 de 4 capas, 60 × 45 mm
+1304: 70
+1305: $737,88
+1306: $51.651,60
+1307: 23
+1308: Ensamblaje electrónico PCBA
+1309: 70
+1310: $3.738,59
+1311: $261.701,44
+1312: Las 17 partidas anteriores incluyen integración electrónica, PCB y PCBA. La cantidad 70 corresponde al lote; la compra y recepción deberán confirmar unidades útiles y requisitos del ensamblador.
+1313: Presupuesto de montaje y suministros comunes
+1314: Fila
+1315: Componente
+1316: Cant
+1317: Unitario CLP
+1318: Total CLP
+1319: 24
+1320: Batería XTAR 21700 Li-ion, 5.000 mAh
+1321: 70
+1322: $7.490,00
+1323: $524.300,00
+1324: 25
+1325: Caja con tornillos, 100 × 100 × 60 mm
+1326: 70
+1327: $2.920,00
+1328: $204.400,00
+1329: 26
+1330: Huincha de 38 mm (rollo de 100 yardas)
+1331: 6
+1332: $12.400,00
+1333: $74.400,00
+1334: 27
+1335: Broches Tip Top de 38 mm (bolsa de 100)
+1336: 2
+1337: $19.470,00
+1338: $38.940,00
+1339: 28
+1340: Hebillas reguladoras de 38 mm (bolsa de 100)
+1341: 2
+1342: $3.740,00
+1343: $7.480,00
+1344: 29
+1345: Conexión y retención de batería (juego)
+1346: 70
+1347: $1.200,00
+1348: $84.000,00
+1349: 30
+1350: Acolchado, fijaciones y separadores (juego)
+1351: 70
+1352: $500,00
+1353: $35.000,00
+1354: 31
+1355: Interfaz de contacto térmico
+1356: 70
+1357: $500,00
+1358: $35.000,00
+1359: 32
+1360: Sellador neutro Lanco, 300 ml
+1361: 3
+1362: $6.990,00
+1363: $20.970,00
+1364: 33
+1365: Hilo de montaje (lote)
+1366: 1
+1367: $2.000,00
+1368: $2.000,00
+1369: 34
+1370: Programador ST-Link V2 Mini
+1371: 1
+1372: $6.641,00
+1373: $6.641,00
+1374: 35
+1375: Adaptador de programación y cables de prueba (juego)
+1376: 1
+1377: $5.000,00
+1378: $5.000,00
+1379: 36
+1380: Alimentación de 5 V y cables de carga (juego)
+1381: 1
+1382: $10.000,00
+1383: $10.000,00
+1384: Subtotal collares $2.650.418,73 CLP.
+1385: Los rollos y bolsas son unidades de compra. Seis rollos de 100 yardas corresponden a 600 yardas, aproximadamente 548,64 m de huincha; la longitud utilizable depende de cortes y pérdidas. Dos bolsas de 100 broches y dos de 100 hebillas dan 200 de cada uno; no se presupuestan como 70 bolsas.
+1386: Hay 70 baterías para 70 collares y no un lote de baterías de recambio. La política de carga, recambio y repuestos requiere una provisión adicional si el cliente la solicita. Sellador, hilo, programador, adaptador y alimentación son suministros comunes y no se multiplican nuevamente por 70.
+1387: El precio PCBA se conserva como una partida aparte de componentes y PCB según el archivo. Antes de contratar se confirma si incluye pasta esténcil prueba programación y materiales; un servicio que ya incluya piezas exige reconciliar la oferta para evitar doble cobro.
+1388: Presupuesto de estación y servidor
+1389: Antena estación solar y radioenlace
+1390: Fila
+1391: Componente
+1392: Cant
+1393: Unitario CLP
+1394: Total CLP
+1395: 42
+1396: Gateway LoRaWAN Dragino LPS8N AU915
+1397: 1
+1398: $154.462,88
+1399: $154.462,88
+1400: 43
+1401: Antena LoRa exterior, coaxial y adaptadores (juego)
+1402: 1
+1403: $44.272,80
+1404: $44.272,80
+1405: 44
+1406: Radioenlace TP-Link CPE210
+1407: 2
+1408: $48.990,00
+1409: $97.980,00
+1410: 45
+1411: Panel solar de 300 W
+1412: 1
+1413: $167.252,80
+1414: $167.252,80
+1415: 46
+1416: Controlador EPEVER MPPT, 100 V / 30 A
+1417: 1
+1418: $86.990,00
+1419: $86.990,00
+1420: 47
+1421: Batería AGM de ciclo profundo, 12 V / 150 Ah
+1422: 1
+1423: $245.960,00
+1424: $245.960,00
+1425: 48
+1426: Convertidores 12 V a 5 V y PoE 24 V (juego)
+1427: 1
+1428: $34.434,40
+1429: $34.434,40
+1430: 49
+1431: Gabinete y prensaestopas (juego)
+1432: 1
+1433: $44.272,80
+1434: $44.272,80
+1435: 50
+1436: Mástil, soportes, cables, fusibles y tierra (juego)
+1437: 1
+1438: $137.737,60
+1439: $137.737,60
+1440: Subtotal estación $1.013.363,28 CLP.
+1441: Servidor y conectividad
+1442: Fila
+1443: Componente
+1444: Cant
+1445: Unitario CLP
+1446: Total CLP
+1447: 56
+1448: Mini PC Lenovo M710q i5, 8 GB, HDD 500 GB
+1449: 1
+1450: $120.327,00
+1451: $120.327,00
+1452: 57
+1453: Router celular Teltonika RUT200
+1454: 1
+1455: $128.990,00
+1456: $128.990,00
+1457: 58
+1458: Antena celular exterior MIMO
+1459: 1
+1460: $68.868,80
+1461: $68.868,80
+1462: 59
+1463: UPS, switch, cables y almacenamiento de respaldo (juego)
+1464: 1
+1465: $98.384,00
+1466: $98.384,00
+1467: Subtotal servidor $416.569,80 CLP. Total general $4.080.351,81 CLP.
+1468: La compra del servidor requiere confirmar estado garantía fuente sistema de almacenamiento y soporte. El juego UPS switch cables y respaldo debe desagregarse al cotizar para que su capacidad sea verificable. El router y antena no incluyen por sí solos un abono celular.
+1469: La segunda estación, un enlace adicional y repuestos no están en la lista base. Se incorporan únicamente si la campaña de cobertura, continuidad o requerimientos del cliente los hacen necesarios. El costo de la estación no se puede multiplicar por hectáreas sin un diseño de radio y energía del sitio.
+1470: Anexo 2 Diccionario de datos de identidad y configuración
+1471: Entidad
+1472: Campos y tipos propuestos
+1473: Restricciones
+1474: user
+1475: id uuid PK; name text; phone text nullable; password_hash text; active bool
+1476: Nombre y contacto mínimos. Hash sin contraseña plana.
+1477: farm
+1478: id uuid PK; owner_id uuid FK user; name text; timezone text
+1479: Acceso autorizado por propietario; America/Santiago por configuración.
+1480: sector
+1481: id uuid PK; farm_id uuid FK; name text
+1482: Sector perteneciente a un único predio.
+1483: animal
+1484: id uuid PK; farm_id uuid FK; diio text; orientation enum carne/leche; enabled bool
+1485: DIIO único; identificador conservado como texto.
+1486: device
+1487: id uuid PK; dev_eui text; hw_rev text; fw_version text; enabled bool; installed_at timestamptz
+1488: DevEUI único. Secretos en almacén seguro separado.
+1489: assignment
+1490: id uuid PK; animal_id uuid FK; device_id uuid FK; valid_from timestamptz; valid_to timestamptz nullable
+1491: Fin mayor que inicio; sin intervalos solapados por animal o dispositivo.
+1492: geofence
+1493: id uuid PK; sector_id uuid FK; version int; geometry Polygon 4326; valid_from/valid_to timestamptz
+1494: Geometría válida y versiones sin superposición activa.
+1495: animal_zone
+1496: id uuid PK; animal_id uuid FK; geofence_id uuid FK; valid_from/valid_to timestamptz
+1497: Zona autorizada del animal y versión temporal; mismo predio.
+1498: device_config
+1499: id uuid PK; device_id uuid FK; version int; sample_interval_s int; status enum; requested_at/applied_at timestamptz
+1500: T positivo dentro de límites; estados solicitada enviada aplicada fallida.
+1501: El esquema es una especificación lógica para la migración. Los tipos y restricciones deberán implementarse y probarse en PostgreSQL. La autorización no se deduce sólo de una FK: la aplicación verifica el predio y el perfil para cada operación.
+1502: Las asociaciones temporales permiten reemplazar collar y zona sin borrar historial. Al corregir un identificador oficial se conserva una acción de auditoría con motivo y autor. Deshabilitar un dispositivo evita generar ausencias esperadas durante un retiro de mantenimiento registrado.
+1503: Diccionario de telemetría eventos y operación
+1504: Entidad
+1505: Campos y tipos propuestos
+1506: Restricciones
+1507: telemetry
+1508: id uuid PK; device_id uuid FK; assignment_id uuid FK nullable; session_id text; seq bigint; observed_at/received_at timestamptz; point Point 4326 nullable; temperature_c numeric nullable; activity_index numeric nullable; battery_mv int; quality jsonb; source enum
+1509: Único device/session/seq. Validar rangos y tiempos. Fuente device o sim.
+1510: event
+1511: id uuid PK; animal_id uuid FK nullable; device_id uuid FK; telemetry_id/geofence_id uuid FK nullable; type enum; severity enum; opened_at/resolved_at timestamptz; condition enum
+1512: Una ocurrencia activa por clave de condición; resolución basada en evidencia.
+1513: event_action
+1514: id uuid PK; event_id uuid FK; actor_id uuid FK; action enum; at timestamptz; note text
+1515: Acciones inmutables de reconocimiento revisión y conclusión.
+1516: notification_attempt
+1517: id uuid PK; event_id uuid FK; channel text; attempt int; at timestamptz; status enum; provider_id/error text nullable
+1518: Único evento/canal/intento. Distinguir pendiente aceptado fallido y expirado.
+1519: audit_log
+1520: id uuid PK; actor_id uuid FK nullable; object_type/id text; action text; at timestamptz; before/after jsonb
+1521: Acceso restringido; proteger datos sensibles y cambios relevantes.
+1522: maintenance
+1523: id uuid PK; device_id uuid FK; battery_id text nullable; kind text; at timestamptz; responsible_id uuid FK; result text
+1524: Historial de recarga inspección sustitución y retiro.
+1525: Retención e índices
+1526: Se propone conservar inicialmente 30 días de datos de alta resolución en la preserie y revisar retención con el productor antes de borrar. El historial a 30 días exige completar esa ventana. Para cliente se define una política según uso, costos y obligaciones aplicables. Índices: telemetry(device_id, observed_at), assignment sobre vigencias, eventos por condición y GiST sobre geometría.
+1527: La calidad registra fix, estado de sensor, RSSI/SNR cuando disponibles y antigüedad. Se conserva hora de llegada de cada reentrega si resulta útil, sin cambiar observed_at ni recibo original. Un paquete sin asociación queda en una cola o registro de revisión y no se atribuye al animal actual por aproximación.
+1528: Anexo 3 Contrato de telemetría y reglas
+1529: Campo lógico
+1530: Tipo y significado
+1531: schema_version
+1532: Entero; versión del esquema y del decodificador.
+1533: device_id o DevEUI
+1534: Identidad del módulo; DIIO se resuelve por asignación temporal.
+1535: session_id y seq
+1536: Sesión persistida o arranque identificado y secuencia monotónica; deduplicación global.
+1537: observed_at y received_at
+1538: Hora UTC de captura y recepción; la segunda la añade el servidor.
+1539: position
+1540: Longitud latitud y calidad; nula sin fix. Edad de posición explícita.
+1541: surface_temperature_c
+1542: Temperatura de interfaz superficial; nula ante fallo.
+1543: activity_index
+1544: Índice con ventana y algoritmo versionados; no diagnóstico.
+1545: battery_mv y flags
+1546: Tensión y estado de batería; porcentaje sólo con curva validada.
+1547: source
+1548: device o sim; dato simulado aislado del piloto.
+1549: El contrato lógico se representa en JSON entre servicios, mientras la carga LoRaWAN se codifica en binario. Se proponen enteros escalados para coordenadas, temperatura y tensión y un bitmap de validez. Longitud final, FPort, límites por tasa y codec se liberan juntos. Las claves y contadores LoRaWAN no viajan como campos de aplicación.
+1550: Estado y alertas
+1551: Posición: vigente, vencida o desconocida. Comunicación: reciente o ausente según 3T+30 s, medido desde la última recepción nueva. Geocerca: interior, proximidad o salida confirmada según muestras válidas. Severidad: normal, advertencia o crítico; desconocido es una condición de calidad y nunca se pinta como normal.
+1552: Para actividad se define una ventana y una línea base individual antes de una regla preventiva. Para temperatura se ensaya un umbral sintético en la demo y se habilita un umbral operacional sólo después de validar el contacto y su interpretación. Los avisos recomiendan revisión presencial sin afirmar enfermedad.
+1553: CU08 conserva configuración solicitada y aplicada. Un nodo clase A recibe comandos en ventanas posteriores a uplinks; el servidor no promete aplicación instantánea al guardar un formulario. Se pide versión aplicada en la próxima telemetría y se registra el timeout de confirmación.
+1554: Anexo 4 Fichas de casos de uso del propietario
+1555: CU01 Registrar y asociar
+1556: Disparador: el propietario inicia la operación. Precondición: Usuario autorizado con animal y módulo del mismo predio.
+1557: Flujo: Registrar DIIO seleccionar módulo cerrar asociación anterior y abrir nueva. Excepción: Duplicidad o intervalo solapado: rechazo sin cambiar historial.
+1558: Postcondición y pruebas: Animal y asignación recuperables. SW03.
+1559: CU02 Configurar geocerca
+1560: Disparador: el propietario inicia la operación. Precondición: Sector y versión activa disponibles.
+1561: Flujo: Dibujar polígono validar revisar impacto y guardar versión. Excepción: Geometría inválida o edición concurrente: conservar borrador y versión activa.
+1562: Postcondición y pruebas: Zona versionada y auditada. SW01 SW04.
+1563: CU03 Consultar rebaño
+1564: Disparador: el propietario inicia la operación. Precondición: Sesión y predio autorizado.
+1565: Flujo: Abrir mapa filtrar sector seleccionar animal y revisar antigüedad. Excepción: Sin mapa externo: mostrar geometrías locales; dato vencido conserva marca temporal.
+1566: Postcondición y pruebas: Lista y ficha coherentes. SW05 SW11.
+1567: CU04 Consultar historial
+1568: Disparador: el propietario inicia la operación. Precondición: Animal autorizado y período válido.
+1569: Flujo: Elegir 24 h 7 días 30 días o rango y recorrer resultados paginados. Excepción: Rango sin datos: informar vacío; límites inválidos: error.
+1570: Postcondición y pruebas: Historial ordenado sin duplicados. SW02 SW11.
+1571: CU07 Atender alertas
+1572: Disparador: el propietario inicia la operación. Precondición: Evento del predio y sesión válida.
+1573: Flujo: Consultar contexto reconocer registrar inspección y concluir atención. Excepción: Fallo de API: acción no confirmada. Persistencia con auditoría sin alterar condición activa.
+1574: Postcondición y pruebas: Atención trazable. SW06 SW08.
+1575: CU08 Configurar muestreo
+1576: Disparador: el propietario inicia la operación. Precondición: Dispositivo habilitado y límites definidos.
+1577: Flujo: Solicitar T guardar versión encolar downlink y comprobar versión aplicada. Excepción: Fuera de rango: rechazo. Sin transmisión: pendiente hasta timeout y revisión.
+1578: Postcondición y pruebas: Cambio confirmado por nodo. SW07.
+1579: Fichas de integración simulación y aceptación
+1580: CU05 Recibir telemetría
+1581: Disparador: uplink entregado por servidor de red. Precondición: Dispositivo autenticado y codec vigente.
+1582: Flujo: Validar decodificar deduplicar resolver asignación persistir y evaluar. Excepción: Duplicado no repite escritura; fallo de base conserva cola; sin asignación deriva a revisión.
+1583: Postcondición y pruebas: Una observación conservada. SW02 SW03 CO02.
+1584: CU06 Evaluar condiciones
+1585: Disparador: lectura nueva o temporizador. Precondición: Reglas y parámetros versionados.
+1586: Flujo: Evaluar variables válidas actualizar condición y crear o resolver evento con contexto. Excepción: GNSS nulo no se considera interior; silencio se evalúa sin depender del paquete faltante.
+1587: Postcondición y pruebas: Evento coherente y trazable. SW01 SW06.
+1588: CU09 Enviar avisos
+1589: Disparador: evento con entrega pendiente. Precondición: Canal contratado destinatario autorizado y conectividad.
+1590: Flujo: Enviar registrar respuesta y reintentar sólo según política del proveedor. Excepción: Fallo preserva alerta local; expiración evita un aviso antiguo presentado como actual.
+1591: Postcondición y pruebas: Intentos visibles sin duplicar evento. SW12 CO01.
+1592: CU10 Ejecutar simulación
+1593: Disparador: solicitud del equipo de pruebas. Precondición: Ambiente separado y origen sim explícito.
+1594: Flujo: Cargar escenario emitir lecturas ejecutar reglas y guardar evidencia. Excepción: No permitir escribir en base del piloto; escenario repetido se reinicia aisladamente.
+1595: Postcondición y pruebas: Prueba reproducible sin mezclar evidencia de campo. SW01 SW09.
+1596: Guion de presentación académica
+1597: 1 Registrar el nodo ESP32 y el animal de ensayo. 2 Obtener lectura real ATGM336H ADXL345 y DS18B20. 3 Mostrar recepción XBee o Wi Fi local e historial. 4 Provocar salida controlada y observar evento. 5 Reconocer alerta sin resolver la condición activa. 6 Cortar Internet y continuar consulta local. 7 Interrumpir transmisión y mostrar dato vencido. 8 Recuperar secuencia sin duplicar. Un segundo nodo sólo se muestra real si existe completo; los escenarios sintéticos se identifican aparte.
+1598: Anexo 5 Trazabilidad de requerimientos funcionales
+1599: RF
+1600: Capacidad
+1601: Casos
+1602: Pruebas o indicador
+1603: RF 01
+1604: Registro individual
+1605: CU01
+1606: SW03
+1607: RF 02
+1608: Ubicación periódica
+1609: CU05
+1610: HW03 RF02 K02
+1611: RF 03
+1612: Zonas autorizadas
+1613: CU02
+1614: SW04
+1615: RF 04
+1616: Detectar salida
+1617: CU06
+1618: SW01 K04
+1619: RF 05
+1620: Alertar tras detección
+1621: CU06 CU09
+1622: SW06 K03
+1623: RF 06
+1624: Identificar animal y evento
+1625: CU03 CU07
+1626: SW05
+1627: RF 07
+1628: Historial de ubicación
+1629: CU04
+1630: SW02
+1631: RF 08
+1632: Actividad
+1633: CU05
+1634: HW03
+1635: RF 09
+1636: Baja actividad prolongada
+1637: CU06
+1638: SW01 ventana validada
+1639: RF 10
+1640: Temperatura asociada
+1641: CU05
+1642: HW03 interfaz térmica
+1643: RF 11
+1644: Alerta térmica configurada
+1645: CU06
+1646: SW01 umbral sintético
+1647: RF 12
+1648: Sensores en alerta
+1649: CU07
+1650: SW06
+1651: RF 13
+1652: Propietario destinatario
+1653: CU09
+1654: SW12
+1655: RF 14
+1656: Consulta digital
+1657: CU03
+1658: SW11
+1659: RF 15
+1660: Historial de eventos
+1661: CU04
+1662: SW06
+1663: RF 16
+1664: Intervalo configurable
+1665: CU08
+1666: SW07
+1667: RF 17
+1668: Asociación DIIO módulo
+1669: CU01
+1670: SW03
+1671: RF 18
+1672: Pérdida de comunicación
+1673: CU06
+1674: CO02 K02
+1675: RF 19
+1676: Severidad de alertas
+1677: CU06
+1678: SW06
+1679: RF 20
+1680: Rebaño sector y animal
+1681: CU03
+1682: SW11
+1683: RF 21
+1684: Contexto completo del evento
+1685: CU07
+1686: SW05 SW06
+1687: RF 22
+1688: Historial por período
+1689: CU04
+1690: SW02 SW11
+1691: RF 23
+1692: Orientación carne o leche
+1693: CU01
+1694: SW03
+1695: RF 24
+1696: Recomendación preventiva
+1697: CU06
+1698: SW06 texto no diagnóstico
+1699: Los identificadores corresponden a los requerimientos del primer informe. La latencia de RF05 se mide desde detección; RF04 incorpora la periodicidad de muestreo. RF09 y RF11 se habilitan para operación sólo con una configuración validada; la prueba de una regla sintética no acredita una interpretación clínica.
+1700: Trazabilidad no funcional y cierre de decisiones
+1701: RNF
+1702: Condición de diseño
+1703: Validación
+1704: 01
+1705: Cobertura en predio extenso y obstáculos
+1706: RF02 mapa y K01 K02
+1707: 02
+1708: Comunicación rural
+1709: RF01 RF02 CO01
+1710: 03
+1711: Autonomía suficiente
+1712: HW04 K08
+1713: 04
+1714: Exposición a exteriores
+1715: ME01 gabinete y sellos sin grado IP supuesto
+1716: 05
+1717: Seguridad sobre animal
+1718: ME01 revisión de responsable y retiro ante molestia
+1719: 06
+1720: Costo accesible
+1721: BOM costo instalado y aceptación del productor
+1722: 07
+1723: Latencia mínima
+1724: K03 K04 y acuerdo de T
+1725: 08
+1726: Recepción local sin Internet
+1727: CO01 con servidor y LAN operativos
+1728: 09
+1729: Separación de servicios externos
+1730: CO01 SW12 cola de avisos
+1731: 10
+1732: Web adaptable
+1733: SW11 escritorio y teléfono
+1734: 11
+1735: Retención histórica definida
+1736: CO03 política documentada y restauración
+1737: Decisiones a cerrar antes de fabricar o instalar
+1738: Decisión
+1739: Responsable y evidencia de cierre
+1740: Un nodo académico y par XBee
+1741: Equipo y guía; inventario firmware compatible y alcance de demo.
+1742: PCB pinout y alimentación
+1743: Boris; ERC DRC huellas revisión de tensión y carga.
+1744: Firmware Wio E5 y perfil AU915
+1745: Boris y Fabián; build reproducible y RF01.
+1746: Contacto térmico y montaje
+1747: Equipo y responsable del ganado; HW03 ME01.
+1748: Ubicación altura y cantidad de estaciones
+1749: Equipo y productor; mapa campaña de radio y EN01.
+1750: Impuestos fletes instalación y OPEX
+1751: Equipo y proveedor; oferta desglosada con validez.
+1752: Canal de aviso SLA y privacidad
+1753: Equipo y productor; contratación pruebas y acta.
+1754: Cronograma académico
+1755: Equipo y guía; fechas de evaluación y revisión de hitos.
+1756: La entrega final reúne informe, inventario, plano y versiones liberadas, resultados de pruebas, presupuesto comercial actualizado, manual de operación y actas. Cada modificación de componente o cantidad revisa su efecto en energía, cobertura, pruebas y costo antes de cambiar esta base.

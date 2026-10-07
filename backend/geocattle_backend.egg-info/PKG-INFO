@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: geocattle-backend
+Version: 0.1.0
+Requires-Python: >=3.11
+Requires-Dist: fastapi<1,>=0.115
+Requires-Dist: uvicorn[standard]<1,>=0.32
+Requires-Dist: sqlalchemy<3,>=2.0
+Requires-Dist: psycopg[binary]<4,>=3.2
+Requires-Dist: pydantic-settings<3,>=2.6
+Requires-Dist: argon2-cffi<26,>=23.1
+Requires-Dist: paho-mqtt<3,>=2.1
+Requires-Dist: httpx<1,>=0.27
+Provides-Extra: test
+Requires-Dist: pytest<10,>=8; extra == "test"

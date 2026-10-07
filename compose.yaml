@@ -1,0 +1,212 @@
+name: ${COMPOSE_PROJECT_NAME:-geocattle-simulation}
+
+x-backend: &backend
+  image: ${COMPOSE_PROJECT_NAME:-geocattle-simulation}-backend:0.1.0
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  environment: &backend-env
+    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-geocattle}:${POSTGRES_PASSWORD:?Ejecute scripts/configure.py}@database:5432/${POSTGRES_DB:-geocattle_simulation}
+    APP_DATABASE_PASSWORD: ${APP_DATABASE_PASSWORD:?Ejecute scripts/configure.py}
+    APP_ENV: ${APP_ENV:-simulation}
+    SIMULATION_ENABLED: ${SIMULATION_ENABLED:-true}
+    SESSION_SECRET: ${SESSION_SECRET:?Ejecute scripts/configure.py}
+    INGEST_KEY: ${INGEST_KEY:?Ejecute scripts/configure.py}
+    DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+    COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080}
+    MQTT_HOST: broker
+    MQTT_PORT: 1883
+    MQTT_USERNAME: ${MQTT_USERNAME:-geocattle}
+    MQTT_PASSWORD: ${MQTT_PASSWORD:?Ejecute scripts/configure.py}
+    MQTT_TOPIC: ${MQTT_TOPIC:-application/+/device/+/event/up}
+    MQTT_SPOOL_PATH: /data/mqtt-spool.sqlite3
+    CONFIG_DOWNLINK_ENABLED: ${CONFIG_DOWNLINK_ENABLED:-false}
+    CONFIG_CODEC_VALIDATED: ${CONFIG_CODEC_VALIDATED:-false}
+    CHIRPSTACK_APPLICATION_ID: ${CHIRPSTACK_APPLICATION_ID:-}
+    CONFIG_FPORT: ${CONFIG_FPORT:-10}
+    NOTIFICATION_WEBHOOK_URL: ${NOTIFICATION_WEBHOOK_URL:-}
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  database:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-geocattle_simulation}
+      POSTGRES_USER: ${POSTGRES_USER:-geocattle}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Ejecute scripts/configure.py}
+    ports:
+      - 127.0.0.1:${DB_PORT:-55432}:5432
+    volumes:
+      - database-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    <<: *backend
+    command: [python, -m, geocattle.migrate]
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      DATABASE_URL: postgresql+psycopg://geocattle_app:${APP_DATABASE_PASSWORD:?Ejecute scripts/configure.py}@database:5432/${POSTGRES_DB:-geocattle_simulation}
+    command: [uvicorn, geocattle.main:app, --host, 0.0.0.0, --port, '8000']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://localhost:8000/api/v1/health", timeout=3)']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      DATABASE_URL: postgresql+psycopg://geocattle_app:${APP_DATABASE_PASSWORD:?Ejecute scripts/configure.py}@database:5432/${POSTGRES_DB:-geocattle_simulation}
+    command: [python, -m, geocattle.worker]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/web.Dockerfile
+    ports:
+      - 127.0.0.1:${WEB_PORT:-8080}:80
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  seed:
+    <<: *backend
+    profiles: [tools]
+    command: [python, -m, geocattle.seed]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: 'no'
+
+  bootstrap:
+    <<: *backend
+    profiles: [tools]
+    environment:
+      <<: *backend-env
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    command: [python, -m, geocattle.bootstrap]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: 'no'
+
+  tls:
+    image: caddy:2-alpine
+    profiles: [tls]
+    ports:
+      - 127.0.0.1:${TLS_PORT:-8443}:443
+    volumes:
+      - ./infrastructure/Caddyfile:/etc/caddy/Caddyfile:ro
+      - tls-data:/data
+      - tls-config:/config
+    depends_on:
+      web:
+        condition: service_started
+    restart: unless-stopped
+
+  broker:
+    image: eclipse-mosquitto:2.0
+    profiles: [iot]
+    environment:
+      MQTT_USERNAME: ${MQTT_USERNAME:-geocattle}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?Ejecute scripts/configure.py}
+    entrypoint: [/bin/sh, /opt/geocattle/broker-entrypoint.sh]
+    ports:
+      - 127.0.0.1:${MQTT_PORT:-1884}:1883
+    volumes:
+      - ./infrastructure/mosquitto:/opt/geocattle:ro
+      - broker-data:/mosquitto/data
+    restart: unless-stopped
+
+  ingestor:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      DATABASE_URL: postgresql+psycopg://geocattle_app:${APP_DATABASE_PASSWORD:?Ejecute scripts/configure.py}@database:5432/${POSTGRES_DB:-geocattle_simulation}
+    profiles: [iot]
+    command: [python, -m, geocattle.ingestor]
+    volumes:
+      - ingestion-spool:/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      broker:
+        condition: service_started
+
+  chirpstack-database:
+    image: postgres:16-alpine
+    profiles: [lorawan]
+    environment:
+      POSTGRES_DB: chirpstack
+      POSTGRES_USER: chirpstack
+      POSTGRES_PASSWORD: ${CHIRPSTACK_DB_PASSWORD:?Ejecute scripts/configure.py}
+    volumes:
+      - chirpstack-database-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U chirpstack -d chirpstack']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    profiles: [lorawan]
+    command: [redis-server, --appendonly, 'yes']
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  chirpstack:
+    image: chirpstack/chirpstack:4
+    profiles: [lorawan]
+    command: [-c, /etc/chirpstack]
+    environment:
+      CHIRPSTACK_DB_PASSWORD: ${CHIRPSTACK_DB_PASSWORD:?Ejecute scripts/configure.py}
+      CHIRPSTACK_API_SECRET: ${CHIRPSTACK_API_SECRET:?Ejecute scripts/configure.py}
+      MQTT_USERNAME: ${MQTT_USERNAME:-geocattle}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?Ejecute scripts/configure.py}
+    ports:
+      - 127.0.0.1:${CHIRPSTACK_PORT:-8081}:8080
+    volumes:
+      - ./infrastructure/chirpstack:/etc/chirpstack:ro
+    depends_on:
+      chirpstack-database:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  database-data:
+  broker-data:
+  ingestion-spool:
+  chirpstack-database-data:
+  redis-data:
+  tls-data:
+  tls-config:

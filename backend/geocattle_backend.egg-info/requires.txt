@@ -1,0 +1,11 @@
+fastapi<1,>=0.115
+uvicorn[standard]<1,>=0.32
+sqlalchemy<3,>=2.0
+psycopg[binary]<4,>=3.2
+pydantic-settings<3,>=2.6
+argon2-cffi<26,>=23.1
+paho-mqtt<3,>=2.1
+httpx<1,>=0.27
+
+[test]
+pytest<10,>=8

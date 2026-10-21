@@ -1,0 +1,29 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+title Servicios técnicos · ingestión, alertas y avisos
+actor "Collar / red IoT" as collar
+actor "Servicio de ingestión" as ingest
+actor "Servicio de avisos" as notify
+actor "Dueño" as owner
+actor "Trabajador" as worker
+actor "Veterinario" as vet
+rectangle "GeoCattle · aplicación de gestión" {
+  usecase "CU-26\nRecibir telemetría" as CU_26
+  usecase "CU-27\nGenerar y atender alerta" as CU_27
+  usecase "CU-28\nConfigurar collar y entregar avisos" as CU_28
+}
+collar -- CU_26
+ingest -- CU_26
+ingest -- CU_27
+notify -- CU_28
+owner -- CU_27
+owner -- CU_28
+worker -- CU_27
+vet -- CU_27
+note "Los servicios técnicos son actores externos al límite de la aplicación de gestión." as note0
+note "CU-27 comprende generar (servicio) y atender (personas); no son permisos intercambiables." as note1
+note "CU-28 comprende configurar (dueño) y entregar avisos (servicio)." as note2
+note "Cada servicio usa credencial técnica y alcance restringido." as note3
+@enduml

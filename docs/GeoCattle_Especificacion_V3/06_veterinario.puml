@@ -1,0 +1,32 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+title Veterinario · ficha técnica y sanitaria
+actor "Veterinario" as vet
+rectangle "GeoCattle · aplicación de gestión" {
+  usecase "CU-01\nIniciar sesión y seleccionar contexto" as CU_01
+  usecase "CU-02\nCerrar sesión o recuperar acceso" as CU_02
+  usecase "CU-07\nAdministrar perfil propio" as CU_07
+  usecase "CU-14\nEnrolarse por invitación" as CU_14
+  usecase "CU-15\nConsultar mapa del predio" as CU_15
+  usecase "CU-16\nConsultar ficha e historial" as CU_16
+  usecase "CU-22\nModificar ficha técnica" as CU_22
+  usecase "CU-23\nGestionar ficha sanitaria" as CU_23
+  usecase "CU-24\nPlanificar próxima atención" as CU_24
+  usecase "CU-27\nGenerar y atender alerta" as CU_27
+}
+vet -- CU_01
+vet -- CU_02
+vet -- CU_07
+vet -- CU_14
+vet -- CU_15
+vet -- CU_16
+vet -- CU_22
+vet -- CU_23
+vet -- CU_24
+vet -- CU_27
+note "CU-22, CU-23 y CU-24 se aplican directamente: no requieren aprobación del dueño." as note0
+note "Acceso solo a predios con membresía vigente; cada cambio conserva autoría y auditoría." as note1
+note "El perfil no administra colaboradores, DIIO, predios ni asignaciones de collar." as note2
+@enduml

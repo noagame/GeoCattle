@@ -1,0 +1,422 @@
+<mxfile host="app.diagrams.net" version="24.7.17">
+  <diagram id="Identidad" name="Identidad">
+    <mxGraphModel dx="1422" dy="850" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1500" pageHeight="2500">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="users" value="&lt;b&gt;users&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;email : text&lt;br&gt;password_hash : text&lt;br&gt;full_name : text&lt;br&gt;phone : text&lt;br&gt;status : text&lt;br&gt;email_verified_at : timestamptz&lt;br&gt;version : bigint&lt;br&gt;created_at : timestamptz&lt;br&gt;updated_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e8efff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="80" width="420" height="270" />
+        </mxCell>
+        <mxCell id="platform_admins" value="&lt;b&gt;platform_admins&lt;/b&gt;&lt;br&gt;&lt;hr&gt;user_id : uuid [PK] [FK]&lt;br&gt;active : boolean&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e8efff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="80" width="420" height="116" />
+        </mxCell>
+        <mxCell id="mfa_factors" value="&lt;b&gt;mfa_factors&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;user_id : uuid [FK]&lt;br&gt;kind : text&lt;br&gt;credential_id : text&lt;br&gt;protected_data : bytea&lt;br&gt;verified_at : timestamptz&lt;br&gt;revoked_at : timestamptz&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e8efff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="80" width="420" height="226" />
+        </mxCell>
+        <mxCell id="mfa_recovery_codes" value="&lt;b&gt;mfa_recovery_codes&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;user_id : uuid [FK]&lt;br&gt;code_hash : text&lt;br&gt;used_at : timestamptz&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e8efff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="286" width="420" height="160" />
+        </mxCell>
+        <mxCell id="login_sessions" value="&lt;b&gt;login_sessions&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;user_id : uuid [FK]&lt;br&gt;token_hash : text&lt;br&gt;csrf_hash : text&lt;br&gt;authenticated_at : timestamptz&lt;br&gt;mfa_verified_at : timestamptz&lt;br&gt;expires_at : timestamptz&lt;br&gt;revoked_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e8efff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="396" width="420" height="226" />
+        </mxCell>
+        <mxCell id="security_challenges" value="&lt;b&gt;security_challenges&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;session_id : uuid [FK]&lt;br&gt;purpose : text&lt;br&gt;operation_digest : text&lt;br&gt;expires_at : timestamptz&lt;br&gt;verified_at : timestamptz&lt;br&gt;consumed_at : timestamptz&lt;br&gt;attempts : integer" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e8efff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="440" width="420" height="226" />
+        </mxCell>
+        <mxCell id="account_tokens" value="&lt;b&gt;account_tokens&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;user_id : uuid [FK]&lt;br&gt;purpose : text&lt;br&gt;token_hash : text&lt;br&gt;pending_email : text&lt;br&gt;expires_at : timestamptz&lt;br&gt;consumed_at : timestamptz&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e8efff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="536" width="420" height="226" />
+        </mxCell>
+        <mxCell id="roles" value="&lt;b&gt;roles&lt;/b&gt;&lt;br&gt;&lt;hr&gt;code : text [PK]&lt;br&gt;name : text&lt;br&gt;scope : text" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e8efff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="712" width="420" height="116" />
+        </mxCell>
+        <mxCell id="permissions" value="&lt;b&gt;permissions&lt;/b&gt;&lt;br&gt;&lt;hr&gt;code : text [PK]&lt;br&gt;description : text" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e8efff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="756" width="420" height="94" />
+        </mxCell>
+        <mxCell id="role_permissions" value="&lt;b&gt;role_permissions&lt;/b&gt;&lt;br&gt;&lt;hr&gt;role_code : text [FK]&lt;br&gt;permission_code : text [FK]" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e8efff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="852" width="420" height="94" />
+        </mxCell>
+        <mxCell id="platform_admins_user_id" value="user_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="platform_admins" target="users" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="mfa_factors_user_id" value="user_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="mfa_factors" target="users" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="mfa_recovery_codes_user_id" value="user_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="mfa_recovery_codes" target="users" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="login_sessions_user_id" value="user_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="login_sessions" target="users" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="security_challenges_session_id" value="session_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="security_challenges" target="login_sessions" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="account_tokens_user_id" value="user_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="account_tokens" target="users" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="role_permissions_role_code" value="role_code" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="role_permissions" target="roles" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="role_permissions_permission_code" value="permission_code" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="role_permissions" target="permissions" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="Predios" name="Predios">
+    <mxGraphModel dx="1422" dy="850" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1500" pageHeight="2500">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="owner_accounts" value="&lt;b&gt;owner_accounts&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;owner_user_id : uuid [FK]&lt;br&gt;display_name : text&lt;br&gt;max_farms : integer&lt;br&gt;active : boolean&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e0f2ed;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="80" width="420" height="182" />
+        </mxCell>
+        <mxCell id="farms" value="&lt;b&gt;farms&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;account_id : uuid [FK]&lt;br&gt;name : text&lt;br&gt;rup : text&lt;br&gt;address : text&lt;br&gt;region : text&lt;br&gt;commune : text&lt;br&gt;timezone : text&lt;br&gt;boundary : geometry(MultiPolygon,4326)&lt;br&gt;active : boolean&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e0f2ed;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="80" width="420" height="292" />
+        </mxCell>
+        <mxCell id="farm_memberships" value="&lt;b&gt;farm_memberships&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;user_id : uuid [FK]&lt;br&gt;role_code : text [FK]&lt;br&gt;granted_by : uuid [FK]&lt;br&gt;valid_from : timestamptz&lt;br&gt;valid_to : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e0f2ed;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="80" width="420" height="204" />
+        </mxCell>
+        <mxCell id="invitations" value="&lt;b&gt;invitations&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;email : text&lt;br&gt;role_code : text [FK]&lt;br&gt;token_hash : text&lt;br&gt;invited_by : uuid [FK]&lt;br&gt;expires_at : timestamptz&lt;br&gt;accepted_at : timestamptz&lt;br&gt;accepted_user_id : uuid [FK]&lt;br&gt;revoked_at : timestamptz&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e0f2ed;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="352" width="420" height="292" />
+        </mxCell>
+        <mxCell id="trust_grants" value="&lt;b&gt;trust_grants&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;membership_id : uuid [FK]&lt;br&gt;action : text&lt;br&gt;granted_by : uuid [FK]&lt;br&gt;valid_from : timestamptz&lt;br&gt;valid_to : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e0f2ed;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="374" width="420" height="204" />
+        </mxCell>
+        <mxCell id="owner_accounts_refs" value="Referencias: owner_user_id → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="268" width="420" height="64" />
+        </mxCell>
+        <mxCell id="farms_account_id" value="account_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="farms" target="owner_accounts" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="farm_memberships_farm_id" value="farm_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="farm_memberships" target="farms" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="farm_memberships_refs" value="Referencias: user_id → users; role_code → roles; granted_by → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="290" width="420" height="64" />
+        </mxCell>
+        <mxCell id="invitations_farm_id" value="farm_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="invitations" target="farms" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="invitations_refs" value="Referencias: role_code → roles; invited_by → users; accepted_user_id → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="650" width="420" height="64" />
+        </mxCell>
+        <mxCell id="trust_grants_farm_id" value="farm_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="trust_grants" target="farms" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="trust_grants_membership_id" value="membership_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="trust_grants" target="farm_memberships" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="trust_grants_refs" value="Referencias: granted_by → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="584" width="420" height="64" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="Ganado y espacio" name="Ganado y espacio">
+    <mxGraphModel dx="1422" dy="850" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1500" pageHeight="2500">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="sectors" value="&lt;b&gt;sectors&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;name : text&lt;br&gt;land_use : text&lt;br&gt;description : text&lt;br&gt;active : boolean" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#eaf2d8;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="80" width="420" height="182" />
+        </mxCell>
+        <mxCell id="geofences" value="&lt;b&gt;geofences&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;sector_id : uuid [FK]&lt;br&gt;version : integer&lt;br&gt;geometry : geometry(Polygon,4326)&lt;br&gt;created_by : uuid [FK]&lt;br&gt;valid_from : timestamptz&lt;br&gt;valid_to : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#eaf2d8;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="80" width="420" height="226" />
+        </mxCell>
+        <mxCell id="animals" value="&lt;b&gt;animals&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;diio : text&lt;br&gt;name : text&lt;br&gt;species : text&lt;br&gt;breed : text&lt;br&gt;color : text&lt;br&gt;sex : text&lt;br&gt;birth_date : date&lt;br&gt;birth_date_estimated : boolean&lt;br&gt;production_type : text&lt;br&gt;status : text&lt;br&gt;version : bigint&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#eaf2d8;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="80" width="420" height="336" />
+        </mxCell>
+        <mxCell id="animal_holdings" value="&lt;b&gt;animal_holdings&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;animal_id : uuid [FK]&lt;br&gt;valid_from : timestamptz&lt;br&gt;valid_to : timestamptz&lt;br&gt;reason : text" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#eaf2d8;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="352" width="420" height="182" />
+        </mxCell>
+        <mxCell id="pasture_assignments" value="&lt;b&gt;pasture_assignments&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;animal_holding_id : uuid [FK]&lt;br&gt;animal_id : uuid [FK]&lt;br&gt;geofence_id : uuid [FK]&lt;br&gt;assigned_by : uuid [FK]&lt;br&gt;valid_from : timestamptz&lt;br&gt;valid_to : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#eaf2d8;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="396" width="420" height="226" />
+        </mxCell>
+        <mxCell id="sectors_refs" value="Referencias: farm_id → farms" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="268" width="420" height="64" />
+        </mxCell>
+        <mxCell id="geofences_sector_id" value="sector_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="geofences" target="sectors" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="geofences_refs" value="Referencias: farm_id → farms; created_by → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="312" width="420" height="64" />
+        </mxCell>
+        <mxCell id="animal_holdings_animal_id" value="animal_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="animal_holdings" target="animals" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="animal_holdings_refs" value="Referencias: farm_id → farms" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="540" width="420" height="64" />
+        </mxCell>
+        <mxCell id="pasture_assignments_animal_holding_id" value="animal_holding_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="pasture_assignments" target="animal_holdings" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="pasture_assignments_animal_id" value="animal_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="pasture_assignments" target="animals" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="pasture_assignments_geofence_id" value="geofence_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="pasture_assignments" target="geofences" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="pasture_assignments_refs" value="Referencias: farm_id → farms; assigned_by → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="628" width="420" height="64" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="IoT" name="IoT">
+    <mxGraphModel dx="1422" dy="850" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1500" pageHeight="2500">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="gateways" value="&lt;b&gt;gateways&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;gateway_eui : text&lt;br&gt;name : text&lt;br&gt;position : geometry(Point,4326)&lt;br&gt;status : text&lt;br&gt;installed_at : timestamptz&lt;br&gt;last_seen_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e0f0ff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="80" width="420" height="226" />
+        </mxCell>
+        <mxCell id="devices" value="&lt;b&gt;devices&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;serial_number : text&lt;br&gt;dev_eui : text&lt;br&gt;transport : text&lt;br&gt;hardware_revision : text&lt;br&gt;firmware_version : text&lt;br&gt;status : text&lt;br&gt;interval_seconds : integer&lt;br&gt;config_version : integer&lt;br&gt;last_observed_at : timestamptz&lt;br&gt;last_received_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e0f0ff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="80" width="420" height="314" />
+        </mxCell>
+        <mxCell id="assignments" value="&lt;b&gt;assignments&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;animal_holding_id : uuid [FK]&lt;br&gt;animal_id : uuid [FK]&lt;br&gt;device_id : uuid [FK]&lt;br&gt;assigned_by : uuid [FK]&lt;br&gt;valid_from : timestamptz&lt;br&gt;valid_to : timestamptz&lt;br&gt;reason : text" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e0f0ff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="80" width="420" height="248" />
+        </mxCell>
+        <mxCell id="telemetry" value="&lt;b&gt;telemetry&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;device_id : uuid [FK]&lt;br&gt;assignment_id : uuid [FK]&lt;br&gt;animal_id : uuid [FK]&lt;br&gt;session_id : text&lt;br&gt;seq : bigint&lt;br&gt;observed_at : timestamptz&lt;br&gt;received_at : timestamptz&lt;br&gt;point : geometry(Point,4326)&lt;br&gt;gnss_valid : boolean&lt;br&gt;surface_temperature_c : numeric&lt;br&gt;activity_index : numeric&lt;br&gt;battery_mv : integer&lt;br&gt;source : text&lt;br&gt;quality : jsonb" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e0f0ff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="396" width="420" height="402" />
+        </mxCell>
+        <mxCell id="telemetry_receptions" value="&lt;b&gt;telemetry_receptions&lt;/b&gt;&lt;br&gt;&lt;hr&gt;telemetry_id : uuid [FK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;gateway_id : uuid [FK]&lt;br&gt;received_at : timestamptz&lt;br&gt;rssi_dbm : numeric&lt;br&gt;snr_db : numeric" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e0f0ff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="418" width="420" height="182" />
+        </mxCell>
+        <mxCell id="device_configs" value="&lt;b&gt;device_configs&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;device_id : uuid [FK]&lt;br&gt;version : integer&lt;br&gt;interval_seconds : integer&lt;br&gt;status : text&lt;br&gt;requested_by : uuid [FK]&lt;br&gt;requested_at : timestamptz&lt;br&gt;sent_at : timestamptz&lt;br&gt;applied_at : timestamptz&lt;br&gt;error : text" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e0f0ff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="484" width="420" height="292" />
+        </mxCell>
+        <mxCell id="maintenance" value="&lt;b&gt;maintenance&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;device_id : uuid [FK]&lt;br&gt;request_id : uuid [FK]&lt;br&gt;responsible_id : uuid [FK]&lt;br&gt;kind : text&lt;br&gt;battery_id : text&lt;br&gt;result : text&lt;br&gt;occurred_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#e0f0ff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="690" width="420" height="248" />
+        </mxCell>
+        <mxCell id="gateways_refs" value="Referencias: farm_id → farms" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="312" width="420" height="64" />
+        </mxCell>
+        <mxCell id="devices_refs" value="Referencias: farm_id → farms" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="400" width="420" height="64" />
+        </mxCell>
+        <mxCell id="assignments_device_id" value="device_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="assignments" target="devices" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="assignments_refs" value="Referencias: farm_id → farms; animal_holding_id → animal_holdings; animal_id → animals; assigned_by → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="334" width="420" height="64" />
+        </mxCell>
+        <mxCell id="telemetry_device_id" value="device_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="telemetry" target="devices" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="telemetry_assignment_id" value="assignment_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="telemetry" target="assignments" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="telemetry_refs" value="Referencias: farm_id → farms; animal_id → animals" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="804" width="420" height="64" />
+        </mxCell>
+        <mxCell id="telemetry_receptions_telemetry_id" value="telemetry_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="telemetry_receptions" target="telemetry" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="telemetry_receptions_gateway_id" value="gateway_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="telemetry_receptions" target="gateways" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="telemetry_receptions_refs" value="Referencias: farm_id → farms" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="606" width="420" height="64" />
+        </mxCell>
+        <mxCell id="device_configs_device_id" value="device_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="device_configs" target="devices" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="device_configs_refs" value="Referencias: farm_id → farms; requested_by → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="782" width="420" height="64" />
+        </mxCell>
+        <mxCell id="maintenance_device_id" value="device_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="maintenance" target="devices" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="maintenance_refs" value="Referencias: farm_id → farms; request_id → change_requests; responsible_id → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="944" width="420" height="64" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="Operación" name="Operación">
+    <mxGraphModel dx="1422" dy="850" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1500" pageHeight="2500">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="animal_states" value="&lt;b&gt;animal_states&lt;/b&gt;&lt;br&gt;&lt;hr&gt;animal_id : uuid [PK] [FK]&lt;br&gt;telemetry_id : uuid [FK]&lt;br&gt;position_telemetry_id : uuid [FK]&lt;br&gt;geofence_status : text&lt;br&gt;outside_count : integer&lt;br&gt;updated_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#fff0d7;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="80" width="420" height="182" />
+        </mxCell>
+        <mxCell id="rule_settings" value="&lt;b&gt;rule_settings&lt;/b&gt;&lt;br&gt;&lt;hr&gt;farm_id : uuid [PK] [FK]&lt;br&gt;version : integer&lt;br&gt;battery_low_mv : integer&lt;br&gt;temperature_enabled : boolean&lt;br&gt;temperature_high_c : numeric&lt;br&gt;activity_enabled : boolean&lt;br&gt;activity_low_threshold : numeric&lt;br&gt;activity_window_minutes : integer&lt;br&gt;proximity_enabled : boolean&lt;br&gt;proximity_meters : numeric&lt;br&gt;updated_by : uuid [FK]&lt;br&gt;updated_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#fff0d7;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="80" width="420" height="314" />
+        </mxCell>
+        <mxCell id="events" value="&lt;b&gt;events&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;device_id : uuid [FK]&lt;br&gt;animal_id : uuid [FK]&lt;br&gt;telemetry_id : uuid [FK]&lt;br&gt;geofence_id : uuid [FK]&lt;br&gt;type : text&lt;br&gt;severity : text&lt;br&gt;condition : text&lt;br&gt;attention : text&lt;br&gt;opened_at : timestamptz&lt;br&gt;resolved_at : timestamptz&lt;br&gt;detail : jsonb" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#fff0d7;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="80" width="420" height="336" />
+        </mxCell>
+        <mxCell id="event_actions" value="&lt;b&gt;event_actions&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;event_id : uuid [FK]&lt;br&gt;actor_id : uuid [FK]&lt;br&gt;action : text&lt;br&gt;note : text&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#fff0d7;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="352" width="420" height="204" />
+        </mxCell>
+        <mxCell id="notifications" value="&lt;b&gt;notifications&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;recipient_id : uuid [FK]&lt;br&gt;event_id : uuid [FK]&lt;br&gt;request_id : uuid [FK]&lt;br&gt;schedule_id : uuid [FK]&lt;br&gt;channel : text&lt;br&gt;recipient_address : text&lt;br&gt;status : text&lt;br&gt;message : text&lt;br&gt;next_attempt_at : timestamptz&lt;br&gt;read_at : timestamptz&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#fff0d7;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="484" width="420" height="336" />
+        </mxCell>
+        <mxCell id="notification_attempts" value="&lt;b&gt;notification_attempts&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;notification_id : uuid [FK]&lt;br&gt;attempt : integer&lt;br&gt;status : text&lt;br&gt;provider_id : text&lt;br&gt;error : text&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#fff0d7;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="506" width="420" height="204" />
+        </mxCell>
+        <mxCell id="animal_states_refs" value="Referencias: animal_id → animals; telemetry_id → telemetry; position_telemetry_id → telemetry" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="268" width="420" height="64" />
+        </mxCell>
+        <mxCell id="rule_settings_refs" value="Referencias: farm_id → farms; updated_by → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="400" width="420" height="64" />
+        </mxCell>
+        <mxCell id="events_refs" value="Referencias: farm_id → farms; device_id → devices; animal_id → animals; telemetry_id → telemetry; geofence_id → geofences" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="422" width="420" height="64" />
+        </mxCell>
+        <mxCell id="event_actions_event_id" value="event_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="event_actions" target="events" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="event_actions_refs" value="Referencias: farm_id → farms; actor_id → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="562" width="420" height="64" />
+        </mxCell>
+        <mxCell id="notifications_event_id" value="event_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="notifications" target="events" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="notifications_refs" value="Referencias: farm_id → farms; recipient_id → users; request_id → change_requests; schedule_id → health_schedules" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="826" width="420" height="64" />
+        </mxCell>
+        <mxCell id="notification_attempts_notification_id" value="notification_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="notification_attempts" target="notifications" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="Aprobaciones" name="Aprobaciones">
+    <mxGraphModel dx="1422" dy="850" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1500" pageHeight="2500">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="change_requests" value="&lt;b&gt;change_requests&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;requested_by : uuid [FK]&lt;br&gt;membership_id : uuid [FK]&lt;br&gt;action : text&lt;br&gt;animal_holding_id : uuid [FK]&lt;br&gt;animal_id : uuid [FK]&lt;br&gt;device_id : uuid [FK]&lt;br&gt;expected_version : bigint&lt;br&gt;payload : jsonb&lt;br&gt;idempotency_key : uuid&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#ffeadf;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="80" width="420" height="314" />
+        </mxCell>
+        <mxCell id="change_decisions" value="&lt;b&gt;change_decisions&lt;/b&gt;&lt;br&gt;&lt;hr&gt;request_id : uuid [PK] [FK]&lt;br&gt;decided_by : uuid [FK]&lt;br&gt;decision : text&lt;br&gt;trust_grant_id : uuid [FK]&lt;br&gt;reason : text&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#ffeadf;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="80" width="420" height="182" />
+        </mxCell>
+        <mxCell id="change_applications" value="&lt;b&gt;change_applications&lt;/b&gt;&lt;br&gt;&lt;hr&gt;request_id : uuid [PK] [FK]&lt;br&gt;entity_type : text&lt;br&gt;entity_id : uuid&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#ffeadf;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="80" width="420" height="138" />
+        </mxCell>
+        <mxCell id="change_requests_refs" value="Referencias: farm_id → farms; requested_by → users; membership_id → farm_memberships; animal_holding_id → animal_holdings; animal_id → animals; device_id → devices" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="400" width="420" height="64" />
+        </mxCell>
+        <mxCell id="change_decisions_request_id" value="request_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="change_decisions" target="change_requests" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="change_decisions_refs" value="Referencias: decided_by → users; trust_grant_id → trust_grants" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="268" width="420" height="64" />
+        </mxCell>
+        <mxCell id="change_applications_request_id" value="request_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="change_applications" target="change_decisions" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="Salud" name="Salud">
+    <mxGraphModel dx="1422" dy="850" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1500" pageHeight="2500">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="animal_measurements" value="&lt;b&gt;animal_measurements&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;animal_holding_id : uuid [FK]&lt;br&gt;animal_id : uuid [FK]&lt;br&gt;request_id : uuid [FK]&lt;br&gt;measured_at : timestamptz&lt;br&gt;weight_kg : numeric&lt;br&gt;height_cm : numeric&lt;br&gt;corrects_id : uuid [FK]" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#f7e5f0;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="80" width="420" height="248" />
+        </mxCell>
+        <mxCell id="animal_reports" value="&lt;b&gt;animal_reports&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;animal_holding_id : uuid [FK]&lt;br&gt;request_id : uuid [FK]&lt;br&gt;description : text&lt;br&gt;occurred_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#f7e5f0;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="80" width="420" height="182" />
+        </mxCell>
+        <mxCell id="health_events" value="&lt;b&gt;health_events&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;animal_holding_id : uuid [FK]&lt;br&gt;request_id : uuid [FK]&lt;br&gt;event_type : text&lt;br&gt;operation : text&lt;br&gt;target_event_id : uuid [FK]&lt;br&gt;occurred_at : timestamptz&lt;br&gt;recorded_by : uuid [FK]&lt;br&gt;description : text&lt;br&gt;diagnosis : text&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#f7e5f0;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="80" width="420" height="314" />
+        </mxCell>
+        <mxCell id="health_treatments" value="&lt;b&gt;health_treatments&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;health_event_id : uuid [FK]&lt;br&gt;product_name : text&lt;br&gt;product_registration : text&lt;br&gt;batch_number : text&lt;br&gt;dose_value : numeric&lt;br&gt;dose_unit : text&lt;br&gt;route : text&lt;br&gt;administered_at : timestamptz&lt;br&gt;withdrawal_meat_until : date&lt;br&gt;withdrawal_milk_until : date&lt;br&gt;withdrawal_basis : text" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#f7e5f0;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="352" width="420" height="336" />
+        </mxCell>
+        <mxCell id="health_schedules" value="&lt;b&gt;health_schedules&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;animal_holding_id : uuid [FK]&lt;br&gt;request_id : uuid [FK]&lt;br&gt;kind : text&lt;br&gt;description : text&lt;br&gt;due_at : timestamptz&lt;br&gt;operation : text&lt;br&gt;target_schedule_id : uuid [FK]&lt;br&gt;completed_event_id : uuid [FK]&lt;br&gt;created_by : uuid [FK]&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#f7e5f0;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="418" width="420" height="314" />
+        </mxCell>
+        <mxCell id="animal_measurements_refs" value="Referencias: farm_id → farms; animal_holding_id → animal_holdings; animal_id → animals; request_id → change_requests; corrects_id → animal_measurements" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="334" width="420" height="64" />
+        </mxCell>
+        <mxCell id="animal_reports_refs" value="Referencias: farm_id → farms; animal_holding_id → animal_holdings; request_id → change_requests" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="268" width="420" height="64" />
+        </mxCell>
+        <mxCell id="health_events_refs" value="Referencias: farm_id → farms; animal_holding_id → animal_holdings; request_id → change_requests; target_event_id → health_events; recorded_by → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="400" width="420" height="64" />
+        </mxCell>
+        <mxCell id="health_treatments_health_event_id" value="health_event_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="health_treatments" target="health_events" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="health_treatments_refs" value="Referencias: farm_id → farms" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="694" width="420" height="64" />
+        </mxCell>
+        <mxCell id="health_schedules_completed_event_id" value="completed_event_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="health_schedules" target="health_events" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="health_schedules_refs" value="Referencias: farm_id → farms; animal_holding_id → animal_holdings; request_id → change_requests; target_schedule_id → health_schedules; created_by → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="738" width="420" height="64" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="Administración" name="Administración">
+    <mxGraphModel dx="1422" dy="850" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1500" pageHeight="2500">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="audit_log" value="&lt;b&gt;audit_log&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;account_id : uuid [FK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;actor_id : uuid [FK]&lt;br&gt;session_id : uuid [FK]&lt;br&gt;actor_kind : text&lt;br&gt;action : text&lt;br&gt;entity_type : text&lt;br&gt;entity_id : uuid&lt;br&gt;before_data : jsonb&lt;br&gt;after_data : jsonb&lt;br&gt;ip_address : inet&lt;br&gt;request_id : text&lt;br&gt;occurred_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#ece8ff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="80" width="420" height="358" />
+        </mxCell>
+        <mxCell id="request_metrics" value="&lt;b&gt;request_metrics&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;account_id : uuid [FK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;actor_id : uuid [FK]&lt;br&gt;request_id : text&lt;br&gt;method : text&lt;br&gt;route_template : text&lt;br&gt;status_code : integer&lt;br&gt;duration_ms : numeric&lt;br&gt;request_bytes : bigint&lt;br&gt;response_bytes : bigint&lt;br&gt;occurred_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#ece8ff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="80" width="420" height="314" />
+        </mxCell>
+        <mxCell id="features" value="&lt;b&gt;features&lt;/b&gt;&lt;br&gt;&lt;hr&gt;code : text [PK]&lt;br&gt;name : text" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#ece8ff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="80" width="420" height="94" />
+        </mxCell>
+        <mxCell id="farm_features" value="&lt;b&gt;farm_features&lt;/b&gt;&lt;br&gt;&lt;hr&gt;farm_id : uuid [FK]&lt;br&gt;feature_code : text [FK]&lt;br&gt;enabled : boolean&lt;br&gt;enabled_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#ece8ff;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="264" width="420" height="138" />
+        </mxCell>
+        <mxCell id="audit_log_refs" value="Referencias: account_id → owner_accounts; farm_id → farms; actor_id → users; session_id → login_sessions" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="444" width="420" height="64" />
+        </mxCell>
+        <mxCell id="request_metrics_refs" value="Referencias: account_id → owner_accounts; farm_id → farms; actor_id → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="400" width="420" height="64" />
+        </mxCell>
+        <mxCell id="farm_features_feature_code" value="feature_code" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="farm_features" target="features" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="farm_features_refs" value="Referencias: farm_id → farms" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="408" width="420" height="64" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="Extensión FMA" name="Extensión FMA">
+    <mxGraphModel dx="1422" dy="850" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1500" pageHeight="2500">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="sag_movements" value="&lt;b&gt;sag_movements&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;farm_id : uuid [FK]&lt;br&gt;fma_folio : text&lt;br&gt;origin_rup : text&lt;br&gt;destination_rup : text&lt;br&gt;status : text&lt;br&gt;departure_at : timestamptz&lt;br&gt;arrival_at : timestamptz&lt;br&gt;external_evidence : text&lt;br&gt;created_by : uuid [FK]&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#efefef;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="80" width="420" height="292" />
+        </mxCell>
+        <mxCell id="movement_animals" value="&lt;b&gt;movement_animals&lt;/b&gt;&lt;br&gt;&lt;hr&gt;movement_id : uuid [FK]&lt;br&gt;animal_id : uuid [FK]&lt;br&gt;diio_snapshot : text" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#efefef;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="80" width="420" height="116" />
+        </mxCell>
+        <mxCell id="movement_status_events" value="&lt;b&gt;movement_status_events&lt;/b&gt;&lt;br&gt;&lt;hr&gt;id : uuid [PK]&lt;br&gt;movement_id : uuid [FK]&lt;br&gt;status : text&lt;br&gt;actor_id : uuid [FK]&lt;br&gt;reason : text&lt;br&gt;created_at : timestamptz" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fontFamily=Helvetica;fontSize=12;fillColor=#efefef;strokeColor=#496177;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="80" width="420" height="182" />
+        </mxCell>
+        <mxCell id="sag_movements_refs" value="Referencias: farm_id → farms; created_by → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="378" width="420" height="64" />
+        </mxCell>
+        <mxCell id="movement_animals_movement_id" value="movement_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="movement_animals" target="sag_movements" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="movement_animals_refs" value="Referencias: animal_id → animals" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="510" y="202" width="420" height="64" />
+        </mxCell>
+        <mxCell id="movement_status_events_movement_id" value="movement_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=ERone;startArrow=ERmany;fontSize=10;strokeColor=#637991;" edge="1" source="movement_status_events" target="sag_movements" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="movement_status_events_refs" value="Referencias: actor_id → users" style="text;html=1;whiteSpace=wrap;align=left;fontSize=10;fontColor=#52647a;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="990" y="268" width="420" height="64" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

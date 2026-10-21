@@ -1,0 +1,26 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+title Administrador · plataforma
+actor "Administrador" as admin
+rectangle "GeoCattle · aplicación de gestión" {
+  usecase "CU-01\nIniciar sesión y seleccionar contexto" as CU_01
+  usecase "CU-02\nCerrar sesión o recuperar acceso" as CU_02
+  usecase "CU-03\nAdministrar dueños/clientes" as CU_03
+  usecase "CU-04\nAdministrar colaboradores desde plataforma" as CU_04
+  usecase "CU-05\nConsultar KPIs" as CU_05
+  usecase "CU-06\nAuditar actividad y consumo" as CU_06
+  usecase "CU-07\nAdministrar perfil propio" as CU_07
+}
+admin -- CU_01
+admin -- CU_02
+admin -- CU_03
+admin -- CU_04
+admin -- CU_05
+admin -- CU_06
+admin -- CU_07
+note "MFA obligatorio para entrar al panel global; no se representa como una aprobación del dueño." as note0
+note "La administración de soporte sobre predios se muestra también en las vistas del dueño." as note1
+note "CU-04 administra colaboradores ya incorporados por el dueño." as note2
+@enduml

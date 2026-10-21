@@ -13,7 +13,7 @@ log=logging.getLogger("geocattle.worker")
 
 def process_outbox(db,event_id=None):
     cfg=settings();now=utcnow()
-    query=select(Notification).where(Notification.status=="pending",Notification.next_attempt_at<=now)
+    query=select(Notification).where(Notification.status=="pending",Notification.channel!="in_app",Notification.next_attempt_at<=now)
     if event_id is not None:query=query.where(Notification.event_id==event_id)
     rows=db.scalars(query.order_by(Notification.created_at).with_for_update(skip_locked=True).limit(20)).all()
     for n in rows:
@@ -44,7 +44,10 @@ def run_once():
     with SessionLocal.begin() as db:
         from .downlink import dispatch_configs
         dispatch_configs(db)
-    with SessionLocal.begin() as db:process_outbox(db)
+    with SessionLocal.begin() as db:
+        from .v3_api import queue_health_reminders
+        queue_health_reminders(db)
+        process_outbox(db)
 
 def main():
     logging.basicConfig(level=logging.INFO)

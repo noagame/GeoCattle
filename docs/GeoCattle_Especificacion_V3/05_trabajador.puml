@@ -1,0 +1,32 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+title Trabajador · consultas y propuestas
+actor "Trabajador" as worker
+rectangle "GeoCattle · aplicación de gestión" {
+  usecase "CU-01\nIniciar sesión y seleccionar contexto" as CU_01
+  usecase "CU-02\nCerrar sesión o recuperar acceso" as CU_02
+  usecase "CU-07\nAdministrar perfil propio" as CU_07
+  usecase "CU-14\nEnrolarse por invitación" as CU_14
+  usecase "CU-15\nConsultar mapa del predio" as CU_15
+  usecase "CU-16\nConsultar ficha e historial" as CU_16
+  usecase "CU-17\nRegistrar vacuna o antibiótico por trabajador" as CU_17
+  usecase "CU-18\nSolicitar estado o reporte del bovino" as CU_18
+  usecase "CU-19\nReportar cambio de batería" as CU_19
+  usecase "CU-27\nGenerar y atender alerta" as CU_27
+}
+worker -- CU_01
+worker -- CU_02
+worker -- CU_07
+worker -- CU_14
+worker -- CU_15
+worker -- CU_16
+worker -- CU_17
+worker -- CU_18
+worker -- CU_19
+worker -- CU_27
+note "CU-17, CU-18 y CU-19 generan solicitudes por defecto; ver diagrama de aprobación." as note0
+note "Confianza vigente puede habilitar aplicación directa por acción y predio." as note1
+note "El trabajador reporta tratamientos administrados; no obtiene facultad de prescribir." as note2
+@enduml

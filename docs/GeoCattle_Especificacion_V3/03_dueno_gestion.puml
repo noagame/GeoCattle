@@ -1,0 +1,43 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+title Dueño · predios, colaboradores y aprobación
+actor "Dueño" as owner
+actor "Administrador (soporte)" as admin
+rectangle "GeoCattle · aplicación de gestión" {
+  usecase "CU-08\nAdministrar predios" as CU_08
+  usecase "CU-09\nConfigurar sectores" as CU_09
+  usecase "CU-10\nCrear o editar geocerca" as CU_10
+  usecase "CU-11\nRegistrar y mantener bovino" as CU_11
+  usecase "CU-12\nAsignar collar o pastoreo" as CU_12
+  usecase "CU-13\nInvitar y administrar colaboradores" as CU_13
+  usecase "CU-20\nAprobar o rechazar solicitud" as CU_20
+  usecase "CU-21\nConceder o revocar confianza" as CU_21
+  usecase "CU-25\nAdministrar gateways e inventario" as CU_25
+  usecase "CU-29\nGestionar movimiento FMA (extensión)" as CU_29
+}
+owner -- CU_08
+owner -- CU_09
+owner -- CU_10
+owner -- CU_11
+owner -- CU_12
+owner -- CU_13
+owner -- CU_20
+owner -- CU_21
+owner -- CU_25
+owner -- CU_29
+admin -- CU_08
+admin -- CU_09
+admin -- CU_10
+admin -- CU_11
+admin -- CU_12
+admin -- CU_13
+admin -- CU_20
+admin -- CU_21
+admin -- CU_25
+admin -- CU_29
+note "Dueño: solo su cuenta y predios. Administrador: contexto de soporte registrado." as note0
+note "CU-13 y CU-21 requieren verificación reforzada del dueño; no basta un botón de confirmación." as note1
+note "CU-29 es extensión FMA P2; no implica integración oficial con SIPEC." as note2
+@enduml

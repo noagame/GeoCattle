@@ -36,27 +36,29 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 export const write = <T,>(path: string, body: unknown, method = 'POST') => api<T>(path, { method, body: JSON.stringify(body) });
-export function useData<T>(path: string | null, interval = 0) {
+export function useData<T>(path: string | null, interval = 0, contextKey = '') {
   const [data, setData] = useState<T | null>(null);
+  const [dataKey, setDataKey] = useState('');
+  const key = `${contextKey}:${path ?? ''}`;
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [version, setVersion] = useState(0);
   const reload = useCallback(() => setVersion(v => v + 1), []);
   useEffect(() => {
-    if (!path) { setLoading(false); return; }
+    if (!path) { setData(null); setError(''); setLoading(false); return; }
     let alive = true;
-    setLoading(true);
-    api<T>(path).then(result => { if (alive) { setData(result); setError(''); } })
+    setLoading(true); setError('');
+    api<T>(path).then(result => { if (alive) { setData(result); setDataKey(key); setError(''); } })
       .catch(err => { if (alive) setError(err instanceof Error ? err.message : 'Ocurrió un error.'); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [path, version]);
+  }, [path, version, contextKey]);
   useEffect(() => {
     if (!interval || !path) return;
     const timer = window.setInterval(reload, interval);
     return () => window.clearInterval(timer);
   }, [interval, path, reload]);
-  return { data, error, loading, reload };
+  return { data: dataKey === key ? data : null, error, loading, reload };
 }
 export function message(error: unknown) { return error instanceof Error ? error.message : 'La operación no se pudo completar.'; }
 export function date(value?: string | null) {

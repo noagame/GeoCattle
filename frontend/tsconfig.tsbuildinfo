@@ -1,1 +1,1 @@
-{"root":["./src/App.tsx","./src/Map.tsx","./src/PagesAnimals.tsx","./src/PagesEvents.tsx","./src/PagesManagement.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/ui.tsx","./vite.config.ts"],"version":"5.8.3"}
+{"root":["./src/App.tsx","./src/Map.tsx","./src/PagesAnimals.tsx","./src/PagesEvents.tsx","./src/PagesManagement.tsx","./src/V3Account.tsx","./src/V3Admin.tsx","./src/V3Farm.tsx","./src/V3Health.tsx","./src/V3Operation.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/ui.tsx","./src/v3types.ts","./vite.config.ts"],"version":"5.8.3"}

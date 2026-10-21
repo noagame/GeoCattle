@@ -1,0 +1,417 @@
+{
+  "cut": "2026-10-21",
+  "nonWorkingDates": [
+    "2026-12-08",
+    "2026-12-25",
+    "2027-01-01"
+  ],
+  "weeks": [
+    "2026-10-19",
+    "2026-10-26",
+    "2026-11-02",
+    "2026-11-09",
+    "2026-11-16",
+    "2026-11-23",
+    "2026-11-30",
+    "2026-12-07",
+    "2026-12-14",
+    "2026-12-21",
+    "2026-12-28",
+    "2027-01-04",
+    "2027-01-11"
+  ],
+  "tasks": [
+    {
+      "id": "P01",
+      "task": "Consolidar alcance V3 y trazabilidad",
+      "owner": "Fabián",
+      "deps": [],
+      "start": "2026-10-21",
+      "days": 1,
+      "hours": 2,
+      "status": "Documentado",
+      "trace": "CU-01 a CU-29",
+      "criterion": "44 RF, 22 RNF y diagramas consistentes",
+      "end": "2026-10-21"
+    },
+    {
+      "id": "P02",
+      "task": "Integrar migración aditiva y API V3",
+      "owner": "Fabián",
+      "deps": [],
+      "start": "2026-10-21",
+      "days": 1,
+      "hours": 4,
+      "status": "Integrado local",
+      "trace": "RF-01 a RF-44",
+      "criterion": "Código y migración preservan datos V1",
+      "end": "2026-10-21"
+    },
+    {
+      "id": "P03",
+      "task": "Integrar los cuatro paneles web",
+      "owner": "Boris",
+      "deps": [],
+      "start": "2026-10-21",
+      "days": 1,
+      "hours": 4,
+      "status": "Integrado local",
+      "trace": "CU-03 a CU-25",
+      "criterion": "Pantallas conectadas a API según perfil",
+      "end": "2026-10-21"
+    },
+    {
+      "id": "P04",
+      "task": "Revisar contrato API y alcance por predio",
+      "owner": "Fabián",
+      "deps": [
+        "P01",
+        "P02"
+      ],
+      "start": "2026-10-22",
+      "days": 2,
+      "hours": 4,
+      "status": "Planificado",
+      "trace": "RF-01,RF-42",
+      "criterion": "Denegar IDs ajenos y conservar contexto",
+      "end": "2026-10-23"
+    },
+    {
+      "id": "P05",
+      "task": "Revisar navegación y contexto por perfil",
+      "owner": "Boris",
+      "deps": [
+        "P01",
+        "P03"
+      ],
+      "start": "2026-10-22",
+      "days": 2,
+      "hours": 4,
+      "status": "Planificado",
+      "trace": "CU-01,CU-15,CU-16",
+      "criterion": "Cuatro identidades y navegación por permisos",
+      "end": "2026-10-23"
+    },
+    {
+      "id": "P06",
+      "task": "Validar migración con datos heredados",
+      "owner": "Fabián",
+      "deps": [
+        "P04"
+      ],
+      "start": "2026-10-26",
+      "days": 3,
+      "hours": 4,
+      "status": "Planificado",
+      "trace": "RNF-06,RNF-07",
+      "criterion": "Crear desde cero y actualizar copia V1",
+      "end": "2026-10-28"
+    },
+    {
+      "id": "P07",
+      "task": "Cerrar inventario y diseño de hardware",
+      "owner": "Boris",
+      "deps": [
+        "P05"
+      ],
+      "start": "2026-10-26",
+      "days": 5,
+      "hours": 4,
+      "status": "Externo pendiente",
+      "trace": "Hardware anterior",
+      "criterion": "BOM, energía, RF y montaje revisados",
+      "end": "2026-10-30"
+    },
+    {
+      "id": "P08",
+      "task": "Ensayar MFA, sesiones y doble verificación",
+      "owner": "Fabián",
+      "deps": [
+        "P06"
+      ],
+      "start": "2026-10-29",
+      "days": 4,
+      "hours": 4,
+      "status": "Planificado",
+      "trace": "RF-02 a RF-04; RNF-02 a RNF-05",
+      "criterion": "TOTP, expiración, replay, suspensión y CSRF",
+      "end": "2026-11-03"
+    },
+    {
+      "id": "P09",
+      "task": "Probar tareas de los cuatro perfiles",
+      "owner": "Boris",
+      "deps": [
+        "P05"
+      ],
+      "start": "2026-11-02",
+      "days": 5,
+      "hours": 4,
+      "status": "Planificado",
+      "trace": "CU-01 a CU-25",
+      "criterion": "Flujos navegador con dos dueños y colaborador",
+      "end": "2026-11-06"
+    },
+    {
+      "id": "P10",
+      "task": "Probar aprobación, confianza y concurrencia",
+      "owner": "Fabián",
+      "deps": [
+        "P08"
+      ],
+      "start": "2026-11-04",
+      "days": 5,
+      "hours": 4,
+      "status": "Planificado",
+      "trace": "RF-24 a RF-29",
+      "criterion": "Pendiente sin efecto y aplicación exactamente una vez",
+      "end": "2026-11-10"
+    },
+    {
+      "id": "P11",
+      "task": "Programar y probar dos nodos iniciales",
+      "owner": "Boris",
+      "deps": [
+        "P07",
+        "P09"
+      ],
+      "start": "2026-11-09",
+      "days": 5,
+      "hours": 4,
+      "status": "Externo pendiente",
+      "trace": "CU-26; HW03",
+      "criterion": "Lecturas reales y firmware identificado",
+      "end": "2026-11-13"
+    },
+    {
+      "id": "P12",
+      "task": "Validar ficha técnica y salud inmutable",
+      "owner": "Fabián",
+      "deps": [
+        "P10"
+      ],
+      "start": "2026-11-11",
+      "days": 5,
+      "hours": 4,
+      "status": "Planificado",
+      "trace": "RF-15,RF-30 a RF-33",
+      "criterion": "Veterinario directo, correcciones y unidades",
+      "end": "2026-11-17"
+    },
+    {
+      "id": "P13",
+      "task": "Verificar mapa, puntos y gateways",
+      "owner": "Boris",
+      "deps": [
+        "P09",
+        "P11"
+      ],
+      "start": "2026-11-16",
+      "days": 5,
+      "hours": 4,
+      "status": "Planificado",
+      "trace": "RF-13,RF-22,RF-34",
+      "criterion": "Cuatro vértices, geometría válida y origen visible",
+      "end": "2026-11-20"
+    },
+    {
+      "id": "P14",
+      "task": "Validar KPIs, auditoría y observabilidad",
+      "owner": "Fabián",
+      "deps": [
+        "P12"
+      ],
+      "start": "2026-11-18",
+      "days": 5,
+      "hours": 4,
+      "status": "Planificado",
+      "trace": "RF-07 a RF-10; RNF-16",
+      "criterion": "Conteos sin duplicados, p95 y auditoría sin secretos",
+      "end": "2026-11-24"
+    },
+    {
+      "id": "P15",
+      "task": "Integrar radio y medir banco académico",
+      "owner": "Boris",
+      "deps": [
+        "P11",
+        "P13"
+      ],
+      "start": "2026-11-23",
+      "days": 5,
+      "hours": 4,
+      "status": "Externo pendiente",
+      "trace": "CU-26 a CU-28",
+      "criterion": "Recepción real, secuencia y recuperación de datos",
+      "end": "2026-11-27"
+    },
+    {
+      "id": "P16",
+      "task": "Medir carga e idempotencia de telemetría",
+      "owner": "Fabián",
+      "deps": [
+        "P14"
+      ],
+      "start": "2026-11-25",
+      "days": 5,
+      "hours": 4,
+      "status": "Planificado",
+      "trace": "RNF-08 a RNF-10",
+      "criterion": "70 nodos, 5 clientes, 10 min y 100 eventos",
+      "end": "2026-12-01"
+    },
+    {
+      "id": "P17",
+      "task": "Ejecutar usabilidad con cuatro perfiles",
+      "owner": "Boris",
+      "deps": [
+        "P13",
+        "P15"
+      ],
+      "start": "2026-11-30",
+      "days": 5,
+      "hours": 4,
+      "status": "Externo pendiente",
+      "trace": "RNF-14",
+      "criterion": "Móvil 360 px, tareas y tiempos observados",
+      "end": "2026-12-04"
+    },
+    {
+      "id": "P18",
+      "task": "Ensayar respaldo, restauración y corte WAN",
+      "owner": "Fabián",
+      "deps": [
+        "P16"
+      ],
+      "start": "2026-12-02",
+      "days": 4,
+      "hours": 4,
+      "status": "Planificado",
+      "trace": "RNF-12,RNF-13",
+      "criterion": "RPO/RTO medidos y recuperación de cola",
+      "end": "2026-12-07"
+    },
+    {
+      "id": "P19",
+      "task": "Actualizar manuales, informe y evidencias",
+      "owner": "Boris",
+      "deps": [
+        "P17"
+      ],
+      "start": "2026-12-07",
+      "days": 4,
+      "hours": 4,
+      "status": "Planificado",
+      "trace": "CU-01 a CU-29",
+      "criterion": "Documentación con alcance real y pendientes",
+      "end": "2026-12-11"
+    },
+    {
+      "id": "P20",
+      "task": "Verificar correo y avisos con proveedor real",
+      "owner": "Fabián",
+      "deps": [
+        "P18"
+      ],
+      "start": "2026-12-09",
+      "days": 3,
+      "hours": 4,
+      "status": "Externo pendiente",
+      "trace": "RF-18,RF-40",
+      "criterion": "Enrolamiento entregado, fallos y reintentos",
+      "end": "2026-12-11"
+    },
+    {
+      "id": "P21",
+      "task": "Cerrar regresión y versión académica",
+      "owner": "Fabián",
+      "deps": [
+        "P06",
+        "P08",
+        "P10",
+        "P12",
+        "P14",
+        "P16",
+        "P18",
+        "P20"
+      ],
+      "start": "2026-12-14",
+      "days": 2,
+      "hours": 4,
+      "status": "Planificado",
+      "trace": "P0 y P1",
+      "criterion": "Sin defectos críticos y evidencia reproducible",
+      "end": "2026-12-15"
+    },
+    {
+      "id": "P22",
+      "task": "Demostrar cadena y obtener revisión de uso",
+      "owner": "Boris",
+      "deps": [
+        "P15",
+        "P17",
+        "P19"
+      ],
+      "start": "2026-12-14",
+      "days": 2,
+      "hours": 4,
+      "status": "Externo pendiente",
+      "trace": "H2 académico",
+      "criterion": "Nodo real, mapa, evento y dato vencido",
+      "end": "2026-12-15"
+    },
+    {
+      "id": "P23",
+      "task": "Medir preserie predial durante cuatro semanas",
+      "owner": "Boris",
+      "deps": [
+        "P07",
+        "P11",
+        "P15",
+        "P17",
+        "P21",
+        "P22"
+      ],
+      "start": "2026-12-16",
+      "days": 18,
+      "hours": 3,
+      "status": "Externo condicionado",
+      "trace": "K01,K02,K08,ME01,EN01",
+      "criterion": "Cobertura, autonomía, seguridad y productor",
+      "end": "2027-01-12"
+    },
+    {
+      "id": "P24",
+      "task": "Medir continuidad y soporte de la preserie",
+      "owner": "Fabián",
+      "deps": [
+        "P21",
+        "P22"
+      ],
+      "start": "2026-12-16",
+      "days": 18,
+      "hours": 2,
+      "status": "Externo condicionado",
+      "trace": "RNF-11; RTO/RPO",
+      "criterion": "Monitor por minuto y ventana mínima de 7 días",
+      "end": "2027-01-12"
+    },
+    {
+      "id": "P25",
+      "task": "Consolidar entrega documental académica",
+      "owner": "Fabián",
+      "deps": [
+        "P19",
+        "P21",
+        "P22"
+      ],
+      "start": "2026-12-16",
+      "days": 3,
+      "hours": 2,
+      "status": "Planificado",
+      "trace": "Informe y Gantt",
+      "criterion": "Acta académica separada del piloto de campo",
+      "end": "2026-12-18"
+    }
+  ]
+}

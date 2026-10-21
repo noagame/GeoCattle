@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime, timezone
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, BigInteger, String, Text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from datetime import date, datetime, timezone
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, BigInteger, LargeBinary, String, Text
+from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import UserDefinedType
 
@@ -17,23 +17,83 @@ class Farm(Base, IdMixin):
     name: Mapped[str] = mapped_column(Text)
     environment: Mapped[str] = mapped_column(String)
     timezone: Mapped[str] = mapped_column(String, default="America/Santiago")
+    account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("owner_accounts.id"))
+    rup: Mapped[str | None] = mapped_column(Text)
+    address: Mapped[str | None] = mapped_column(Text)
+    region: Mapped[str | None] = mapped_column(Text)
+    commune: Mapped[str | None] = mapped_column(Text)
+    boundary: Mapped[object | None] = mapped_column(Geometry)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 class User(Base, IdMixin):
     __tablename__ = "users"
-    farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
+    farm_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("farms.id"))
     username: Mapped[str] = mapped_column(String, unique=True)
     password_hash: Mapped[str] = mapped_column(Text)
     role: Mapped[str] = mapped_column(String)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    email: Mapped[str | None] = mapped_column(Text)
+    full_name: Mapped[str] = mapped_column(Text, default="")
+    phone: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(BigInteger, default=1)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 class LoginSession(Base):
     __tablename__ = "login_sessions"
     token_hash: Mapped[str] = mapped_column(String, primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     csrf_token: Mapped[str] = mapped_column(String)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    active_farm_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("farms.id"))
+    mfa_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    step_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    authenticated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+class OwnerAccount(Base, IdMixin):
+    __tablename__ = "owner_accounts"
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), unique=True)
+    display_name: Mapped[str] = mapped_column(Text)
+    max_farms: Mapped[int] = mapped_column(Integer, default=1)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+class FarmMembership(Base, IdMixin):
+    __tablename__ = "farm_memberships"
+    farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    role_code: Mapped[str] = mapped_column(Text)
+    granted_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+class MFAFactor(Base, IdMixin):
+    __tablename__ = "mfa_factors"
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[str] = mapped_column(Text, default="totp")
+    credential_id: Mapped[str | None] = mapped_column(Text)
+    protected_data: Mapped[bytes] = mapped_column(LargeBinary)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+class AuthChallenge(Base, IdMixin):
+    __tablename__ = "auth_challenges"
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    token_hash: Mapped[str] = mapped_column(Text, unique=True)
+    purpose: Mapped[str] = mapped_column(Text)
+    session_token_hash: Mapped[str | None] = mapped_column(ForeignKey("login_sessions.token_hash"))
+    operation_digest: Mapped[str | None] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 class Sector(Base, IdMixin):
     __tablename__ = "sectors"
     farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
     name: Mapped[str] = mapped_column(Text)
+    land_use: Mapped[str] = mapped_column(Text, default="grazing")
+    description: Mapped[str | None] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
 class Animal(Base, IdMixin):
     __tablename__ = "animals"
     farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
@@ -42,6 +102,16 @@ class Animal(Base, IdMixin):
     orientation: Mapped[str] = mapped_column(String)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     sector_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sectors.id"))
+    species: Mapped[str] = mapped_column(Text, default="bovine")
+    breed: Mapped[str | None] = mapped_column(Text)
+    color: Mapped[str | None] = mapped_column(Text)
+    sex: Mapped[str] = mapped_column(Text, default="unknown")
+    birth_date: Mapped[date | None] = mapped_column(Date)
+    birth_date_estimated: Mapped[bool] = mapped_column(Boolean, default=False)
+    production_type: Mapped[str] = mapped_column(Text, default="other")
+    status: Mapped[str] = mapped_column(Text, default="active")
+    version: Mapped[int] = mapped_column(BigInteger, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 class Device(Base, IdMixin):
     __tablename__ = "devices"
     farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
@@ -56,6 +126,17 @@ class Device(Base, IdMixin):
     last_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_telemetry_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    serial_number: Mapped[str | None] = mapped_column(Text)
+    hardware_revision: Mapped[str | None] = mapped_column(Text)
+    firmware_version: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, default="available")
+class AnimalHolding(Base, IdMixin):
+    __tablename__ = "animal_holdings"
+    farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
+    animal_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("animals.id"))
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str] = mapped_column(Text)
 class Assignment(Base, IdMixin):
     __tablename__ = "assignments"
     farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
@@ -63,6 +144,9 @@ class Assignment(Base, IdMixin):
     device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
     valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    animal_holding_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("animal_holdings.id"))
+    assigned_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    reason: Mapped[str | None] = mapped_column(Text)
 class Geofence(Base, IdMixin):
     __tablename__ = "geofences"
     farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
@@ -73,6 +157,7 @@ class Geofence(Base, IdMixin):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
 class PastureAssignment(Base, IdMixin):
     __tablename__ = "pasture_assignments"
     farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
@@ -80,6 +165,8 @@ class PastureAssignment(Base, IdMixin):
     geofence_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("geofences.id"))
     valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    animal_holding_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("animal_holdings.id"))
+    assigned_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
 class Telemetry(Base, IdMixin):
     __tablename__ = "telemetry"
     farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
@@ -153,7 +240,7 @@ class RuleSettings(Base):
     proximity_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
 class Audit(Base, IdMixin):
     __tablename__ = "audit_log"
-    farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
+    farm_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("farms.id"))
     actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     object_type: Mapped[str] = mapped_column(String)
     object_id: Mapped[str] = mapped_column(String)
@@ -161,13 +248,25 @@ class Audit(Base, IdMixin):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     before: Mapped[dict | None] = mapped_column(JSONB)
     after: Mapped[dict | None] = mapped_column(JSONB)
+    account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("owner_accounts.id"))
+    session_token_hash: Mapped[str | None] = mapped_column(ForeignKey("login_sessions.token_hash"))
+    actor_kind: Mapped[str] = mapped_column(Text, default="service")
+    ip_address: Mapped[str | None] = mapped_column(INET)
+    request_id: Mapped[str | None] = mapped_column(Text)
 class Notification(Base, IdMixin):
     __tablename__ = "notifications"
-    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("events.id"))
+    event_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("events.id"))
     channel: Mapped[str] = mapped_column(String, default="webhook")
     status: Mapped[str] = mapped_column(String, default="pending")
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    farm_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("farms.id"))
+    recipient_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    request_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    schedule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    recipient_address: Mapped[str | None] = mapped_column(Text)
+    message: Mapped[str] = mapped_column(Text, default="")
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 class NotificationAttempt(Base, IdMixin):
     __tablename__ = "notification_attempts"
     notification_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("notifications.id"))
@@ -185,3 +284,4 @@ class Maintenance(Base, IdMixin):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     responsible_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     result: Mapped[str] = mapped_column(Text)
+    request_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))

@@ -1,0 +1,651 @@
+erDiagram
+    account_tokens {
+        uuid id
+        uuid user_id
+        text purpose
+        text token_hash
+        text pending_email
+        timestamp_with_time_zone expires_at
+        timestamp_with_time_zone consumed_at
+        timestamp_with_time_zone created_at
+    }
+    animal_holdings {
+        uuid id
+        uuid farm_id
+        uuid animal_id
+        timestamp_with_time_zone valid_from
+        timestamp_with_time_zone valid_to
+        text reason
+    }
+    animal_measurements {
+        uuid id
+        uuid farm_id
+        uuid animal_holding_id
+        uuid animal_id
+        uuid request_id
+        timestamp_with_time_zone measured_at
+        numeric weight_kg
+        numeric height_cm
+        uuid corrects_id
+    }
+    animal_reports {
+        uuid id
+        uuid farm_id
+        uuid animal_holding_id
+        uuid request_id
+        text description
+        timestamp_with_time_zone occurred_at
+    }
+    animal_states {
+        uuid animal_id
+        uuid telemetry_id
+        timestamp_with_time_zone observed_at
+        uuid position_telemetry_id
+        integer outside_count
+        text geofence_status
+    }
+    animals {
+        uuid id
+        uuid farm_id
+        text diio
+        text name
+        text orientation
+        boolean enabled
+        uuid sector_id
+        text species
+        text breed
+        text color
+        text sex
+        date birth_date
+        boolean birth_date_estimated
+        text production_type
+        text status
+        bigint version
+        timestamp_with_time_zone created_at
+    }
+    assignments {
+        uuid id
+        uuid farm_id
+        uuid animal_id
+        uuid device_id
+        timestamp_with_time_zone valid_from
+        timestamp_with_time_zone valid_to
+        uuid animal_holding_id
+        uuid assigned_by
+        text reason
+    }
+    audit_log {
+        uuid id
+        uuid farm_id
+        uuid actor_id
+        text object_type
+        text object_id
+        text action
+        timestamp_with_time_zone at
+        jsonb before
+        jsonb after
+        uuid account_id
+        text session_token_hash
+        text actor_kind
+        inet ip_address
+        text request_id
+    }
+    auth_challenges {
+        uuid id
+        uuid user_id
+        text token_hash
+        text purpose
+        text session_token_hash
+        text operation_digest
+        timestamp_with_time_zone expires_at
+        timestamp_with_time_zone verified_at
+        timestamp_with_time_zone consumed_at
+        integer attempts
+        timestamp_with_time_zone created_at
+    }
+    change_applications {
+        uuid request_id
+        text entity_type
+        uuid entity_id
+        timestamp_with_time_zone created_at
+    }
+    change_decisions {
+        uuid request_id
+        uuid decided_by
+        text decision
+        uuid trust_grant_id
+        text reason
+        timestamp_with_time_zone created_at
+    }
+    change_requests {
+        uuid id
+        uuid farm_id
+        uuid requested_by
+        uuid membership_id
+        text action
+        uuid animal_holding_id
+        uuid animal_id
+        uuid device_id
+        bigint expected_version
+        jsonb payload
+        uuid idempotency_key
+        timestamp_with_time_zone created_at
+    }
+    device_configs {
+        uuid id
+        uuid device_id
+        integer version
+        integer interval_seconds
+        text status
+        timestamp_with_time_zone requested_at
+        timestamp_with_time_zone sent_at
+        timestamp_with_time_zone applied_at
+        text error
+    }
+    devices {
+        uuid id
+        uuid farm_id
+        text hardware_id
+        text dev_eui
+        text name
+        text transport
+        boolean enabled
+        integer interval_seconds
+        integer config_version
+        timestamp_with_time_zone installed_at
+        timestamp_with_time_zone last_observed_at
+        timestamp_with_time_zone last_received_at
+        uuid last_telemetry_id
+        text serial_number
+        text hardware_revision
+        text firmware_version
+        text status
+    }
+    event_actions {
+        uuid id
+        uuid event_id
+        uuid actor_id
+        text action
+        timestamp_with_time_zone at
+        text note
+    }
+    events {
+        uuid id
+        uuid farm_id
+        uuid animal_id
+        uuid device_id
+        uuid telemetry_id
+        uuid geofence_id
+        text type
+        text severity
+        text condition
+        text attention
+        timestamp_with_time_zone opened_at
+        timestamp_with_time_zone resolved_at
+        jsonb detail
+    }
+    farm_features {
+        uuid farm_id
+        text feature_code
+        boolean enabled
+        timestamp_with_time_zone enabled_at
+    }
+    farm_memberships {
+        uuid id
+        uuid farm_id
+        uuid user_id
+        text role_code
+        uuid granted_by
+        timestamp_with_time_zone valid_from
+        timestamp_with_time_zone valid_to
+    }
+    farms {
+        uuid id
+        text name
+        text environment
+        text timezone
+        uuid account_id
+        text rup
+        text address
+        text region
+        text commune
+        geometry boundary
+        boolean active
+        timestamp_with_time_zone created_at
+    }
+    features {
+        text code
+        text name
+    }
+    gateways {
+        uuid id
+        uuid farm_id
+        text gateway_eui
+        text name
+        geometry position
+        text status
+        timestamp_with_time_zone installed_at
+        timestamp_with_time_zone last_seen_at
+    }
+    geofences {
+        uuid id
+        uuid farm_id
+        uuid sector_id
+        text name
+        integer version
+        geometry geometry
+        boolean active
+        timestamp_with_time_zone created_at
+        timestamp_with_time_zone valid_to
+        uuid created_by
+    }
+    health_events {
+        uuid id
+        uuid farm_id
+        uuid animal_holding_id
+        uuid request_id
+        text event_type
+        text operation
+        uuid target_event_id
+        timestamp_with_time_zone occurred_at
+        uuid recorded_by
+        text description
+        text diagnosis
+        timestamp_with_time_zone created_at
+    }
+    health_schedules {
+        uuid id
+        uuid farm_id
+        uuid animal_holding_id
+        uuid request_id
+        text kind
+        text description
+        timestamp_with_time_zone due_at
+        text operation
+        uuid target_schedule_id
+        uuid completed_event_id
+        uuid created_by
+        timestamp_with_time_zone created_at
+    }
+    health_treatments {
+        uuid id
+        uuid farm_id
+        uuid health_event_id
+        text product_name
+        text product_registration
+        text batch_number
+        numeric dose_value
+        text dose_unit
+        text route
+        timestamp_with_time_zone administered_at
+        date withdrawal_meat_until
+        date withdrawal_milk_until
+        text withdrawal_basis
+    }
+    invitations {
+        uuid id
+        uuid farm_id
+        text email
+        text role_code
+        text token_hash
+        uuid invited_by
+        timestamp_with_time_zone expires_at
+        timestamp_with_time_zone accepted_at
+        uuid accepted_user_id
+        timestamp_with_time_zone revoked_at
+        timestamp_with_time_zone created_at
+    }
+    login_sessions {
+        text token_hash
+        uuid user_id
+        text csrf_token
+        timestamp_with_time_zone expires_at
+        uuid active_farm_id
+        timestamp_with_time_zone mfa_verified_at
+        timestamp_with_time_zone step_up_at
+        timestamp_with_time_zone authenticated_at
+        timestamp_with_time_zone last_seen_at
+        timestamp_with_time_zone revoked_at
+    }
+    maintenance {
+        uuid id
+        uuid farm_id
+        uuid device_id
+        text battery_id
+        text kind
+        timestamp_with_time_zone at
+        uuid responsible_id
+        text result
+        uuid request_id
+    }
+    mfa_factors {
+        uuid id
+        uuid user_id
+        text kind
+        text credential_id
+        bytea protected_data
+        timestamp_with_time_zone verified_at
+        timestamp_with_time_zone revoked_at
+        timestamp_with_time_zone created_at
+    }
+    mfa_recovery_codes {
+        uuid id
+        uuid user_id
+        text code_hash
+        timestamp_with_time_zone used_at
+        timestamp_with_time_zone created_at
+    }
+    movement_animals {
+        uuid movement_id
+        uuid animal_id
+        text diio_snapshot
+    }
+    movement_status_events {
+        uuid id
+        uuid movement_id
+        text status
+        uuid actor_id
+        text reason
+        timestamp_with_time_zone created_at
+    }
+    notification_attempts {
+        uuid id
+        uuid notification_id
+        integer attempt
+        timestamp_with_time_zone at
+        text status
+        text provider_id
+        text error
+    }
+    notifications {
+        uuid id
+        uuid event_id
+        text status
+        text channel
+        timestamp_with_time_zone requested_at
+        timestamp_with_time_zone created_at
+        timestamp_with_time_zone next_attempt_at
+        uuid farm_id
+        uuid recipient_id
+        uuid request_id
+        uuid schedule_id
+        text recipient_address
+        text message
+        timestamp_with_time_zone read_at
+    }
+    owner_accounts {
+        uuid id
+        uuid owner_user_id
+        text display_name
+        integer max_farms
+        boolean active
+        timestamp_with_time_zone created_at
+    }
+    pasture_assignments {
+        uuid id
+        uuid farm_id
+        uuid animal_id
+        uuid geofence_id
+        timestamp_with_time_zone valid_from
+        timestamp_with_time_zone valid_to
+        uuid animal_holding_id
+        uuid assigned_by
+    }
+    permissions {
+        text code
+        text description
+    }
+    platform_admins {
+        uuid user_id
+        boolean active
+        timestamp_with_time_zone created_at
+    }
+    request_metrics {
+        uuid id
+        uuid account_id
+        uuid farm_id
+        uuid actor_id
+        text request_id
+        text method
+        text route_template
+        integer status_code
+        numeric duration_ms
+        bigint request_bytes
+        bigint response_bytes
+        timestamp_with_time_zone occurred_at
+    }
+    role_permissions {
+        text role_code
+        text permission_code
+    }
+    roles {
+        text code
+        text name
+        text scope
+    }
+    rule_settings {
+        uuid farm_id
+        integer version
+        integer battery_low_mv
+        double_precision temperature_high_c
+        double_precision activity_low_threshold
+        integer activity_window_minutes
+        double_precision proximity_meters
+        boolean temperature_enabled
+        boolean activity_enabled
+        boolean proximity_enabled
+    }
+    sag_movements {
+        uuid id
+        uuid farm_id
+        text fma_folio
+        text origin_rup
+        text destination_rup
+        text status
+        timestamp_with_time_zone departure_at
+        timestamp_with_time_zone arrival_at
+        text external_evidence
+        uuid created_by
+        timestamp_with_time_zone created_at
+    }
+    sectors {
+        uuid id
+        uuid farm_id
+        text name
+        text land_use
+        text description
+        boolean active
+    }
+    telemetry {
+        uuid id
+        uuid farm_id
+        uuid device_id
+        uuid animal_id
+        uuid assignment_id
+        text session_id
+        bigint seq
+        timestamp_with_time_zone observed_at
+        timestamp_with_time_zone received_at
+        double_precision longitude
+        double_precision latitude
+        geometry point
+        boolean gnss_valid
+        double_precision surface_temperature_c
+        double_precision activity_index
+        integer battery_mv
+        text source
+        jsonb quality
+        integer config_version
+    }
+    telemetry_receptions {
+        uuid telemetry_id
+        uuid farm_id
+        uuid gateway_id
+        timestamp_with_time_zone received_at
+        numeric rssi_dbm
+        numeric snr_db
+    }
+    trust_grants {
+        uuid id
+        uuid farm_id
+        uuid membership_id
+        text action
+        uuid granted_by
+        timestamp_with_time_zone valid_from
+        timestamp_with_time_zone valid_to
+    }
+    users {
+        uuid id
+        uuid farm_id
+        text username
+        text password_hash
+        text role
+        boolean active
+        text email
+        text full_name
+        text phone
+        bigint version
+        timestamp_with_time_zone email_verified_at
+        timestamp_with_time_zone created_at
+        timestamp_with_time_zone updated_at
+    }
+    telemetry o|--o{ animal_states : _position_telemetry_id
+    telemetry o|--o{ animal_states : _telemetry_id
+    animals ||--o{ animal_states : _animal_id
+    geofences o|--o{ events : _geofence_id_farm_id
+    telemetry o|--o{ events : _telemetry_id_farm_id
+    animals o|--o{ events : _animal_id_farm_id
+    devices ||--o{ events : _device_id_farm_id
+    farms ||--o{ events : _farm_id
+    farms o|--o{ users : _farm_id
+    devices ||--o{ device_configs : _device_id
+    farms ||--o{ rule_settings : _farm_id
+    users ||--o{ mfa_factors : _user_id
+    users ||--o{ platform_admins : _user_id
+    users ||--o{ mfa_recovery_codes : _user_id
+    users ||--o{ account_tokens : _user_id
+    permissions ||--o{ role_permissions : _permission_code
+    roles ||--o{ role_permissions : _role_code
+    roles ||--o{ farm_memberships : _role_code
+    users ||--o{ farm_memberships : _user_id
+    farms ||--o{ farm_memberships : _farm_id
+    users ||--o{ farm_memberships : _granted_by
+    users o|--o{ invitations : _accepted_user_id
+    users ||--o{ invitations : _invited_by
+    roles ||--o{ invitations : _role_code
+    farms ||--o{ invitations : _farm_id
+    farm_memberships ||--o{ trust_grants : _membership_id_farm_id
+    users ||--o{ trust_grants : _granted_by
+    farm_memberships ||--o{ trust_grants : _membership_id
+    farms ||--o{ trust_grants : _farm_id
+    farms ||--o{ sectors : _farm_id
+    sectors o|--o{ animals : _sector_id_farm_id
+    farms ||--o{ animals : _farm_id
+    telemetry o|--o{ devices : _last_telemetry_id
+    farms ||--o{ devices : _farm_id
+    animals ||--o{ animal_holdings : _animal_id
+    farms ||--o{ animal_holdings : _farm_id
+    farms ||--o{ gateways : _farm_id
+    features ||--o{ farm_features : _feature_code
+    farms ||--o{ farm_features : _farm_id
+    users ||--o{ sag_movements : _created_by
+    farms ||--o{ sag_movements : _farm_id
+    animals ||--o{ movement_animals : _animal_id
+    sag_movements ||--o{ movement_animals : _movement_id
+    animal_holdings o|--o{ assignments : _animal_holding_id_animal_id_farm_id
+    users o|--o{ assignments : _assigned_by
+    devices ||--o{ assignments : _device_id_farm_id
+    animals ||--o{ assignments : _animal_id_farm_id
+    farms ||--o{ assignments : _farm_id
+    users ||--o{ owner_accounts : _owner_user_id
+    owner_accounts o|--o{ farms : _account_id
+    farms o|--o{ login_sessions : _active_farm_id
+    users ||--o{ login_sessions : _user_id
+    login_sessions o|--o{ auth_challenges : _session_token_hash
+    users ||--o{ auth_challenges : _user_id
+    animal_holdings o|--o{ pasture_assignments : _animal_holding_id_animal_id_farm_id
+    users o|--o{ pasture_assignments : _assigned_by
+    geofences ||--o{ pasture_assignments : _geofence_id_farm_id
+    animals ||--o{ pasture_assignments : _animal_id_farm_id
+    farms ||--o{ pasture_assignments : _farm_id
+    users o|--o{ geofences : _created_by
+    sectors ||--o{ geofences : _sector_id_farm_id
+    farms ||--o{ geofences : _farm_id
+    health_schedules o|--o{ notifications : _schedule_id_farm_id
+    change_requests o|--o{ notifications : _request_id_farm_id
+    users o|--o{ notifications : _recipient_id
+    farms o|--o{ notifications : _farm_id
+    events o|--o{ notifications : _event_id
+    animals o|--o{ telemetry : _animal_id_farm_id
+    devices ||--o{ telemetry : _device_id_farm_id
+    assignments o|--o{ telemetry : _assignment_id
+    farms ||--o{ telemetry : _farm_id
+    gateways ||--o{ telemetry_receptions : _gateway_id_farm_id
+    telemetry ||--o{ telemetry_receptions : _telemetry_id_farm_id
+    gateways ||--o{ telemetry_receptions : _gateway_id
+    farms ||--o{ telemetry_receptions : _farm_id
+    telemetry ||--o{ telemetry_receptions : _telemetry_id
+    users ||--o{ event_actions : _actor_id
+    events ||--o{ event_actions : _event_id
+    farms o|--o{ audit_log : _farm_id_account_id
+    owner_accounts o|--o{ audit_log : _account_id
+    login_sessions o|--o{ audit_log : _session_token_hash
+    users o|--o{ audit_log : _actor_id
+    farms o|--o{ audit_log : _farm_id
+    notifications ||--o{ notification_attempts : _notification_id
+    change_requests o|--o{ maintenance : _request_id_farm_id
+    devices ||--o{ maintenance : _device_id_farm_id
+    users ||--o{ maintenance : _responsible_id
+    farms ||--o{ maintenance : _farm_id
+    devices o|--o{ change_requests : _device_id_farm_id
+    animal_holdings o|--o{ change_requests : _animal_holding_id_animal_id_farm_id
+    farm_memberships o|--o{ change_requests : _membership_id_farm_id
+    devices o|--o{ change_requests : _device_id
+    animals o|--o{ change_requests : _animal_id
+    animal_holdings o|--o{ change_requests : _animal_holding_id
+    farm_memberships o|--o{ change_requests : _membership_id
+    users ||--o{ change_requests : _requested_by
+    farms ||--o{ change_requests : _farm_id
+    trust_grants o|--o{ change_decisions : _trust_grant_id
+    users ||--o{ change_decisions : _decided_by
+    change_requests ||--o{ change_decisions : _request_id
+    change_decisions ||--o{ change_applications : _request_id
+    change_requests ||--o{ animal_measurements : _request_id_farm_id
+    animal_holdings ||--o{ animal_measurements : _animal_holding_id_animal_id_farm_id
+    animal_measurements o|--o{ animal_measurements : _corrects_id
+    change_requests ||--o{ animal_measurements : _request_id
+    animals ||--o{ animal_measurements : _animal_id
+    animal_holdings ||--o{ animal_measurements : _animal_holding_id
+    farms ||--o{ animal_measurements : _farm_id
+    change_requests ||--o{ animal_reports : _request_id
+    animal_holdings ||--o{ animal_reports : _animal_holding_id
+    farms ||--o{ animal_reports : _farm_id
+    change_requests ||--o{ animal_reports : _request_id_farm_id
+    animal_holdings ||--o{ animal_reports : _animal_holding_id_farm_id
+    health_events o|--o{ health_events : _target_event_id_farm_id
+    change_requests ||--o{ health_events : _request_id_farm_id
+    animal_holdings ||--o{ health_events : _animal_holding_id_farm_id
+    users ||--o{ health_events : _recorded_by
+    health_events o|--o{ health_events : _target_event_id
+    change_requests ||--o{ health_events : _request_id
+    animal_holdings ||--o{ health_events : _animal_holding_id
+    farms ||--o{ health_events : _farm_id
+    health_events ||--o{ health_treatments : _health_event_id_farm_id
+    health_events ||--o{ health_treatments : _health_event_id
+    farms ||--o{ health_treatments : _farm_id
+    health_events o|--o{ health_schedules : _completed_event_id_farm_id
+    health_schedules o|--o{ health_schedules : _target_schedule_id_farm_id
+    change_requests ||--o{ health_schedules : _request_id_farm_id
+    animal_holdings ||--o{ health_schedules : _animal_holding_id_farm_id
+    users ||--o{ health_schedules : _created_by
+    health_events o|--o{ health_schedules : _completed_event_id
+    health_schedules o|--o{ health_schedules : _target_schedule_id
+    change_requests ||--o{ health_schedules : _request_id
+    animal_holdings ||--o{ health_schedules : _animal_holding_id
+    farms ||--o{ health_schedules : _farm_id
+    farms o|--o{ request_metrics : _farm_id_account_id
+    users o|--o{ request_metrics : _actor_id
+    farms o|--o{ request_metrics : _farm_id
+    owner_accounts o|--o{ request_metrics : _account_id
+    users ||--o{ movement_status_events : _actor_id
+    sag_movements ||--o{ movement_status_events : _movement_id

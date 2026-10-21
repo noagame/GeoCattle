@@ -17,31 +17,37 @@ def verify_password(encoded,password):
 def token_hash(token): return hmac.new(settings().session_secret.encode(),token.encode(),hashlib.sha256).hexdigest()
 def create_session(db,user):
     token=secrets.token_urlsafe(48)
-    session=LoginSession(token_hash=token_hash(token),user_id=user.id,csrf_token=secrets.token_urlsafe(32),expires_at=utcnow()+timedelta(hours=settings().session_hours))
+    session=LoginSession(token_hash=token_hash(token),user_id=user.id,active_farm_id=user.farm_id,authenticated_at=utcnow(),last_seen_at=utcnow(),csrf_token=secrets.token_urlsafe(32),expires_at=utcnow()+timedelta(hours=settings().session_hours))
     db.add(session)
     return token,session
 
 def current_user(request: Request,db=Depends(get_db, scope="function")):
     token=request.cookies.get("geocattle_session")
     session=db.get(LoginSession,token_hash(token)) if token else None
-    if not session or session.expires_at<=utcnow(): raise HTTPException(401,"Sesión requerida")
+    if not session or session.revoked_at is not None or session.expires_at<=utcnow() or (session.last_seen_at and utcnow()-session.last_seen_at>timedelta(minutes=30)): raise HTTPException(401,"Sesión requerida")
     user=db.get(User,session.user_id)
     if not user or not user.active: raise HTTPException(401,"Sesión requerida")
+    if user.role=='admin' and session.mfa_verified_at is None: raise HTTPException(401,"Se requiere MFA para administrador")
+    request.state.identity=user
     request.state.session=session
+    session.last_seen_at=utcnow()
     if request.method not in ("GET","HEAD","OPTIONS"):
         csrf=request.headers.get("X-CSRF-Token","")
         if not hmac.compare_digest(csrf,session.csrf_token): raise HTTPException(403,"Token CSRF inválido")
         origin=request.headers.get("origin")
         allowed={s.strip() for s in settings().allowed_origins.split(",") if s.strip()}
         if origin and origin not in allowed: raise HTTPException(403,"Origen no autorizado")
-    return user
+    from .v3_security import actor_for
+    actor=actor_for(db,user,session)
+    request.state.actor=actor
+    return actor
 
 def owner(user=Depends(current_user)):
-    if user.role!="owner": raise HTTPException(403,"Se requiere perfil propietario")
+    if user.role not in ("owner","admin"): raise HTTPException(403,"Se requiere perfil propietario")
     return user
 
 def operator(user=Depends(current_user)):
-    if user.role not in ("owner","operator"): raise HTTPException(403,"Sin permiso de escritura")
+    if user.role not in ("owner","admin","operator","worker","veterinarian"): raise HTTPException(403,"Sin permiso de escritura")
     return user
 
 def service_auth(request:Request):

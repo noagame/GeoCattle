@@ -1,5 +1,19 @@
 # GeoCattle SaaS · V1
 
+## Actualización V3 — 21 de octubre de 2026
+
+La instancia local incorpora paneles de administrador, dueño, trabajador y veterinario, contexto multipredio, MFA TOTP, invitaciones, confianza y aprobación de cambios, fichas sanitarias históricas, agenda, gateways y KPIs. El modelo operativo se amplía con `003_application_v3.sql`, conservando datos V1.
+
+- Aplicación: [http://localhost:8080](http://localhost:8080).
+- Modelo real: [MODELO_BASE_DATOS.md](docs/MODELO_BASE_DATOS.md) y [MIGRACION_V3.md](docs/MIGRACION_V3.md).
+- Validación de integración: [IMPLEMENTACION_V3.md](docs/IMPLEMENTACION_V3.md).
+- Gantt e informe: `docs/planificacion/` y `../actualizacion_informe.md`.
+- El acceso inicial del administrador creado en esta sesión se guardó en `.runtime/acceso_administrador_v3.json` con permisos privados. No añadirlo a Git ni compartirlo. El titular debe activar TOTP al primer ingreso; la credencial del dueño existente se conserva.
+- En instalaciones nuevas, `scripts/start.sh` concilia el seed legado con V3. El primer administrador se crea explícitamente con `python -m geocattle.seed_v3 --admin-email CORREO` y la variable `V3_ADMIN_PASSWORD` (mínimo 12 caracteres), usando el servicio tools/seed con credencial de migración.
+
+Recuperación/cambio de correo y cierre autónomo de cuenta, entrega externa de invitaciones, FMA oficial y pruebas físicas no se declaran completos. La verificación sensible utiliza una ventana MFA de diez minutos; el reto ligado a cada escritura se mantiene como mejora pendiente. El alcance y los límites exactos están en la evidencia de integración.
+
+
 Aplicación web de supervisión bovina basada en el segundo informe de desarrollo de GeoCattle. Frontend React/TypeScript/Leaflet, backend FastAPI y PostgreSQL/PostGIS, con operación local y entornos de simulación y piloto separados. Los informes y archivos originales se conservaron intactos.
 
 ## Inicio rápido

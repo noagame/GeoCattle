@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 class LoginIn(Strict):
-    username: str = Field(min_length=1, max_length=100)
+    username: str = Field(min_length=1, max_length=254)
     password: str = Field(min_length=1, max_length=256)
 class AnimalIn(Strict):
     diio: str = Field(min_length=1,max_length=64,pattern=r"^[A-Za-z0-9_-]+$")
@@ -33,6 +33,8 @@ class AssignmentIn(Strict):
     @classmethod
     def aware(cls,v): return check_time(v)
 class SectorIn(Strict):
+    land_use: Literal["grazing","available","cropped","restricted","other"] = "grazing"
+    description: str | None = Field(default=None,max_length=1000)
     name: str = Field(min_length=1,max_length=100)
 class GeofenceIn(Strict):
     sector_id: UUID
@@ -46,11 +48,13 @@ class GeofenceIn(Strict):
         if set(v) != {"type","coordinates"} or v.get("type") != "Polygon": raise ValueError("Se requiere GeoJSON Polygon")
         rings=v.get("coordinates")
         if not isinstance(rings,list) or not rings or len(rings)>100: raise ValueError("Polígono sin anillos o demasiado complejo")
+        if len(rings)!=1:raise ValueError("Geocerca sin huecos interiores")
         count=0
         for ring in rings:
-            if not isinstance(ring,list) or len(ring)<4 or ring[0]!=ring[-1]: raise ValueError("Cada anillo requiere 4 puntos y cierre")
+            if not isinstance(ring,list) or len(ring)<5 or ring[0]!=ring[-1]: raise ValueError("Cada anillo requiere al menos cuatro vértices distintos y cierre")
             for p in ring:
                 if not isinstance(p,list) or len(p)!=2 or isinstance(p[0],bool) or isinstance(p[1],bool) or not isinstance(p[0],(float,int)) or not isinstance(p[1],(float,int)) or not -180<=p[0]<=180 or not -90<=p[1]<=90: raise ValueError("Coordenadas WGS84 inválidas")
+            if len({tuple(p) for p in ring[:-1]})<4:raise ValueError("Se requieren cuatro vértices distintos")
             count+=len(ring)
         if count>10000: raise ValueError("Máximo 10000 vértices")
         return v
@@ -82,6 +86,18 @@ class SettingsIn(Strict):
         if self.temperature_enabled and self.temperature_high_c is None: raise ValueError("Umbral térmico requerido")
         if self.activity_enabled and self.activity_low_threshold is None: raise ValueError("Umbral actividad requerido")
         return self
+class ReceptionIn(Strict):
+    gateway_eui: str = Field(pattern=r"^[0-9a-fA-F]{16}$")
+    rssi_dbm: float = Field(strict=True,allow_inf_nan=False,ge=-200,le=20)
+    snr_db: float = Field(strict=True,allow_inf_nan=False,ge=-100,le=100)
+    received_at: datetime | None = None
+    @field_validator("gateway_eui")
+    @classmethod
+    def normalized_eui(cls,v): return v.lower()
+    @field_validator("received_at")
+    @classmethod
+    def aware(cls,v): return check_time(v)
+
 class TelemetryIn(Strict):
     schema_version: Literal[1] = 1
     hardware_id: str = Field(min_length=1,max_length=100)
@@ -97,6 +113,7 @@ class TelemetryIn(Strict):
     source: Literal["sim","academic","lorawan"]
     quality: dict = Field(default_factory=dict)
     config_version: int | None = Field(default=None,ge=0)
+    receptions: list[ReceptionIn] = Field(default_factory=list,max_length=10)
     @field_validator("observed_at")
     @classmethod
     def aware(cls,v): return check_time(v)
@@ -127,3 +144,10 @@ class MaintenanceIn(Strict):
     def aware(cls,v):return check_time(v)
 class DevicePatch(Strict):
     enabled: bool
+
+class SectorPatch(Strict):
+    name: str | None = Field(default=None,min_length=1,max_length=100)
+    land_use: Literal["grazing","available","cropped","restricted","other"] | None = None
+    usage: Literal["grazing","available","cropped","restricted","other"] | None = None
+    description: str | None = Field(default=None,max_length=1000)
+    active: bool | None = None

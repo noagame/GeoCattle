@@ -1,0 +1,46 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+title Dueño · monitoreo y salud
+actor "Dueño" as owner
+actor "Administrador (soporte)" as admin
+rectangle "GeoCattle · aplicación de gestión" {
+  usecase "CU-01\nIniciar sesión y seleccionar contexto" as CU_01
+  usecase "CU-02\nCerrar sesión o recuperar acceso" as CU_02
+  usecase "CU-07\nAdministrar perfil propio" as CU_07
+  usecase "CU-15\nConsultar mapa del predio" as CU_15
+  usecase "CU-16\nConsultar ficha e historial" as CU_16
+  usecase "CU-19\nReportar cambio de batería" as CU_19
+  usecase "CU-22\nModificar ficha técnica" as CU_22
+  usecase "CU-23\nGestionar ficha sanitaria" as CU_23
+  usecase "CU-24\nPlanificar próxima atención" as CU_24
+  usecase "CU-27\nGenerar y atender alerta" as CU_27
+  usecase "CU-28\nConfigurar collar y entregar avisos" as CU_28
+}
+owner -- CU_01
+owner -- CU_02
+owner -- CU_07
+owner -- CU_15
+owner -- CU_16
+owner -- CU_19
+owner -- CU_22
+owner -- CU_23
+owner -- CU_24
+owner -- CU_27
+owner -- CU_28
+admin -- CU_01
+admin -- CU_02
+admin -- CU_07
+admin -- CU_15
+admin -- CU_16
+admin -- CU_19
+admin -- CU_22
+admin -- CU_23
+admin -- CU_24
+admin -- CU_27
+admin -- CU_28
+note "Las asociaciones de CU-01, CU-02 y CU-07 se refieren a la cuenta propia del actor." as note0
+note "Salud: corrección/anulación agrega historia; no borra el registro original." as note1
+note "CU-28 agrupa configuración y entrega de avisos; se descompone en la vista técnica." as note2
+@enduml

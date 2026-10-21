@@ -20,7 +20,7 @@ from .domain import ingest, append_audit, freshness, at_time, check_timeouts
 from .settings import settings
 
 app=FastAPI(title="GeoCattle API",version="0.1.0",docs_url="/api/docs",openapi_url="/api/openapi.json",redoc_url=None)
-app.add_middleware(CORSMiddleware,allow_origins=[s.strip() for s in settings().allowed_origins.split(",")],allow_credentials=True,allow_methods=["GET","POST","PATCH","PUT"],allow_headers=["Content-Type","X-CSRF-Token"])
+app.add_middleware(CORSMiddleware,allow_origins=[s.strip() for s in settings().allowed_origins.split(",")],allow_credentials=True,allow_methods=["GET","POST","PATCH","PUT","DELETE"],allow_headers=["Content-Type","X-CSRF-Token","X-Operation-Token"])
 api=APIRouter(prefix="/api/v1")
 login_attempts=defaultdict(deque)
 dummy_hash=hash_password(secrets.token_urlsafe(32))
@@ -37,9 +37,22 @@ async def validation_error(request,exc):
 
 @app.middleware("http")
 async def security_headers(request,call_next):
+    request.state.started=time.monotonic()
+    request.state.request_id=secrets.token_hex(12)
     response=await call_next(request)
+    response.headers['X-Request-ID']=request.state.request_id
     response.headers["X-Content-Type-Options"]="nosniff"
     response.headers["Cache-Control"]="no-store"
+    try:
+        from .db import SessionLocal
+        from .v3_security import execute
+        actor=getattr(request.state,'actor',None)
+        farm_id=getattr(actor,'farm_id',None)
+        with SessionLocal.begin() as metrics_db:
+            execute(metrics_db,"INSERT INTO request_metrics(id,account_id,farm_id,actor_id,request_id,method,route_template,status_code,duration_ms,request_bytes,response_bytes) VALUES(:i,(SELECT account_id FROM farms WHERE id=:f),:f,:u,:r,:m,:p,:s,:d,:b,:o)",i=uuid4(),f=farm_id,u=getattr(actor,'id',None),r=request.state.request_id,m=request.method,p=getattr(request.scope.get('route'),'path','unmatched'),s=response.status_code,d=max(0,(time.monotonic()-request.state.started)*1000),b=int(request.headers.get('content-length','0')),o=int(response.headers.get('content-length','0')))
+    except Exception:
+        import logging
+        logging.getLogger('geocattle.metrics').warning('Métrica no persistida; revisar conexión/configuración de observabilidad')
     return response
 
 def accessible(db,model,ident,user,lock=False):
@@ -47,7 +60,7 @@ def accessible(db,model,ident,user,lock=False):
     if not row: raise HTTPException(403,"Recurso no autorizado para este predio")
     return row
 
-def user_json(u):return {"id":str(u.id),"username":u.username,"role":u.role,"farm_id":str(u.farm_id)}
+from .v3_security import user_json
 def telemetry_json(t):
     if t is None:return None
     keys=["id","device_id","animal_id","session_id","seq","observed_at","received_at","longitude","latitude","gnss_valid","surface_temperature_c","activity_index","battery_mv","source","quality","config_version"]
@@ -71,7 +84,7 @@ def animal_json(db,a):
     position,communication=freshness(p.observed_at if p else None,device.last_received_at if device else None,device.interval_seconds if device else 300,now)
     if device is None or not device.enabled or not a.enabled: communication="unknown"
     status="critical" if any(e.severity=="critical" for e in events) else "warning" if events else "unknown" if position!="fresh" or communication!="recent" or not t or not t.gnss_valid or not state or state.geofence_status=="unknown" else "normal"
-    return {"id":a.id,"diio":a.diio,"name":a.name,"orientation":a.orientation,"enabled":a.enabled,"sector_id":a.sector_id,"sector_name":sector.name if sector else None,"device_id":device.id if device else None,"device_name":device.name if device else None,"status":status,"position_status":position,"communication_status":communication,"geofence_status":state.geofence_status if state else "unknown","last_telemetry":telemetry_json(t),"last_position":telemetry_json(p),"position_age_seconds":max(0,(now-p.observed_at).total_seconds()) if p else None,"active_events":len(events)}
+    return {"id":a.id,"diio":a.diio,"name":a.name,"orientation":a.orientation,"version":a.version,"vital_status":a.status,"breed":a.breed,"color":a.color,"sex":a.sex,"birth_date":a.birth_date,"enabled":a.enabled,"sector_id":a.sector_id,"sector_name":sector.name if sector else None,"device_id":device.id if device else None,"device_name":device.name if device else None,"status":status,"position_status":position,"communication_status":communication,"geofence_status":state.geofence_status if state else "unknown","last_telemetry":telemetry_json(t),"last_position":telemetry_json(p),"position_age_seconds":max(0,(now-p.observed_at).total_seconds()) if p else None,"active_events":len(events)}
 def fence_json(db,g):
     geometry=db.scalar(select(func.ST_AsGeoJSON(Geofence.geometry)).where(Geofence.id==g.id))
     return {"id":g.id,"sector_id":g.sector_id,"name":g.name,"version":g.version,"active":g.active,"geometry":json.loads(geometry),"created_at":g.created_at}
@@ -106,22 +119,25 @@ def login(body:LoginIn,request:Request,response:Response,db=Depends(get_db, scop
     user=db.scalar(select(User).where(User.username==body.username.lower()))
     valid=verify_password(user.password_hash if user else dummy_hash,body.password)
     if not valid or not user or not user.active:raise HTTPException(401,"Credenciales inválidas")
-    if db.get(Farm,user.farm_id).environment!=settings().app_env:raise HTTPException(403,"Cuenta de otro entorno")
+    if user.farm_id and db.get(Farm,user.farm_id).environment!=settings().app_env:raise HTTPException(403,"Cuenta de otro entorno")
+    from .v3_security import one,create_challenge
+    from .v3_auth import issue_session
+    if user.role=='admin':
+        factor=one(db,'SELECT id FROM mfa_factors WHERE user_id=:u AND verified_at IS NOT NULL AND revoked_at IS NULL',u=user.id)
+        return create_challenge(db,user,'login' if factor else 'mfa_setup',setup=not bool(factor))
     attempts.clear()
-    token,session=create_session(db,user)
-    response.set_cookie("geocattle_session",token,httponly=True,secure=settings().cookie_secure,samesite="lax",max_age=settings().session_hours*3600,path="/")
-    append_audit(db,user.farm_id,user.id,"session",user.id,"login")
-    return {"user":user_json(user),"csrf_token":session.csrf_token}
+    return issue_session(db,user,response)
 @api.get("/auth/me")
 def me(request:Request,user=Depends(current_user)):return {"user":user_json(user),"csrf_token":request.state.session.csrf_token}
 @api.post("/auth/logout",status_code=204)
 def logout(request:Request,response:Response,user=Depends(current_user),db=Depends(get_db, scope="function")):
-    db.delete(request.state.session)
+    request.state.session.revoked_at=utcnow()
     response.delete_cookie("geocattle_session",path="/",httponly=True,secure=settings().cookie_secure,samesite="lax")
 
 @api.get("/dashboard")
 def dashboard(user=Depends(current_user),db=Depends(get_db, scope="function")):
-    farm=db.get(Farm,user.farm_id)
+    farm=db.get(Farm,user.farm_id) if user.farm_id else None
+    if not farm:raise HTTPException(409,"Selecciona o crea un predio para consultar monitoreo")
     animals=[animal_json(db,a) for a in db.scalars(select(Animal).where(Animal.farm_id==user.farm_id,Animal.enabled.is_(True)).order_by(Animal.diio)).all()]
     events=db.scalars(select(Event).where(Event.farm_id==user.farm_id,Event.condition=="active").order_by(Event.opened_at.desc())).all()
     summary={"total":len(animals),**{s:sum(a["status"]==s for a in animals) for s in ("normal","warning","critical","unknown")},"active_events":len(events)}
@@ -140,6 +156,8 @@ def create_animal(body:AnimalIn,user=Depends(owner),db=Depends(get_db, scope="fu
     if body.sector_id:accessible(db,Sector,body.sector_id,user)
     a=Animal(id=uuid4(),farm_id=user.farm_id,**body.model_dump());db.add(a);db.flush()
     append_audit(db,user.farm_id,user.id,"animal",a.id,"create",after=body.model_dump(mode="json"))
+    from .v3_security import execute
+    execute(db,"INSERT INTO animal_holdings(id,animal_id,farm_id,valid_from,reason) VALUES(:id,:a,:f,now(),'registration')",id=uuid4(),a=a.id,f=a.farm_id)
     return animal_json(db,a)
 @api.patch("/animals/{animal_id}")
 def update_animal(animal_id:UUID,body:AnimalPatch,user=Depends(owner),db=Depends(get_db, scope="function")):
@@ -149,6 +167,7 @@ def update_animal(animal_id:UUID,body:AnimalPatch,user=Depends(owner),db=Depends
     if body.sector_id:accessible(db,Sector,body.sector_id,user)
     before={k:str(getattr(a,k)) for k in changes}
     for k,v in changes.items():setattr(a,k,v)
+    a.version+=1
     db.flush();append_audit(db,user.farm_id,user.id,"animal",a.id,"update",before,body.model_dump(mode="json",exclude_unset=True))
     return animal_json(db,a)
 @api.get("/animals/{animal_id}/history")
@@ -184,7 +203,9 @@ def assign(body:AssignmentIn,user=Depends(owner),db=Depends(get_db, scope="funct
         old.valid_to=at
         append_audit(db,user.farm_id,user.id,"assignment",old.id,"close",after={"valid_to":at.isoformat()})
     db.flush()
-    row=Assignment(id=uuid4(),farm_id=user.farm_id,animal_id=animal.id,device_id=device.id,valid_from=at)
+    from .v3_api import active_holding
+    holding=active_holding(db,animal.id,user.farm_id)
+    row=Assignment(id=uuid4(),farm_id=user.farm_id,animal_id=animal.id,animal_holding_id=holding["id"],device_id=device.id,assigned_by=user.id,valid_from=at)
     db.add(row)
     state=db.get(AnimalState,animal.id)
     if state:state.outside_count=0;state.geofence_status="unknown";state.telemetry_id=None;state.position_telemetry_id=None;state.observed_at=None
@@ -193,10 +214,10 @@ def assign(body:AssignmentIn,user=Depends(owner),db=Depends(get_db, scope="funct
 @api.get("/sectors")
 def sectors(user=Depends(current_user),db=Depends(get_db, scope="function")):
     items=db.scalars(select(Sector).where(Sector.farm_id==user.farm_id).order_by(Sector.name)).all()
-    return {"items":[{"id":s.id,"name":s.name} for s in items],"total":len(items)}
+    return {"items":[{"id":s.id,"name":s.name,"land_use":s.land_use,"description":s.description,"active":s.active} for s in items],"total":len(items)}
 @api.post("/sectors",status_code=201)
 def create_sector(body:SectorIn,user=Depends(owner),db=Depends(get_db, scope="function")):
-    s=Sector(id=uuid4(),farm_id=user.farm_id,name=body.name);db.add(s);db.flush();append_audit(db,user.farm_id,user.id,"sector",s.id,"create",after={"name":s.name});return {"id":s.id,"name":s.name}
+    s=Sector(id=uuid4(),farm_id=user.farm_id,**body.model_dump());db.add(s);db.flush();append_audit(db,user.farm_id,user.id,"sector",s.id,"create",after={"name":s.name});return {"id":s.id,"name":s.name}
 @api.get("/geofences")
 def fences(user=Depends(current_user),db=Depends(get_db, scope="function")):
     items=db.scalars(select(Geofence).where(Geofence.farm_id==user.farm_id).order_by(Geofence.sector_id,Geofence.version.desc())).all()
@@ -216,7 +237,7 @@ def create_fence(body:GeofenceIn,user=Depends(owner),db=Depends(get_db, scope="f
     if old:
         for zone in db.scalars(select(PastureAssignment).where(PastureAssignment.geofence_id==old.id,PastureAssignment.valid_to.is_(None)).with_for_update()).all():
             zone.valid_to=now;db.flush()
-            db.add(PastureAssignment(farm_id=user.farm_id,animal_id=zone.animal_id,geofence_id=g.id,valid_from=now))
+            db.add(PastureAssignment(farm_id=user.farm_id,animal_id=zone.animal_id,animal_holding_id=zone.animal_holding_id,assigned_by=user.id,geofence_id=g.id,valid_from=now))
             state=db.get(AnimalState,zone.animal_id)
             if state:state.outside_count=0;state.geofence_status="unknown"
     append_audit(db,user.farm_id,user.id,"geofence",g.id,"version_create",after={"version":g.version,"geometry":body.geometry,"previous_id":str(old.id) if old else None})
@@ -231,7 +252,9 @@ def assign_pasture(body:PastureIn,user=Depends(owner),db=Depends(get_db, scope="
     if old:
         if old.valid_from>=at:raise HTTPException(409,"Inicio debe ser posterior al previo")
         old.valid_to=at;db.flush()
-    row=PastureAssignment(id=uuid4(),farm_id=user.farm_id,animal_id=a.id,geofence_id=g.id,valid_from=at);db.add(row)
+    from .v3_api import active_holding
+    holding=active_holding(db,a.id,user.farm_id)
+    row=PastureAssignment(id=uuid4(),farm_id=user.farm_id,animal_id=a.id,animal_holding_id=holding["id"],geofence_id=g.id,assigned_by=user.id,valid_from=at);db.add(row)
     a.sector_id=g.sector_id
     state=db.get(AnimalState,a.id)
     if state:state.outside_count=0;state.geofence_status="unknown"
@@ -322,7 +345,7 @@ def maintenance(device_id:UUID|None=None,limit:int=Query(100,ge=1,le=500),offset
     rows=db.scalars(query.order_by(Maintenance.at.desc()).limit(limit).offset(offset)).all()
     return {"items":[{"id":m.id,"device_id":m.device_id,"device_name":db.get(Device,m.device_id).name,"battery_id":m.battery_id,"kind":m.kind,"at":m.at,"responsible_id":m.responsible_id,"responsible_name":db.get(User,m.responsible_id).username,"result":m.result} for m in rows],"total":db.scalar(select(func.count()).select_from(query.subquery()))}
 @api.post("/maintenance",status_code=201)
-def create_maintenance(body:MaintenanceIn,user=Depends(operator),db=Depends(get_db, scope="function")):
+def create_maintenance(body:MaintenanceIn,user=Depends(owner),db=Depends(get_db, scope="function")):
     d=accessible(db,Device,body.device_id,user)
     at=valid_effective(body.at)
     m=Maintenance(id=uuid4(),farm_id=user.farm_id,device_id=d.id,battery_id=body.battery_id,kind=body.kind,at=at,responsible_id=user.id,result=body.result)
@@ -337,4 +360,27 @@ def update_device(device_id:UUID,body:DevicePatch,user=Depends(owner),db=Depends
             e.condition="resolved";e.resolved_at=utcnow();e.detail={**e.detail,"resolution":"Retiro explícito: comunicación deja de ser esperada"}
     db.flush();append_audit(db,user.farm_id,user.id,"device",d.id,"set_enabled",before,{"enabled":d.enabled})
     return device_json(db,d)
+@api.patch("/sectors/{ident}")
+def patch_sector(ident:UUID,body:SectorPatch,user=Depends(owner),db=Depends(get_db,scope="function")):
+    sector=accessible(db,Sector,ident,user,True)
+    changes=body.model_dump(exclude_unset=True)
+    if 'usage' in changes:
+        if 'land_use' in changes and changes['usage']!=changes['land_use']:raise HTTPException(422,"Uso inconsistente")
+        changes['land_use']=changes.pop('usage')
+    if changes.get('active') is False and db.scalar(select(Geofence).where(Geofence.sector_id==ident,Geofence.active)):
+        raise HTTPException(409,"Desactiva/reasigna la geocerca antes de retirar el sector")
+    for key,value in changes.items():
+        if key in ('name','land_use','active') and value is None:raise HTTPException(422,"Campo obligatorio no puede ser nulo")
+        setattr(sector,key,value)
+    append_audit(db,user.farm_id,user.id,"sector",ident,"update",after=changes)
+    return {"id":sector.id,"name":sector.name,"land_use":sector.land_use,"description":sector.description,"active":sector.active}
+
 app.include_router(api)
+from .v3_auth import router as auth_v3_router
+from .v3_api import router as v3_router
+from .v3_operation_auth import router as operation_auth_router
+from .v3_account import router as account_auth_router
+app.include_router(auth_v3_router)
+app.include_router(operation_auth_router)
+app.include_router(account_auth_router)
+app.include_router(v3_router)

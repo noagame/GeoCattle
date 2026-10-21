@@ -1,0 +1,125 @@
+time="2026-10-21T08:32:13-03:00" level=warning msg="buildx Docker CLI plugin not found: falling back to the classic builder. BuildKit-only build features (multi-arch, secrets, ssh, additional contexts, ...) will not be available"
+ Image geocattle-simulation-backend:0.1.0 Building 
+ Image geocattle-simulation-backend:0.1.0 Building 
+Sending build context to Docker daemon  524.4kBSending build context to Docker daemon  1.573MBSending build context to Docker daemon  2.098MBSending build context to Docker daemon  2.622MBSending build context to Docker daemon  3.154MBSending build context to Docker daemon  4.204MBSending build context to Docker daemon  5.253MBSending build context to Docker daemon  6.302MBSending build context to Docker daemon  6.826MBSending build context to Docker daemon  7.351MBSending build context to Docker daemon  7.875MBSending build context to Docker daemon  8.399MBSending build context to Docker daemon  8.924MBSending build context to Docker daemon  9.448MBSending build context to Docker daemon  10.21MB
+Step 1/12 : FROM python:3.12-slim
+ ---> 05cda9777409
+Step 2/12 : ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ ---> Using cache
+ ---> 818bf2196993
+Step 3/12 : WORKDIR /app
+ ---> Using cache
+ ---> d0d50acfb32f
+Step 4/12 : COPY backend/pyproject.toml backend/requirements.lock ./
+ ---> Using cache
+ ---> 894b3a8c2bad
+Step 5/12 : RUN pip install --no-cache-dir -r requirements.lock && useradd --create-home app && mkdir -p /data && chown app /data
+ ---> Using cache
+ ---> fb8ab7d66b55
+Step 6/12 : COPY backend/geocattle geocattle
+ ---> 977a1be326ef
+Step 7/12 : COPY database /database
+ ---> fb2bc61a5949
+Step 8/12 : RUN pip install --no-deps .
+ ---> Running in 2aaa2ccf434e
+Processing /app
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: geocattle-backend
+  Building wheel for geocattle-backend (pyproject.toml): started
+  Building wheel for geocattle-backend (pyproject.toml): finished with status 'done'
+  Created wheel for geocattle-backend: filename=geocattle_backend-0.1.0-py3-none-any.whl size=60780 sha256=edf6738a12cca3f2431b34745d426d26894db1cfaa936dae942eb6965434502a
+  Stored in directory: /tmp/pip-ephem-wheel-cache-8fpm73ir/wheels/54/1b/b7/aa63e25c8f14f4f2ae7b04e6097bdecb770e455c5c1ee0a600
+Successfully built geocattle-backend
+Installing collected packages: geocattle-backend
+Successfully installed geocattle-backend-0.1.0
+[91mWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+[0m[91m
+[notice] A new release of pip is available: 25.0.1 -> 26.2.2
+[notice] To update, run: pip install --upgrade pip
+[0m ---> Removed intermediate container 2aaa2ccf434e
+ ---> 237a05f9a102
+Step 9/12 : USER app
+ ---> Running in 2a1fdcac8fe9
+ ---> Removed intermediate container 2a1fdcac8fe9
+ ---> ba3893a971cd
+Step 10/12 : EXPOSE 8000
+ ---> Running in 0bd04eb1504a
+ ---> Removed intermediate container 0bd04eb1504a
+ ---> 9d59423ba2b2
+Step 11/12 : CMD ["uvicorn", "geocattle.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ ---> Running in 4ca6f59c93a8
+ ---> Removed intermediate container 4ca6f59c93a8
+ ---> fccb96628513
+Step 12/12 : LABEL com.docker.compose.image.builder=classic
+ ---> Running in 630a012f742e
+ ---> Removed intermediate container 630a012f742e
+ ---> 7ee235142e4a
+Successfully built 7ee235142e4a
+Successfully tagged geocattle-simulation-backend:0.1.0
+ Image geocattle-simulation-backend:0.1.0 Built 
+ Image geocattle-simulation-backend:0.1.0 Built 
+ Image geocattle-simulation-web Building 
+ Image geocattle-simulation-web Building 
+Sending build context to Docker daemon  524.4kBSending build context to Docker daemon  1.049MBSending build context to Docker daemon  1.573MBSending build context to Docker daemon  2.098MBSending build context to Docker daemon  2.622MBSending build context to Docker daemon  3.154MBSending build context to Docker daemon  4.728MBSending build context to Docker daemon  5.777MBSending build context to Docker daemon  6.302MBSending build context to Docker daemon  6.826MBSending build context to Docker daemon  7.351MBSending build context to Docker daemon  7.875MBSending build context to Docker daemon  8.399MBSending build context to Docker daemon  8.924MBSending build context to Docker daemon  9.448MBSending build context to Docker daemon  9.972MBSending build context to Docker daemon  10.21MB
+Step 1/11 : FROM node:24-alpine AS build
+ ---> ebfe2f904627
+Step 2/11 : WORKDIR /app
+ ---> Using cache
+ ---> 230a0e4375e6
+Step 3/11 : COPY frontend/package.json frontend/package-lock.json ./
+ ---> Using cache
+ ---> 16e3a68da3d8
+Step 4/11 : RUN npm ci
+ ---> Using cache
+ ---> 3397f988b4cf
+Step 5/11 : COPY frontend/ ./
+ ---> c881ccd7f1a0
+Step 6/11 : RUN npm run build
+ ---> Running in 6c6607b6099e
+
+> geocattle-frontend@0.1.0 build
+> tsc -b && vite build
+
+vite v6.4.1 building for production...
+transforming...
+✓ 1637 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                     0.57 kB │ gzip:   0.35 kB
+dist/assets/index-DdHW5nmy.css     68.46 kB │ gzip:  18.27 kB
+dist/assets/V3Farm-BB7Gt6Fr.js     19.30 kB │ gzip:   5.46 kB
+dist/assets/V3Admin-DZxnIM4O.js    21.72 kB │ gzip:   6.60 kB
+dist/assets/V3Health-D20mYgsx.js   27.61 kB │ gzip:   8.11 kB
+dist/assets/index-bdzQemo-.js     478.70 kB │ gzip: 140.04 kB
+✓ built in 9.48s
+[91mnpm notice
+npm notice New major version of npm available! 11.19.0 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice
+[0m ---> Removed intermediate container 6c6607b6099e
+ ---> 55eb7ef32a41
+Step 7/11 : FROM nginx:1.28-alpine
+ ---> a8b39bd9cf0f
+Step 8/11 : COPY infrastructure/nginx.conf /etc/nginx/conf.d/default.conf
+ ---> Using cache
+ ---> b8d84b868b1e
+Step 9/11 : COPY --from=build /app/dist /usr/share/nginx/html
+ ---> e9215c9b09b3
+Step 10/11 : EXPOSE 80
+ ---> Running in 45ed091a6cc5
+ ---> Removed intermediate container 45ed091a6cc5
+ ---> c030f52a0b8e
+Step 11/11 : LABEL com.docker.compose.image.builder=classic
+ ---> Running in 14ab182ede8c
+ ---> Removed intermediate container 14ab182ede8c
+ ---> ccad355bdb6c
+Successfully built ccad355bdb6c
+Successfully tagged geocattle-simulation-web:latest
+ Image geocattle-simulation-web Built 
+ Image geocattle-simulation-web Built 

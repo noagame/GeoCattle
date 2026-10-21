@@ -1,0 +1,460 @@
+[
+  {
+    "slug": "01_general",
+    "title": "Vista general de actores y funciones",
+    "actors": [
+      [
+        "admin",
+        "Administrador",
+        [
+          "CU-03",
+          "CU-05",
+          "CU-06"
+        ]
+      ],
+      [
+        "owner",
+        "Dueño",
+        [
+          "CU-08",
+          "CU-13",
+          "CU-20"
+        ]
+      ],
+      [
+        "worker",
+        "Trabajador",
+        [
+          "CU-15",
+          "CU-17"
+        ]
+      ],
+      [
+        "vet",
+        "Veterinario",
+        [
+          "CU-15",
+          "CU-23"
+        ]
+      ],
+      [
+        "ingest",
+        "Servicio de ingestión",
+        [
+          "CU-26"
+        ]
+      ],
+      [
+        "notify",
+        "Servicio de avisos",
+        [
+          "CU-28"
+        ]
+      ]
+    ],
+    "ids": [
+      "CU-03",
+      "CU-05",
+      "CU-06",
+      "CU-08",
+      "CU-13",
+      "CU-20",
+      "CU-15",
+      "CU-17",
+      "CU-23",
+      "CU-26",
+      "CU-28"
+    ],
+    "notes": [
+      "Vista resumida: los ocho diagramas cubren los 29 casos del catálogo V3.",
+      "No hay herencia entre perfiles. El administrador actúa en soporte con identidad y auditoría propias."
+    ],
+    "extra": [],
+    "relations": []
+  },
+  {
+    "slug": "02_administrador",
+    "title": "Administrador · plataforma",
+    "actors": [
+      [
+        "admin",
+        "Administrador",
+        [
+          "CU-01",
+          "CU-02",
+          "CU-03",
+          "CU-04",
+          "CU-05",
+          "CU-06",
+          "CU-07"
+        ]
+      ]
+    ],
+    "ids": [
+      "CU-01",
+      "CU-02",
+      "CU-03",
+      "CU-04",
+      "CU-05",
+      "CU-06",
+      "CU-07"
+    ],
+    "notes": [
+      "MFA obligatorio para entrar al panel global; no se representa como una aprobación del dueño.",
+      "La administración de soporte sobre predios se muestra también en las vistas del dueño.",
+      "CU-04 administra colaboradores ya incorporados por el dueño."
+    ],
+    "extra": [],
+    "relations": []
+  },
+  {
+    "slug": "03_dueno_gestion",
+    "title": "Dueño · predios, colaboradores y aprobación",
+    "actors": [
+      [
+        "owner",
+        "Dueño",
+        [
+          "CU-08",
+          "CU-09",
+          "CU-10",
+          "CU-11",
+          "CU-12",
+          "CU-13",
+          "CU-20",
+          "CU-21",
+          "CU-25",
+          "CU-29"
+        ]
+      ],
+      [
+        "admin",
+        "Administrador (soporte)",
+        [
+          "CU-08",
+          "CU-09",
+          "CU-10",
+          "CU-11",
+          "CU-12",
+          "CU-13",
+          "CU-20",
+          "CU-21",
+          "CU-25",
+          "CU-29"
+        ]
+      ]
+    ],
+    "ids": [
+      "CU-08",
+      "CU-09",
+      "CU-10",
+      "CU-11",
+      "CU-12",
+      "CU-13",
+      "CU-20",
+      "CU-21",
+      "CU-25",
+      "CU-29"
+    ],
+    "notes": [
+      "Dueño: solo su cuenta y predios. Administrador: contexto de soporte registrado.",
+      "CU-13 y CU-21 requieren verificación reforzada del dueño; no basta un botón de confirmación.",
+      "CU-29 es extensión FMA P2; no implica integración oficial con SIPEC."
+    ],
+    "extra": [],
+    "relations": []
+  },
+  {
+    "slug": "04_dueno_monitoreo_salud",
+    "title": "Dueño · monitoreo y salud",
+    "actors": [
+      [
+        "owner",
+        "Dueño",
+        [
+          "CU-01",
+          "CU-02",
+          "CU-07",
+          "CU-15",
+          "CU-16",
+          "CU-19",
+          "CU-22",
+          "CU-23",
+          "CU-24",
+          "CU-27",
+          "CU-28"
+        ]
+      ],
+      [
+        "admin",
+        "Administrador (soporte)",
+        [
+          "CU-01",
+          "CU-02",
+          "CU-07",
+          "CU-15",
+          "CU-16",
+          "CU-19",
+          "CU-22",
+          "CU-23",
+          "CU-24",
+          "CU-27",
+          "CU-28"
+        ]
+      ]
+    ],
+    "ids": [
+      "CU-01",
+      "CU-02",
+      "CU-07",
+      "CU-15",
+      "CU-16",
+      "CU-19",
+      "CU-22",
+      "CU-23",
+      "CU-24",
+      "CU-27",
+      "CU-28"
+    ],
+    "notes": [
+      "Las asociaciones de CU-01, CU-02 y CU-07 se refieren a la cuenta propia del actor.",
+      "Salud: corrección/anulación agrega historia; no borra el registro original.",
+      "CU-28 agrupa configuración y entrega de avisos; se descompone en la vista técnica."
+    ],
+    "extra": [],
+    "relations": []
+  },
+  {
+    "slug": "05_trabajador",
+    "title": "Trabajador · consultas y propuestas",
+    "actors": [
+      [
+        "worker",
+        "Trabajador",
+        [
+          "CU-01",
+          "CU-02",
+          "CU-07",
+          "CU-14",
+          "CU-15",
+          "CU-16",
+          "CU-17",
+          "CU-18",
+          "CU-19",
+          "CU-27"
+        ]
+      ]
+    ],
+    "ids": [
+      "CU-01",
+      "CU-02",
+      "CU-07",
+      "CU-14",
+      "CU-15",
+      "CU-16",
+      "CU-17",
+      "CU-18",
+      "CU-19",
+      "CU-27"
+    ],
+    "notes": [
+      "CU-17, CU-18 y CU-19 generan solicitudes por defecto; ver diagrama de aprobación.",
+      "Confianza vigente puede habilitar aplicación directa por acción y predio.",
+      "El trabajador reporta tratamientos administrados; no obtiene facultad de prescribir."
+    ],
+    "extra": [],
+    "relations": []
+  },
+  {
+    "slug": "06_veterinario",
+    "title": "Veterinario · ficha técnica y sanitaria",
+    "actors": [
+      [
+        "vet",
+        "Veterinario",
+        [
+          "CU-01",
+          "CU-02",
+          "CU-07",
+          "CU-14",
+          "CU-15",
+          "CU-16",
+          "CU-22",
+          "CU-23",
+          "CU-24",
+          "CU-27"
+        ]
+      ]
+    ],
+    "ids": [
+      "CU-01",
+      "CU-02",
+      "CU-07",
+      "CU-14",
+      "CU-15",
+      "CU-16",
+      "CU-22",
+      "CU-23",
+      "CU-24",
+      "CU-27"
+    ],
+    "notes": [
+      "CU-22, CU-23 y CU-24 se aplican directamente: no requieren aprobación del dueño.",
+      "Acceso solo a predios con membresía vigente; cada cambio conserva autoría y auditoría.",
+      "El perfil no administra colaboradores, DIIO, predios ni asignaciones de collar."
+    ],
+    "extra": [],
+    "relations": []
+  },
+  {
+    "slug": "07_aprobacion",
+    "title": "Propuestas del trabajador y decisiones del dueño",
+    "actors": [
+      [
+        "worker",
+        "Trabajador",
+        [
+          "CU-17",
+          "CU-18",
+          "CU-19"
+        ]
+      ],
+      [
+        "owner",
+        "Dueño",
+        [
+          "CU-20",
+          "CU-21"
+        ]
+      ]
+    ],
+    "ids": [
+      "CU-17",
+      "CU-18",
+      "CU-19",
+      "CU-20",
+      "CU-21"
+    ],
+    "notes": [
+      "Las solicitudes persisten sin modificar la ficha efectiva hasta una decisión autorizada.",
+      "«include» significa comportamiento obligatorio; «extend» significa una extensión condicional.",
+      "La aplicación directa por confianza es una alternativa; no hereda permisos adicionales.",
+      "La revisión/aplicación incluye control de versión, auditoría e idempotencia."
+    ],
+    "extra": [
+      [
+        "AUX-01",
+        "Persistir propuesta y notificar al dueño"
+      ],
+      [
+        "AUX-02",
+        "Aplicar cambio con decisión y auditoría"
+      ],
+      [
+        "AUX-03",
+        "Aplicar directamente por confianza"
+      ]
+    ],
+    "relations": [
+      [
+        "CU-17",
+        "AUX-01",
+        "include",
+        ""
+      ],
+      [
+        "CU-18",
+        "AUX-01",
+        "include",
+        ""
+      ],
+      [
+        "CU-19",
+        "AUX-01",
+        "include",
+        ""
+      ],
+      [
+        "AUX-02",
+        "CU-20",
+        "extend",
+        "[dueño aprueba]"
+      ],
+      [
+        "AUX-03",
+        "AUX-01",
+        "extend",
+        "[confianza vigente]"
+      ],
+      [
+        "AUX-03",
+        "AUX-02",
+        "include",
+        ""
+      ]
+    ]
+  },
+  {
+    "slug": "08_actores_tecnicos",
+    "title": "Servicios técnicos · ingestión, alertas y avisos",
+    "actors": [
+      [
+        "collar",
+        "Collar / red IoT",
+        [
+          "CU-26"
+        ]
+      ],
+      [
+        "ingest",
+        "Servicio de ingestión",
+        [
+          "CU-26",
+          "CU-27"
+        ]
+      ],
+      [
+        "notify",
+        "Servicio de avisos",
+        [
+          "CU-28"
+        ]
+      ],
+      [
+        "owner",
+        "Dueño",
+        [
+          "CU-27",
+          "CU-28"
+        ]
+      ],
+      [
+        "worker",
+        "Trabajador",
+        [
+          "CU-27"
+        ]
+      ],
+      [
+        "vet",
+        "Veterinario",
+        [
+          "CU-27"
+        ]
+      ]
+    ],
+    "ids": [
+      "CU-26",
+      "CU-27",
+      "CU-28"
+    ],
+    "notes": [
+      "Los servicios técnicos son actores externos al límite de la aplicación de gestión.",
+      "CU-27 comprende generar (servicio) y atender (personas); no son permisos intercambiables.",
+      "CU-28 comprende configurar (dueño) y entregar avisos (servicio).",
+      "Cada servicio usa credencial técnica y alcance restringido."
+    ],
+    "extra": [],
+    "relations": []
+  }
+]

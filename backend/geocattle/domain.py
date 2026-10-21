@@ -6,6 +6,7 @@ from sqlalchemy import and_, func, or_, select, text
 from .models import *
 from .settings import settings
 from .schemas import TelemetryIn
+from .v3_receptions import persist_receptions
 
 def append_audit(db,farm_id,actor,kind,obj,action,before=None,after=None):
     db.add(Audit(farm_id=farm_id,actor_id=actor,object_type=kind,object_id=str(obj),action=action,before=before,after=after))
@@ -49,13 +50,16 @@ def ingest(db,payload:TelemetryIn,received_at=None):
     elif payload.source!=device.transport: raise HTTPException(422,"Fuente incompatible con transporte registrado")
     if farm.environment!=settings().app_env: raise HTTPException(403,"Predio de otro entorno")
     existing=db.scalar(select(Telemetry).where(Telemetry.device_id==device.id,Telemetry.session_id==payload.session_id,Telemetry.seq==payload.seq))
-    if existing: return {"id":str(existing.id),"duplicate":True,"animal_id":str(existing.animal_id) if existing.animal_id else None}
+    if existing:
+        persist_receptions(db,existing,payload.receptions,now)
+        return {"id":str(existing.id),"duplicate":True,"animal_id":str(existing.animal_id) if existing.animal_id else None}
     assignment=db.scalar(select(Assignment).where(Assignment.device_id==device.id,at_time(Assignment,payload.observed_at)))
-    values=payload.model_dump(exclude={"hardware_id","schema_version"})
+    values=payload.model_dump(exclude={"hardware_id","schema_version","receptions"})
     row=Telemetry(id=uuid4(),farm_id=device.farm_id,device_id=device.id,animal_id=assignment.animal_id if assignment else None,assignment_id=assignment.id if assignment else None,received_at=now,**values)
     if row.gnss_valid:
         row.point=func.ST_SetSRID(func.ST_MakePoint(row.longitude,row.latitude),4326)
     db.add(row); db.flush()
+    persist_receptions(db,row,payload.receptions,now)
     newer=device.last_observed_at is None or row.observed_at>device.last_observed_at
     recent=(now-row.observed_at).total_seconds()<=2*device.interval_seconds+30
     # A delayed or duplicate packet cannot rejuvenate effective communication.

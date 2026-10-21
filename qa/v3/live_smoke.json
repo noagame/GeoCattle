@@ -1,0 +1,29 @@
+{
+  "checked_at": "2026-10-21T11:34:59.746459+00:00",
+  "origin": "http://localhost:8080",
+  "checks": {
+    "web": 200,
+    "health": 200,
+    "anonymous_admin_denied": true,
+    "dashboard": 200,
+    "v3/profile": 200,
+    "v3/farms": 200,
+    "animals?limit=1": 200,
+    "devices?limit=1": 200,
+    "v3/notifications": 200,
+    "owner_global_admin_denied": true,
+    "sensitive_write_without_operation_token_denied": true,
+    "logout_revoked": true,
+    "deployed_source_matches": 22
+  },
+  "owner_list_counts": {
+    "animals": 70,
+    "devices": 70
+  },
+  "database_counts": {
+    "animals": 70,
+    "devices": 70,
+    "telemetry": 569,
+    "application_tables": 48
+  }
+}

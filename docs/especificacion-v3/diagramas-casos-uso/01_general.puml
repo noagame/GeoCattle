@@ -1,0 +1,39 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+title Vista general de actores y funciones
+actor "Administrador" as admin
+actor "Dueño" as owner
+actor "Trabajador" as worker
+actor "Veterinario" as vet
+actor "Servicio de ingestión" as ingest
+actor "Servicio de avisos" as notify
+rectangle "GeoCattle · aplicación de gestión" {
+  usecase "CU-03\nAdministrar dueños/clientes" as CU_03
+  usecase "CU-05\nConsultar KPIs" as CU_05
+  usecase "CU-06\nAuditar actividad y consumo" as CU_06
+  usecase "CU-08\nAdministrar predios" as CU_08
+  usecase "CU-13\nInvitar y administrar colaboradores" as CU_13
+  usecase "CU-20\nAprobar o rechazar solicitud" as CU_20
+  usecase "CU-15\nConsultar mapa del predio" as CU_15
+  usecase "CU-17\nRegistrar vacuna o antibiótico por trabajador" as CU_17
+  usecase "CU-23\nGestionar ficha sanitaria" as CU_23
+  usecase "CU-26\nRecibir telemetría" as CU_26
+  usecase "CU-28\nConfigurar collar y entregar avisos" as CU_28
+}
+admin -- CU_03
+admin -- CU_05
+admin -- CU_06
+owner -- CU_08
+owner -- CU_13
+owner -- CU_20
+worker -- CU_15
+worker -- CU_17
+vet -- CU_15
+vet -- CU_23
+ingest -- CU_26
+notify -- CU_28
+note "Vista resumida: los ocho diagramas cubren los 29 casos del catálogo V3." as note0
+note "No hay herencia entre perfiles. El administrador actúa en soporte con identidad y auditoría propias." as note1
+@enduml

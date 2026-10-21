@@ -1,0 +1,638 @@
+<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GeoCattle · Modelos V3</title><style>body{font:16px system-ui;background:#f5f8fb;color:#18354b;margin:0}main{max-width:1440px;margin:auto;padding:28px}h1{margin-bottom:8px}nav{display:flex;gap:20px;flex-wrap:wrap;padding:14px 0}a{color:#176b72}svg{width:100%;height:auto}details{margin:10px 0;background:white;border:1px solid #dce5ee;border-radius:8px;padding:12px}summary{cursor:pointer;font-weight:650}table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:8px;border-bottom:1px solid #e7edf2;overflow-wrap:anywhere}section{margin:34px 0}code{font-size:13px}.badge{padding:5px 10px;background:#e0f2ed;border-radius:8px}p{line-height:1.6}.scroll{overflow:auto}</style><main>
+<h1>GeoCattle · Especificación V3</h1><p>Administrador global, dueño multipredio, trabajador con aprobación y veterinario con cambios directos.</p><p><span class="badge">Propuesta · 48 entidades · 29 casos · 44 RF · 22 RNF</span></p><nav><a href="README.md">Documentación</a><a href="MODELO_FISICO_V3.sql">SQL físico</a><a href="MODELO_V3.drawio">Diagrama editable</a><a href="#diccionario">Explorar entidades</a></nav>
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="1410" viewBox="0 0 1480 1410">
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9" fill="none" stroke="#718299" stroke-width="1.4"/></marker></defs>
+<rect width="1480" height="1410" fill="#f5f8fb"/>
+<text x="46" y="56" font-family="sans-serif" font-size="30" font-weight="700" fill="#142b40">GeoCattle · Modelo conceptual V3</text>
+<text x="46" y="88" font-family="sans-serif" font-size="16" fill="#52677c">Cuatro perfiles · acceso por predio · cambios trazables · resumen de relaciones principales</text>
+<rect x="30" y="125" width="1420" height="130" rx="16" fill="white" stroke="#dce5ee"/>
+<text x="50" y="152" font-family="sans-serif" font-size="15" font-weight="700" fill="#496278">Acceso global</text>
+<rect x="210" y="163" width="236" height="72" rx="10" fill="#e8efff" stroke="#bbcbd7"/>
+<text x="225" y="191" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">USUARIO</text>
+<text x="225" y="216" font-family="sans-serif" font-size="12" fill="#435a70">Identidad única</text>
+<path d="M446 201 H515" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="480" y="176" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">1 : 0..1</text>
+<rect x="515" y="163" width="236" height="72" rx="10" fill="#e8efff" stroke="#bbcbd7"/>
+<text x="530" y="191" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">ADMINISTRADOR</text>
+<text x="530" y="216" font-family="sans-serif" font-size="12" fill="#435a70">MFA · alcance global</text>
+<rect x="30" y="270" width="1420" height="130" rx="16" fill="white" stroke="#dce5ee"/>
+<text x="50" y="297" font-family="sans-serif" font-size="15" font-weight="700" fill="#496278">Propiedad</text>
+<rect x="210" y="308" width="236" height="72" rx="10" fill="#e0f2ed" stroke="#bbcbd7"/>
+<text x="225" y="336" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">USUARIO</text>
+<text x="225" y="361" font-family="sans-serif" font-size="12" fill="#435a70">Dueño principal</text>
+<path d="M446 346 H515" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="480" y="321" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">1 : 0..1</text>
+<rect x="515" y="308" width="236" height="72" rx="10" fill="#e0f2ed" stroke="#bbcbd7"/>
+<text x="530" y="336" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">CUENTA CLIENTE</text>
+<text x="530" y="361" font-family="sans-serif" font-size="12" fill="#435a70">Cupo de predios</text>
+<path d="M751 346 H820" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="785" y="321" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">1 : 0..N</text>
+<rect x="820" y="308" width="236" height="72" rx="10" fill="#e0f2ed" stroke="#bbcbd7"/>
+<text x="835" y="336" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">PREDIO</text>
+<text x="835" y="361" font-family="sans-serif" font-size="12" fill="#435a70">Contexto de datos</text>
+<rect x="30" y="415" width="1420" height="130" rx="16" fill="white" stroke="#dce5ee"/>
+<text x="50" y="442" font-family="sans-serif" font-size="15" font-weight="700" fill="#496278">Colaboración</text>
+<rect x="210" y="453" width="236" height="72" rx="10" fill="#eaf2d8" stroke="#bbcbd7"/>
+<text x="225" y="481" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">USUARIO</text>
+<text x="225" y="506" font-family="sans-serif" font-size="12" fill="#435a70">Trabajador / veterinario</text>
+<path d="M446 491 H515" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="480" y="466" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">1 : 0..N</text>
+<rect x="515" y="453" width="236" height="72" rx="10" fill="#eaf2d8" stroke="#bbcbd7"/>
+<text x="530" y="481" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">MEMBRESÍA</text>
+<text x="530" y="506" font-family="sans-serif" font-size="12" fill="#435a70">Rol · vigencia</text>
+<path d="M751 491 H820" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="785" y="466" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">0..N : 1</text>
+<rect x="820" y="453" width="236" height="72" rx="10" fill="#eaf2d8" stroke="#bbcbd7"/>
+<text x="835" y="481" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">PREDIO</text>
+<text x="835" y="506" font-family="sans-serif" font-size="12" fill="#435a70">Acceso autorizado</text>
+<rect x="30" y="560" width="1420" height="130" rx="16" fill="white" stroke="#dce5ee"/>
+<text x="50" y="587" font-family="sans-serif" font-size="15" font-weight="700" fill="#496278">Historia animal</text>
+<rect x="210" y="598" width="236" height="72" rx="10" fill="#e0f0ff" stroke="#bbcbd7"/>
+<text x="225" y="626" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">ANIMAL</text>
+<text x="225" y="651" font-family="sans-serif" font-size="12" fill="#435a70">DIIO único</text>
+<path d="M446 636 H515" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="480" y="611" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">1 : 0..N</text>
+<rect x="515" y="598" width="236" height="72" rx="10" fill="#e0f0ff" stroke="#bbcbd7"/>
+<text x="530" y="626" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">PERMANENCIA</text>
+<text x="530" y="651" font-family="sans-serif" font-size="12" fill="#435a70">Intervalo sin solapamiento</text>
+<path d="M751 636 H820" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="785" y="611" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">0..N : 1</text>
+<rect x="820" y="598" width="236" height="72" rx="10" fill="#e0f0ff" stroke="#bbcbd7"/>
+<text x="835" y="626" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">PREDIO</text>
+<text x="835" y="651" font-family="sans-serif" font-size="12" fill="#435a70">Historia de ubicación</text>
+<rect x="30" y="705" width="1420" height="130" rx="16" fill="white" stroke="#dce5ee"/>
+<text x="50" y="732" font-family="sans-serif" font-size="15" font-weight="700" fill="#496278">Monitoreo</text>
+<rect x="210" y="743" width="236" height="72" rx="10" fill="#fff0d7" stroke="#bbcbd7"/>
+<text x="225" y="771" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">ANIMAL</text>
+<text x="225" y="796" font-family="sans-serif" font-size="12" fill="#435a70">Asignación histórica</text>
+<path d="M446 781 H515" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="480" y="756" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">N : M histórica</text>
+<rect x="515" y="743" width="236" height="72" rx="10" fill="#fff0d7" stroke="#bbcbd7"/>
+<text x="530" y="771" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">COLLAR</text>
+<text x="530" y="796" font-family="sans-serif" font-size="12" fill="#435a70">Uno activo por animal</text>
+<path d="M751 781 H820" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="785" y="756" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">1 : 0..N</text>
+<rect x="820" y="743" width="236" height="72" rx="10" fill="#fff0d7" stroke="#bbcbd7"/>
+<text x="835" y="771" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">LECTURA</text>
+<text x="835" y="796" font-family="sans-serif" font-size="12" fill="#435a70">Captura y calidad</text>
+<path d="M1056 781 H1125" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="1090" y="756" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">1 : 0..N</text>
+<rect x="1125" y="743" width="236" height="72" rx="10" fill="#fff0d7" stroke="#bbcbd7"/>
+<text x="1140" y="771" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">RECEPCIÓN</text>
+<text x="1140" y="796" font-family="sans-serif" font-size="12" fill="#435a70">Gateway · RSSI / SNR</text>
+<rect x="30" y="850" width="1420" height="130" rx="16" fill="white" stroke="#dce5ee"/>
+<text x="50" y="877" font-family="sans-serif" font-size="15" font-weight="700" fill="#496278">Pastoreo</text>
+<rect x="210" y="888" width="236" height="72" rx="10" fill="#ffeadf" stroke="#bbcbd7"/>
+<text x="225" y="916" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">SECTOR</text>
+<text x="225" y="941" font-family="sans-serif" font-size="12" fill="#435a70">Uso del terreno</text>
+<path d="M446 926 H515" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="480" y="901" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">1 : 0..N</text>
+<rect x="515" y="888" width="236" height="72" rx="10" fill="#ffeadf" stroke="#bbcbd7"/>
+<text x="530" y="916" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">GEOCERCA</text>
+<text x="530" y="941" font-family="sans-serif" font-size="12" fill="#435a70">Geometría versionada</text>
+<path d="M751 926 H820" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="785" y="901" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">1 : 0..N</text>
+<rect x="820" y="888" width="236" height="72" rx="10" fill="#ffeadf" stroke="#bbcbd7"/>
+<text x="835" y="916" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">ASIGNACIÓN</text>
+<text x="835" y="941" font-family="sans-serif" font-size="12" fill="#435a70">Intervalo de pastoreo</text>
+<path d="M1056 926 H1125" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="1090" y="901" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">0..N : 1</text>
+<rect x="1125" y="888" width="236" height="72" rx="10" fill="#ffeadf" stroke="#bbcbd7"/>
+<text x="1140" y="916" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">ANIMAL</text>
+<text x="1140" y="941" font-family="sans-serif" font-size="12" fill="#435a70">Una zona activa</text>
+<rect x="30" y="995" width="1420" height="130" rx="16" fill="white" stroke="#dce5ee"/>
+<text x="50" y="1022" font-family="sans-serif" font-size="15" font-weight="700" fill="#496278">Cambios</text>
+<rect x="210" y="1033" width="236" height="72" rx="10" fill="#f7e5f0" stroke="#bbcbd7"/>
+<text x="225" y="1061" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">SOLICITUD</text>
+<text x="225" y="1086" font-family="sans-serif" font-size="12" fill="#435a70">Pendiente ≠ efectiva</text>
+<path d="M446 1071 H515" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="480" y="1046" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">1 : 0..1</text>
+<rect x="515" y="1033" width="236" height="72" rx="10" fill="#f7e5f0" stroke="#bbcbd7"/>
+<text x="530" y="1061" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">DECISIÓN</text>
+<text x="530" y="1086" font-family="sans-serif" font-size="12" fill="#435a70">Revisión o directa</text>
+<path d="M751 1071 H820" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="785" y="1046" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">1 : 0..1</text>
+<rect x="820" y="1033" width="236" height="72" rx="10" fill="#f7e5f0" stroke="#bbcbd7"/>
+<text x="835" y="1061" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">APLICACIÓN</text>
+<text x="835" y="1086" font-family="sans-serif" font-size="12" fill="#435a70">Transacción única</text>
+<rect x="30" y="1140" width="1420" height="130" rx="16" fill="white" stroke="#dce5ee"/>
+<text x="50" y="1167" font-family="sans-serif" font-size="15" font-weight="700" fill="#496278">Salud</text>
+<rect x="210" y="1178" width="236" height="72" rx="10" fill="#ece8ff" stroke="#bbcbd7"/>
+<text x="225" y="1206" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">PERMANENCIA</text>
+<text x="225" y="1231" font-family="sans-serif" font-size="12" fill="#435a70">Animal y predio</text>
+<path d="M446 1216 H515" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="480" y="1191" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">1 : 0..N</text>
+<rect x="515" y="1178" width="236" height="72" rx="10" fill="#ece8ff" stroke="#bbcbd7"/>
+<text x="530" y="1206" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">EVENTO SANITARIO</text>
+<text x="530" y="1231" font-family="sans-serif" font-size="12" fill="#435a70">Corrección sin borrado</text>
+<path d="M751 1216 H820" stroke="#718299" fill="none" marker-end="url(#arrow)"/>
+<text x="785" y="1191" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#435a70">1 : 0..N</text>
+<rect x="820" y="1178" width="236" height="72" rx="10" fill="#ece8ff" stroke="#bbcbd7"/>
+<text x="835" y="1206" font-family="sans-serif" font-size="16" font-weight="700" fill="#18354b">TRATAMIENTO</text>
+<text x="835" y="1231" font-family="sans-serif" font-size="12" fill="#435a70">Dosis y resguardo</text>
+<text x="46" y="1325" font-family="sans-serif" font-size="15" fill="#29465d">Trabajador: aprobación por defecto; confianza por acción. Veterinario: cambios directos en fichas.</text>
+<text x="46" y="1355" font-family="sans-serif" font-size="14" fill="#52677c">Una decisión rechazada no tiene aplicación. La aprobación no sustituye MFA. Diagrama completo en archivo Mermaid.</text>
+<text x="46" y="1384" font-family="sans-serif" font-size="13" fill="#52677c">Propuesta de diseño · 20 octubre 2026 · No modifica la base actual</text>
+</svg>
+<section id="diccionario"><h2>Entidades por dominio</h2><p>El SQL incluye las claves compuestas y restricciones completas. Este visor no requiere conexión a Internet.</p>
+<h3>Identidad</h3>
+<details><summary>users</summary><p>Cuenta global; correo normalizado; no se duplica por predio.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>email</code></td><td>text</td><td>NOT NULL UNIQUE CHECK(email=lower(btrim(email)) AND position(&#x27;@&#x27; in email)&gt;1)</td></tr>
+<tr><td><code>password_hash</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>full_name</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>phone</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>status</code></td><td>text</td><td>NOT NULL DEFAULT &#x27;invited&#x27; CHECK(status IN (&#x27;invited&#x27;,&#x27;active&#x27;,&#x27;suspended&#x27;,&#x27;closed&#x27;))</td></tr>
+<tr><td><code>email_verified_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>version</code></td><td>bigint</td><td>NOT NULL DEFAULT 1 CHECK(version&gt;0)</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>updated_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>platform_admins</summary><p>Administradores globales, independientes de clientes y predios.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>user_id</code></td><td>uuid</td><td>PRIMARY KEY REFERENCES users(id)</td></tr>
+<tr><td><code>active</code></td><td>boolean</td><td>NOT NULL DEFAULT true</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>mfa_factors</summary><p>Factores MFA; secretos cifrados por la aplicación con clave externa.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>user_id</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>kind</code></td><td>text</td><td>NOT NULL CHECK(kind IN (&#x27;totp&#x27;,&#x27;webauthn&#x27;))</td></tr>
+<tr><td><code>credential_id</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>protected_data</code></td><td>bytea</td><td>NOT NULL</td></tr>
+<tr><td><code>verified_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>revoked_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>mfa_recovery_codes</summary><p>Códigos de recuperación de un solo uso almacenados con hash.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>user_id</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>code_hash</code></td><td>text</td><td>NOT NULL UNIQUE</td></tr>
+<tr><td><code>used_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>login_sessions</summary><p>Sesiones emitidas solo después de completar autenticación requerida.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>user_id</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>token_hash</code></td><td>text</td><td>NOT NULL UNIQUE</td></tr>
+<tr><td><code>csrf_hash</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>authenticated_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>mfa_verified_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>expires_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>revoked_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+</table></div></details>
+<details><summary>security_challenges</summary><p>Retos MFA/step-up vinculados a sesión, propósito y operación; no contienen OTP en claro.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>session_id</code></td><td>uuid</td><td>NOT NULL REFERENCES login_sessions(id)</td></tr>
+<tr><td><code>purpose</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>operation_digest</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>expires_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>verified_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>consumed_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>attempts</code></td><td>integer</td><td>NOT NULL DEFAULT 0 CHECK(attempts BETWEEN 0 AND 5)</td></tr>
+</table></div></details>
+<details><summary>account_tokens</summary><p>Enlaces de verificación de correo/recuperación sin sesión previa; token de un solo uso con hash.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>user_id</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>purpose</code></td><td>text</td><td>NOT NULL CHECK(purpose IN (&#x27;verify_email&#x27;,&#x27;reset_password&#x27;,&#x27;close_account&#x27;))</td></tr>
+<tr><td><code>token_hash</code></td><td>text</td><td>NOT NULL UNIQUE</td></tr>
+<tr><td><code>pending_email</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>expires_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>consumed_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>roles</summary><p>Catálogo: platform_admin, owner, worker, veterinarian. El alcance se materializa en tablas distintas.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>code</code></td><td>text</td><td>PRIMARY KEY</td></tr>
+<tr><td><code>name</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>scope</code></td><td>text</td><td>NOT NULL CHECK(scope IN (&#x27;platform&#x27;,&#x27;account&#x27;,&#x27;farm&#x27;))</td></tr>
+</table></div></details>
+<details><summary>permissions</summary><p>Catálogo de acciones autorizables.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>code</code></td><td>text</td><td>PRIMARY KEY</td></tr>
+<tr><td><code>description</code></td><td>text</td><td>NOT NULL</td></tr>
+</table></div></details>
+<details><summary>role_permissions</summary><p>Permisos por rol; la confianza no agrega permisos, solo elimina revisión en acciones permitidas.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>role_code</code></td><td>text</td><td>NOT NULL REFERENCES roles(code)</td></tr>
+<tr><td><code>permission_code</code></td><td>text</td><td>NOT NULL REFERENCES permissions(code)</td></tr>
+</table></div></details>
+<h3>Predios</h3>
+<details><summary>owner_accounts</summary><p>Cliente del sistema, administrado por un dueño principal.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>owner_user_id</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>display_name</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>max_farms</code></td><td>integer</td><td>NOT NULL DEFAULT 1 CHECK(max_farms&gt;0)</td></tr>
+<tr><td><code>active</code></td><td>boolean</td><td>NOT NULL DEFAULT true</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>farms</summary><p>Predio perteneciente a una cuenta cliente.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>account_id</code></td><td>uuid</td><td>NOT NULL REFERENCES owner_accounts(id)</td></tr>
+<tr><td><code>name</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>rup</code></td><td>text</td><td>UNIQUE</td></tr>
+<tr><td><code>address</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>region</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>commune</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>timezone</code></td><td>text</td><td>NOT NULL DEFAULT &#x27;America/Santiago&#x27;</td></tr>
+<tr><td><code>boundary</code></td><td>geometry(MultiPolygon,4326)</td><td>Opcional</td></tr>
+<tr><td><code>active</code></td><td>boolean</td><td>NOT NULL DEFAULT true</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>farm_memberships</summary><p>Acceso temporal de trabajador/veterinario; el dueño accede mediante su cuenta.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>user_id</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>role_code</code></td><td>text</td><td>NOT NULL REFERENCES roles(code) CHECK(role_code IN (&#x27;worker&#x27;,&#x27;veterinarian&#x27;))</td></tr>
+<tr><td><code>granted_by</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>valid_from</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>valid_to</code></td><td>timestamptz</td><td>Opcional</td></tr>
+</table></div></details>
+<details><summary>invitations</summary><p>Invitación por predio y rol; acceso solo al aceptar y verificar correo.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>email</code></td><td>text</td><td>NOT NULL CHECK(email=lower(btrim(email)))</td></tr>
+<tr><td><code>role_code</code></td><td>text</td><td>NOT NULL REFERENCES roles(code) CHECK(role_code IN (&#x27;worker&#x27;,&#x27;veterinarian&#x27;))</td></tr>
+<tr><td><code>token_hash</code></td><td>text</td><td>NOT NULL UNIQUE</td></tr>
+<tr><td><code>invited_by</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>expires_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>accepted_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>accepted_user_id</code></td><td>uuid</td><td>REFERENCES users(id)</td></tr>
+<tr><td><code>revoked_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>trust_grants</summary><p>Exención de aprobación por trabajador y acción, revocable y con vigencia.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>membership_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farm_memberships(id)</td></tr>
+<tr><td><code>action</code></td><td>text</td><td>NOT NULL CHECK(action IN (&#x27;animal_status&#x27;,&#x27;animal_report&#x27;,&#x27;health_record&#x27;,&#x27;battery_replacement&#x27;))</td></tr>
+<tr><td><code>granted_by</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>valid_from</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>valid_to</code></td><td>timestamptz</td><td>Opcional</td></tr>
+</table></div></details>
+<h3>Ganado y espacio</h3>
+<details><summary>sectors</summary><p>Sector/potrero del predio y su uso actual.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>name</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>land_use</code></td><td>text</td><td>NOT NULL CHECK(land_use IN (&#x27;grazing&#x27;,&#x27;available&#x27;,&#x27;cropped&#x27;,&#x27;restricted&#x27;,&#x27;other&#x27;))</td></tr>
+<tr><td><code>description</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>active</code></td><td>boolean</td><td>NOT NULL DEFAULT true</td></tr>
+</table></div></details>
+<details><summary>geofences</summary><p>Versiones inmutables de límites; se cierra vigencia sin cambiar coordenadas.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>sector_id</code></td><td>uuid</td><td>NOT NULL REFERENCES sectors(id)</td></tr>
+<tr><td><code>version</code></td><td>integer</td><td>NOT NULL CHECK(version&gt;0)</td></tr>
+<tr><td><code>geometry</code></td><td>geometry(Polygon,4326)</td><td>NOT NULL</td></tr>
+<tr><td><code>created_by</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>valid_from</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>valid_to</code></td><td>timestamptz</td><td>Opcional</td></tr>
+</table></div></details>
+<details><summary>animals</summary><p>Identidad global del bovino; edad derivada de fecha de nacimiento.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>diio</code></td><td>text</td><td>NOT NULL UNIQUE</td></tr>
+<tr><td><code>name</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>species</code></td><td>text</td><td>NOT NULL DEFAULT &#x27;bovine&#x27; CHECK(species=&#x27;bovine&#x27;)</td></tr>
+<tr><td><code>breed</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>color</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>sex</code></td><td>text</td><td>NOT NULL CHECK(sex IN (&#x27;female&#x27;,&#x27;male&#x27;,&#x27;unknown&#x27;))</td></tr>
+<tr><td><code>birth_date</code></td><td>date</td><td>Opcional</td></tr>
+<tr><td><code>birth_date_estimated</code></td><td>boolean</td><td>NOT NULL DEFAULT false</td></tr>
+<tr><td><code>production_type</code></td><td>text</td><td>NOT NULL CHECK(production_type IN (&#x27;milk&#x27;,&#x27;meat&#x27;,&#x27;dual&#x27;,&#x27;other&#x27;))</td></tr>
+<tr><td><code>status</code></td><td>text</td><td>NOT NULL DEFAULT &#x27;active&#x27; CHECK(status IN (&#x27;active&#x27;,&#x27;missing&#x27;,&#x27;dead&#x27;,&#x27;slaughtered&#x27;,&#x27;retired&#x27;))</td></tr>
+<tr><td><code>version</code></td><td>bigint</td><td>NOT NULL DEFAULT 1 CHECK(version&gt;0)</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>animal_holdings</summary><p>Permanencia histórica del animal en un predio.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>animal_id</code></td><td>uuid</td><td>NOT NULL REFERENCES animals(id)</td></tr>
+<tr><td><code>valid_from</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>valid_to</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>reason</code></td><td>text</td><td>NOT NULL</td></tr>
+</table></div></details>
+<details><summary>pasture_assignments</summary><p>Pastoreo temporal del animal en una versión de geocerca.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>animal_holding_id</code></td><td>uuid</td><td>NOT NULL REFERENCES animal_holdings(id)</td></tr>
+<tr><td><code>animal_id</code></td><td>uuid</td><td>NOT NULL REFERENCES animals(id)</td></tr>
+<tr><td><code>geofence_id</code></td><td>uuid</td><td>NOT NULL REFERENCES geofences(id)</td></tr>
+<tr><td><code>assigned_by</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>valid_from</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>valid_to</code></td><td>timestamptz</td><td>Opcional</td></tr>
+</table></div></details>
+<h3>IoT</h3>
+<details><summary>gateways</summary><p>Inventario de gateways y su ubicación; no se confunde con collar.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>gateway_eui</code></td><td>text</td><td>NOT NULL UNIQUE CHECK(gateway_eui ~ &#x27;^[0-9a-f]{16}$&#x27;)</td></tr>
+<tr><td><code>name</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>position</code></td><td>geometry(Point,4326)</td><td>Opcional</td></tr>
+<tr><td><code>status</code></td><td>text</td><td>NOT NULL CHECK(status IN (&#x27;installed&#x27;,&#x27;maintenance&#x27;,&#x27;retired&#x27;))</td></tr>
+<tr><td><code>installed_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>last_seen_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+</table></div></details>
+<details><summary>devices</summary><p>Módulos físicos/collares; inventario independiente de asignación activa.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>serial_number</code></td><td>text</td><td>NOT NULL UNIQUE</td></tr>
+<tr><td><code>dev_eui</code></td><td>text</td><td>UNIQUE CHECK(dev_eui IS NULL OR dev_eui ~ &#x27;^[0-9a-f]{16}$&#x27;)</td></tr>
+<tr><td><code>transport</code></td><td>text</td><td>NOT NULL CHECK(transport IN (&#x27;academic&#x27;,&#x27;lorawan&#x27;))</td></tr>
+<tr><td><code>hardware_revision</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>firmware_version</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>status</code></td><td>text</td><td>NOT NULL CHECK(status IN (&#x27;available&#x27;,&#x27;installed&#x27;,&#x27;maintenance&#x27;,&#x27;retired&#x27;))</td></tr>
+<tr><td><code>interval_seconds</code></td><td>integer</td><td>NOT NULL DEFAULT 300 CHECK(interval_seconds BETWEEN 30 AND 86400)</td></tr>
+<tr><td><code>config_version</code></td><td>integer</td><td>NOT NULL DEFAULT 0 CHECK(config_version&gt;=0)</td></tr>
+<tr><td><code>last_observed_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>last_received_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+</table></div></details>
+<details><summary>assignments</summary><p>Historial de animal/collar sin duplicidad temporal.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>animal_holding_id</code></td><td>uuid</td><td>NOT NULL REFERENCES animal_holdings(id)</td></tr>
+<tr><td><code>animal_id</code></td><td>uuid</td><td>NOT NULL REFERENCES animals(id)</td></tr>
+<tr><td><code>device_id</code></td><td>uuid</td><td>NOT NULL REFERENCES devices(id)</td></tr>
+<tr><td><code>assigned_by</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>valid_from</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>valid_to</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>reason</code></td><td>text</td><td>Opcional</td></tr>
+</table></div></details>
+<details><summary>telemetry</summary><p>Lectura inmutable y deduplicada; atribución por instante de captura.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>device_id</code></td><td>uuid</td><td>NOT NULL REFERENCES devices(id)</td></tr>
+<tr><td><code>assignment_id</code></td><td>uuid</td><td>REFERENCES assignments(id)</td></tr>
+<tr><td><code>animal_id</code></td><td>uuid</td><td>REFERENCES animals(id)</td></tr>
+<tr><td><code>session_id</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>seq</code></td><td>bigint</td><td>NOT NULL CHECK(seq&gt;=0)</td></tr>
+<tr><td><code>observed_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>received_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>point</code></td><td>geometry(Point,4326)</td><td>Opcional</td></tr>
+<tr><td><code>gnss_valid</code></td><td>boolean</td><td>NOT NULL</td></tr>
+<tr><td><code>surface_temperature_c</code></td><td>numeric</td><td>CHECK(surface_temperature_c BETWEEN -60 AND 100)</td></tr>
+<tr><td><code>activity_index</code></td><td>numeric</td><td>CHECK(activity_index&gt;=0)</td></tr>
+<tr><td><code>battery_mv</code></td><td>integer</td><td>CHECK(battery_mv BETWEEN 0 AND 20000)</td></tr>
+<tr><td><code>source</code></td><td>text</td><td>NOT NULL CHECK(source IN (&#x27;sim&#x27;,&#x27;academic&#x27;,&#x27;lorawan&#x27;))</td></tr>
+<tr><td><code>quality</code></td><td>jsonb</td><td>NOT NULL DEFAULT &#x27;{}&#x27;::jsonb</td></tr>
+</table></div></details>
+<details><summary>telemetry_receptions</summary><p>Recepción de una lectura por gateway; varias antenas no duplican telemetría.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>telemetry_id</code></td><td>uuid</td><td>NOT NULL REFERENCES telemetry(id)</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>gateway_id</code></td><td>uuid</td><td>NOT NULL REFERENCES gateways(id)</td></tr>
+<tr><td><code>received_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>rssi_dbm</code></td><td>numeric</td><td>Opcional</td></tr>
+<tr><td><code>snr_db</code></td><td>numeric</td><td>Opcional</td></tr>
+</table></div></details>
+<details><summary>device_configs</summary><p>Ciclo solicitud/envío/confirmación de configuración.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>device_id</code></td><td>uuid</td><td>NOT NULL REFERENCES devices(id)</td></tr>
+<tr><td><code>version</code></td><td>integer</td><td>NOT NULL CHECK(version&gt;0)</td></tr>
+<tr><td><code>interval_seconds</code></td><td>integer</td><td>NOT NULL CHECK(interval_seconds BETWEEN 30 AND 86400)</td></tr>
+<tr><td><code>status</code></td><td>text</td><td>NOT NULL CHECK(status IN (&#x27;requested&#x27;,&#x27;sent&#x27;,&#x27;applied&#x27;,&#x27;failed&#x27;))</td></tr>
+<tr><td><code>requested_by</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>requested_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>sent_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>applied_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>error</code></td><td>text</td><td>Opcional</td></tr>
+</table></div></details>
+<details><summary>maintenance</summary><p>Mantenimiento efectivo inmutable; solicitud pendiente no cambia batería confirmada.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>device_id</code></td><td>uuid</td><td>NOT NULL REFERENCES devices(id)</td></tr>
+<tr><td><code>request_id</code></td><td>uuid</td><td>REFERENCES change_requests(id)</td></tr>
+<tr><td><code>responsible_id</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>kind</code></td><td>text</td><td>NOT NULL CHECK(kind IN (&#x27;inspection&#x27;,&#x27;recharge&#x27;,&#x27;replacement&#x27;,&#x27;retirement&#x27;))</td></tr>
+<tr><td><code>battery_id</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>result</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>occurred_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<h3>Operación</h3>
+<details><summary>animal_states</summary><p>Proyección reconstruible, no historial clínico.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>animal_id</code></td><td>uuid</td><td>PRIMARY KEY REFERENCES animals(id)</td></tr>
+<tr><td><code>telemetry_id</code></td><td>uuid</td><td>REFERENCES telemetry(id)</td></tr>
+<tr><td><code>position_telemetry_id</code></td><td>uuid</td><td>REFERENCES telemetry(id)</td></tr>
+<tr><td><code>geofence_status</code></td><td>text</td><td>NOT NULL DEFAULT &#x27;unknown&#x27; CHECK(geofence_status IN (&#x27;unknown&#x27;,&#x27;inside&#x27;,&#x27;outside&#x27;,&#x27;pending&#x27;))</td></tr>
+<tr><td><code>outside_count</code></td><td>integer</td><td>NOT NULL DEFAULT 0 CHECK(outside_count&gt;=0)</td></tr>
+<tr><td><code>updated_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>rule_settings</summary><p>Reglas configuradas por predio y auditadas.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>PRIMARY KEY REFERENCES farms(id)</td></tr>
+<tr><td><code>version</code></td><td>integer</td><td>NOT NULL DEFAULT 1 CHECK(version&gt;0)</td></tr>
+<tr><td><code>battery_low_mv</code></td><td>integer</td><td>NOT NULL DEFAULT 3300 CHECK(battery_low_mv BETWEEN 0 AND 20000)</td></tr>
+<tr><td><code>temperature_enabled</code></td><td>boolean</td><td>NOT NULL DEFAULT false</td></tr>
+<tr><td><code>temperature_high_c</code></td><td>numeric</td><td>Opcional</td></tr>
+<tr><td><code>activity_enabled</code></td><td>boolean</td><td>NOT NULL DEFAULT false</td></tr>
+<tr><td><code>activity_low_threshold</code></td><td>numeric</td><td>Opcional</td></tr>
+<tr><td><code>activity_window_minutes</code></td><td>integer</td><td>NOT NULL DEFAULT 30 CHECK(activity_window_minutes&gt;0)</td></tr>
+<tr><td><code>proximity_enabled</code></td><td>boolean</td><td>NOT NULL DEFAULT false</td></tr>
+<tr><td><code>proximity_meters</code></td><td>numeric</td><td>CHECK(proximity_meters&gt;=0)</td></tr>
+<tr><td><code>updated_by</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>updated_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>events</summary><p>Alerta técnica; atender no implica resolver su condición.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>device_id</code></td><td>uuid</td><td>NOT NULL REFERENCES devices(id)</td></tr>
+<tr><td><code>animal_id</code></td><td>uuid</td><td>REFERENCES animals(id)</td></tr>
+<tr><td><code>telemetry_id</code></td><td>uuid</td><td>REFERENCES telemetry(id)</td></tr>
+<tr><td><code>geofence_id</code></td><td>uuid</td><td>REFERENCES geofences(id)</td></tr>
+<tr><td><code>type</code></td><td>text</td><td>NOT NULL CHECK(type IN (&#x27;escape&#x27;,&#x27;communication_timeout&#x27;,&#x27;low_battery&#x27;,&#x27;high_surface_temperature&#x27;,&#x27;low_activity&#x27;,&#x27;proximity&#x27;,&#x27;config_timeout&#x27;))</td></tr>
+<tr><td><code>severity</code></td><td>text</td><td>NOT NULL CHECK(severity IN (&#x27;warning&#x27;,&#x27;critical&#x27;))</td></tr>
+<tr><td><code>condition</code></td><td>text</td><td>NOT NULL CHECK(condition IN (&#x27;active&#x27;,&#x27;resolved&#x27;))</td></tr>
+<tr><td><code>attention</code></td><td>text</td><td>NOT NULL DEFAULT &#x27;pending&#x27; CHECK(attention IN (&#x27;pending&#x27;,&#x27;acknowledged&#x27;,&#x27;in_review&#x27;,&#x27;concluded&#x27;))</td></tr>
+<tr><td><code>opened_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>resolved_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>detail</code></td><td>jsonb</td><td>NOT NULL DEFAULT &#x27;{}&#x27;::jsonb</td></tr>
+</table></div></details>
+<details><summary>event_actions</summary><p>Historial inmutable de atención de alertas.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>event_id</code></td><td>uuid</td><td>NOT NULL REFERENCES events(id)</td></tr>
+<tr><td><code>actor_id</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>action</code></td><td>text</td><td>NOT NULL CHECK(action IN (&#x27;acknowledge&#x27;,&#x27;review&#x27;,&#x27;conclude&#x27;,&#x27;reopen&#x27;))</td></tr>
+<tr><td><code>note</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>notifications</summary><p>Cola de avisos por alerta, solicitud o agenda, con destinatario explícito.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>recipient_id</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>event_id</code></td><td>uuid</td><td>REFERENCES events(id)</td></tr>
+<tr><td><code>request_id</code></td><td>uuid</td><td>REFERENCES change_requests(id)</td></tr>
+<tr><td><code>schedule_id</code></td><td>uuid</td><td>REFERENCES health_schedules(id)</td></tr>
+<tr><td><code>channel</code></td><td>text</td><td>NOT NULL CHECK(channel IN (&#x27;in_app&#x27;,&#x27;email&#x27;,&#x27;external&#x27;))</td></tr>
+<tr><td><code>recipient_address</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>status</code></td><td>text</td><td>NOT NULL DEFAULT &#x27;pending&#x27; CHECK(status IN (&#x27;pending&#x27;,&#x27;accepted&#x27;,&#x27;failed&#x27;,&#x27;expired&#x27;,&#x27;read&#x27;))</td></tr>
+<tr><td><code>message</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>next_attempt_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>read_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>notification_attempts</summary><p>Intentos inmutables; aceptación externa no prueba lectura.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>notification_id</code></td><td>uuid</td><td>NOT NULL REFERENCES notifications(id)</td></tr>
+<tr><td><code>attempt</code></td><td>integer</td><td>NOT NULL CHECK(attempt&gt;0)</td></tr>
+<tr><td><code>status</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>provider_id</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>error</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<h3>Aprobaciones</h3>
+<details><summary>change_requests</summary><p>Propuesta inmutable; los datos efectivos no cambian mientras esté pendiente.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>requested_by</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>membership_id</code></td><td>uuid</td><td>REFERENCES farm_memberships(id)</td></tr>
+<tr><td><code>action</code></td><td>text</td><td>NOT NULL CHECK(action IN (&#x27;animal_profile&#x27;,&#x27;animal_status&#x27;,&#x27;animal_report&#x27;,&#x27;health_record&#x27;,&#x27;battery_replacement&#x27;,&#x27;health_schedule&#x27;))</td></tr>
+<tr><td><code>animal_holding_id</code></td><td>uuid</td><td>REFERENCES animal_holdings(id)</td></tr>
+<tr><td><code>animal_id</code></td><td>uuid</td><td>REFERENCES animals(id)</td></tr>
+<tr><td><code>device_id</code></td><td>uuid</td><td>REFERENCES devices(id)</td></tr>
+<tr><td><code>expected_version</code></td><td>bigint</td><td>CHECK(expected_version&gt;0)</td></tr>
+<tr><td><code>payload</code></td><td>jsonb</td><td>NOT NULL CHECK(jsonb_typeof(payload)=&#x27;object&#x27;)</td></tr>
+<tr><td><code>idempotency_key</code></td><td>uuid</td><td>NOT NULL</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>change_decisions</summary><p>Decisión única e inmutable: revisión del dueño o aplicación directa autorizada.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>request_id</code></td><td>uuid</td><td>PRIMARY KEY REFERENCES change_requests(id)</td></tr>
+<tr><td><code>decided_by</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>decision</code></td><td>text</td><td>NOT NULL CHECK(decision IN (&#x27;approved&#x27;,&#x27;rejected&#x27;,&#x27;direct&#x27;))</td></tr>
+<tr><td><code>trust_grant_id</code></td><td>uuid</td><td>REFERENCES trust_grants(id)</td></tr>
+<tr><td><code>reason</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>change_applications</summary><p>Prueba única de aplicación efectiva, misma transacción que decisión y mutación.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>request_id</code></td><td>uuid</td><td>PRIMARY KEY REFERENCES change_decisions(request_id)</td></tr>
+<tr><td><code>entity_type</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>entity_id</code></td><td>uuid</td><td>NOT NULL</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<h3>Salud</h3>
+<details><summary>animal_measurements</summary><p>Peso/altura históricos; correcciones referencian medición previa.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>animal_holding_id</code></td><td>uuid</td><td>NOT NULL REFERENCES animal_holdings(id)</td></tr>
+<tr><td><code>animal_id</code></td><td>uuid</td><td>NOT NULL REFERENCES animals(id)</td></tr>
+<tr><td><code>request_id</code></td><td>uuid</td><td>NOT NULL REFERENCES change_requests(id)</td></tr>
+<tr><td><code>measured_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>weight_kg</code></td><td>numeric</td><td>CHECK(weight_kg&gt;0)</td></tr>
+<tr><td><code>height_cm</code></td><td>numeric</td><td>CHECK(height_cm&gt;0)</td></tr>
+<tr><td><code>corrects_id</code></td><td>uuid</td><td>REFERENCES animal_measurements(id)</td></tr>
+</table></div></details>
+<details><summary>animal_reports</summary><p>Reporte del animal aplicado por dueño o trabajador autorizado.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>animal_holding_id</code></td><td>uuid</td><td>NOT NULL REFERENCES animal_holdings(id)</td></tr>
+<tr><td><code>request_id</code></td><td>uuid</td><td>NOT NULL REFERENCES change_requests(id)</td></tr>
+<tr><td><code>description</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>occurred_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>health_events</summary><p>Versión clínica inmutable; CRUD se expresa mediante registro, corrección y anulación.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>animal_holding_id</code></td><td>uuid</td><td>NOT NULL REFERENCES animal_holdings(id)</td></tr>
+<tr><td><code>request_id</code></td><td>uuid</td><td>NOT NULL REFERENCES change_requests(id)</td></tr>
+<tr><td><code>event_type</code></td><td>text</td><td>NOT NULL CHECK(event_type IN (&#x27;examination&#x27;,&#x27;vaccination&#x27;,&#x27;antibiotic&#x27;,&#x27;pathology&#x27;,&#x27;diagnosis&#x27;,&#x27;procedure&#x27;,&#x27;injury&#x27;,&#x27;death&#x27;,&#x27;observation&#x27;))</td></tr>
+<tr><td><code>operation</code></td><td>text</td><td>NOT NULL CHECK(operation IN (&#x27;record&#x27;,&#x27;correct&#x27;,&#x27;void&#x27;))</td></tr>
+<tr><td><code>target_event_id</code></td><td>uuid</td><td>REFERENCES health_events(id)</td></tr>
+<tr><td><code>occurred_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>recorded_by</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>description</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>diagnosis</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>health_treatments</summary><p>Uno o varios fármacos/vacunas por evento.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>health_event_id</code></td><td>uuid</td><td>NOT NULL REFERENCES health_events(id)</td></tr>
+<tr><td><code>product_name</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>product_registration</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>batch_number</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>dose_value</code></td><td>numeric</td><td>NOT NULL CHECK(dose_value&gt;0)</td></tr>
+<tr><td><code>dose_unit</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>route</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>administered_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>withdrawal_meat_until</code></td><td>date</td><td>Opcional</td></tr>
+<tr><td><code>withdrawal_milk_until</code></td><td>date</td><td>Opcional</td></tr>
+<tr><td><code>withdrawal_basis</code></td><td>text</td><td>Opcional</td></tr>
+</table></div></details>
+<details><summary>health_schedules</summary><p>Próxima vacuna/control/antibiótico planificado; planificación no equivale a administración.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>animal_holding_id</code></td><td>uuid</td><td>NOT NULL REFERENCES animal_holdings(id)</td></tr>
+<tr><td><code>request_id</code></td><td>uuid</td><td>NOT NULL REFERENCES change_requests(id)</td></tr>
+<tr><td><code>kind</code></td><td>text</td><td>NOT NULL CHECK(kind IN (&#x27;vaccination&#x27;,&#x27;antibiotic&#x27;,&#x27;checkup&#x27;))</td></tr>
+<tr><td><code>description</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>due_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+<tr><td><code>operation</code></td><td>text</td><td>NOT NULL CHECK(operation IN (&#x27;plan&#x27;,&#x27;replace&#x27;,&#x27;cancel&#x27;,&#x27;complete&#x27;))</td></tr>
+<tr><td><code>target_schedule_id</code></td><td>uuid</td><td>REFERENCES health_schedules(id)</td></tr>
+<tr><td><code>completed_event_id</code></td><td>uuid</td><td>REFERENCES health_events(id)</td></tr>
+<tr><td><code>created_by</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<h3>Administración</h3>
+<details><summary>audit_log</summary><p>Auditoría global o predial, con identidad del actor y contexto de sesión.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>account_id</code></td><td>uuid</td><td>REFERENCES owner_accounts(id)</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>REFERENCES farms(id)</td></tr>
+<tr><td><code>actor_id</code></td><td>uuid</td><td>REFERENCES users(id)</td></tr>
+<tr><td><code>session_id</code></td><td>uuid</td><td>REFERENCES login_sessions(id)</td></tr>
+<tr><td><code>actor_kind</code></td><td>text</td><td>NOT NULL CHECK(actor_kind IN (&#x27;user&#x27;,&#x27;service&#x27;))</td></tr>
+<tr><td><code>action</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>entity_type</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>entity_id</code></td><td>uuid</td><td>Opcional</td></tr>
+<tr><td><code>before_data</code></td><td>jsonb</td><td>Opcional</td></tr>
+<tr><td><code>after_data</code></td><td>jsonb</td><td>Opcional</td></tr>
+<tr><td><code>ip_address</code></td><td>inet</td><td>Opcional</td></tr>
+<tr><td><code>request_id</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>occurred_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>request_metrics</summary><p>Métricas técnicas por petición; sin body, secretos ni query string.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>account_id</code></td><td>uuid</td><td>REFERENCES owner_accounts(id)</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>REFERENCES farms(id)</td></tr>
+<tr><td><code>actor_id</code></td><td>uuid</td><td>REFERENCES users(id)</td></tr>
+<tr><td><code>request_id</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>method</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>route_template</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>status_code</code></td><td>integer</td><td>NOT NULL CHECK(status_code BETWEEN 100 AND 599)</td></tr>
+<tr><td><code>duration_ms</code></td><td>numeric</td><td>NOT NULL CHECK(duration_ms&gt;=0)</td></tr>
+<tr><td><code>request_bytes</code></td><td>bigint</td><td>NOT NULL CHECK(request_bytes&gt;=0)</td></tr>
+<tr><td><code>response_bytes</code></td><td>bigint</td><td>NOT NULL CHECK(response_bytes&gt;=0)</td></tr>
+<tr><td><code>occurred_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>features</summary><p>Catálogo de módulos funcionales de software, separado del hardware.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>code</code></td><td>text</td><td>PRIMARY KEY</td></tr>
+<tr><td><code>name</code></td><td>text</td><td>NOT NULL</td></tr>
+</table></div></details>
+<details><summary>farm_features</summary><p>Módulos de software habilitados por predio; no es facturación.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>feature_code</code></td><td>text</td><td>NOT NULL REFERENCES features(code)</td></tr>
+<tr><td><code>enabled</code></td><td>boolean</td><td>NOT NULL DEFAULT true</td></tr>
+<tr><td><code>enabled_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<h3>Extensión FMA</h3>
+<details><summary>sag_movements</summary><p>Documento de traslado opcional; estado oficial requiere evidencia externa.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>farm_id</code></td><td>uuid</td><td>NOT NULL REFERENCES farms(id)</td></tr>
+<tr><td><code>fma_folio</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>origin_rup</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>destination_rup</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>status</code></td><td>text</td><td>NOT NULL DEFAULT &#x27;draft&#x27; CHECK(status IN (&#x27;draft&#x27;,&#x27;confirmed&#x27;,&#x27;submitted&#x27;,&#x27;externally_confirmed&#x27;,&#x27;executed&#x27;,&#x27;cancelled&#x27;))</td></tr>
+<tr><td><code>departure_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>arrival_at</code></td><td>timestamptz</td><td>Opcional</td></tr>
+<tr><td><code>external_evidence</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>created_by</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+<details><summary>movement_animals</summary><p>Detalle con DIIO preservado.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>movement_id</code></td><td>uuid</td><td>NOT NULL REFERENCES sag_movements(id)</td></tr>
+<tr><td><code>animal_id</code></td><td>uuid</td><td>NOT NULL REFERENCES animals(id)</td></tr>
+<tr><td><code>diio_snapshot</code></td><td>text</td><td>NOT NULL</td></tr>
+</table></div></details>
+<details><summary>movement_status_events</summary><p>Historial inmutable de transición del documento.</p><div class="scroll"><table><tr><th>Atributo</th><th>Tipo</th><th>Restricciones</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>PRIMARY KEY DEFAULT gen_random_uuid()</td></tr>
+<tr><td><code>movement_id</code></td><td>uuid</td><td>NOT NULL REFERENCES sag_movements(id)</td></tr>
+<tr><td><code>status</code></td><td>text</td><td>NOT NULL</td></tr>
+<tr><td><code>actor_id</code></td><td>uuid</td><td>NOT NULL REFERENCES users(id)</td></tr>
+<tr><td><code>reason</code></td><td>text</td><td>Opcional</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>NOT NULL DEFAULT now()</td></tr>
+</table></div></details>
+</section><p>Base actual sin cambios. El SQL se validó en un contenedor temporal independiente; consultar el reporte de validación.</p></main></html>

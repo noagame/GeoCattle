@@ -21,6 +21,7 @@ from .db import SessionLocal
 from .domain import ingest
 from .models import Device
 from .schemas import TelemetryIn
+from .v3_receptions import chirpstack_receptions
 from .settings import settings
 log=logging.getLogger("geocattle.ingestor")
 
@@ -64,9 +65,11 @@ def decode(db,topic,raw):
         data=dict(decoded)
         data["hardware_id"]=device.hardware_id
         data["source"]="lorawan"
+        rx_info=json.loads(raw).get("rxInfo",[])
         quality=dict(data.get("quality",{}));quality["transport"]="chirpstack"
-        quality["rx_info"]=json.loads(raw).get("rxInfo",[])[:10]
+        quality["rx_info"]=rx_info[:10] if isinstance(rx_info,list) else rx_info
         data["quality"]=quality
+        data["receptions"]=chirpstack_receptions(rx_info)
     return TelemetryIn.model_validate(data)
 
 class Ingestor:

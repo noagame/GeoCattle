@@ -1,5 +1,5 @@
 export type AnimalStatus = 'normal' | 'warning' | 'critical' | 'unknown';
-export type User = { id: string; username: string; role: 'owner' | 'operator' | 'viewer'; farm_id: string };
+export type User = { id: string; username: string; role: 'admin' | 'owner' | 'worker' | 'veterinarian' | 'operator' | 'viewer'; farm_id: string | null; full_name?: string; email?: string; phone?: string | null; mfa_enabled?: boolean; farms?: { id: string; name: string; role: 'admin' | 'owner' | 'worker' | 'veterinarian' }[] };
 export type Session = { user: User; csrf_token: string };
 export type Telemetry = {
   id: string; device_id: string; animal_id: string; session_id: string; seq: number;
@@ -22,7 +22,7 @@ export type Device = {
   pending_config: { version: number; interval_seconds: number; status: string } | null;
   animal_id?: string | null; last_received_at?: string | null;
 };
-export type Sector = { id: string; name: string };
+export type Sector = { id: string; name: string; land_use?: 'grazing' | 'available' | 'cropped' | 'restricted' | 'other'; description?: string | null; active?: boolean };
 export type Polygon = { type: 'Polygon'; coordinates: number[][][] };
 export type Geofence = { id: string; sector_id: string; name: string; version: number; active: boolean; geometry: Polygon; created_at: string };
 export type EventAction = { id?: string; action: string; note: string; at?: string; actor_id?: string; created_at?: string; performed_at?: string; username?: string; actor?: string; user_id?: string };

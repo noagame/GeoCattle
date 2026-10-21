@@ -5,6 +5,7 @@ import { Layers, LocateFixed, MapPin } from 'lucide-react';
 import type { Animal, Geofence, Telemetry } from './types';
 import { age, date } from './api';
 import { Badge } from './ui';
+import type { Gateway } from './v3types';
 
 export type Point = [number, number]; // Leaflet [latitude, longitude]
 const statusColors = { normal: '#2c8d65', warning: '#bc821f', critical: '#c1534f', unknown: '#7a8580' };
@@ -50,8 +51,8 @@ function Recenter({ points }: { points: Point[] }) {
   const map = useMap();
   return <button type="button" className="map-button" title="Encuadrar geometrías y posiciones" aria-label="Encuadrar geometrías y posiciones" disabled={!points.length} onClick={() => map.fitBounds(L.latLngBounds(points), { padding: [50, 50], maxZoom: 16 })}><LocateFixed size={18} /></button>;
 }
-export function CattleMap({ animals = [], geofences = [], history = [], onAnimal, drawPoints = [], onPoint, height = 'main', externalTiles: defaultExternal = false }: {
-  animals?: Animal[]; geofences?: Geofence[]; history?: Telemetry[]; onAnimal?: (animal: Animal) => void;
+export function CattleMap({ animals = [], geofences = [], gateways = [], history = [], onAnimal, drawPoints = [], onPoint, height = 'main', externalTiles: defaultExternal = false }: {
+  animals?: Animal[]; geofences?: Geofence[]; gateways?: Gateway[]; history?: Telemetry[]; onAnimal?: (animal: Animal) => void;
   drawPoints?: Point[]; onPoint?: (point: Point) => void; height?: 'main' | 'small' | 'editor'; externalTiles?: boolean;
 }) {
   const [external, setExternal] = useState(defaultExternal);
@@ -62,9 +63,10 @@ export function CattleMap({ animals = [], geofences = [], history = [], onAnimal
     const points: Point[] = [];
     geofences.forEach(fence => fence.geometry.coordinates.forEach(ring => ring.forEach(c => points.push([c[1], c[0]]))));
     positioned.forEach(animal => { if (validPosition(animal.last_position)) points.push([animal.last_position.latitude, animal.last_position.longitude]); });
+    gateways.filter(g => g.latitude != null && g.longitude != null).forEach(g => points.push([g.latitude!, g.longitude!]));
     history.filter(validPosition).forEach(t => points.push([t.latitude, t.longitude]));
     return points;
-  }, [geofences, animals, history]);
+  }, [geofences, animals, gateways, history]);
   const tracks = useMemo(() => {
     const segments: Point[][] = []; let current: Point[] = [];
     [...history].sort((a, b) => a.observed_at.localeCompare(b.observed_at)).forEach(t => {
@@ -81,6 +83,7 @@ export function CattleMap({ animals = [], geofences = [], history = [], onAnimal
       <Fit points={bounds} />
       <Drawing onPoint={onPoint} />
       {geofences.map(fence => <MapPolygon key={`${fence.id}-${fence.version}`} positions={fence.geometry.coordinates.map(ring => ring.map(c => [c[1], c[0]] as Point))} pathOptions={{ color: fence.active ? '#55937a' : '#8e9e92', weight: 2, fillColor: '#9dc4a0', fillOpacity: fence.active ? .22 : .07, dashArray: fence.active ? undefined : '6 4' }}><Tooltip sticky>{fence.name} · v{fence.version}{!fence.active && ' · histórica'}</Tooltip></MapPolygon>)}
+      {gateways.filter(g => g.latitude != null && g.longitude != null).map(g => <CircleMarker key={`gateway-${g.id}`} center={[g.latitude!, g.longitude!]} radius={10} pathOptions={{ color: '#fff', weight: 2, fillColor: '#406aaa', fillOpacity: .95 }}><Tooltip>Gateway · {g.name}</Tooltip><Popup><div className="map-popup"><strong>Gateway · {g.name}</strong><span>{g.gateway_eui}</span><span>{g.status ?? 'Sin estado'}</span></div></Popup></CircleMarker>)}
       {tracks.map((track, index) => <Polyline key={index} positions={track} pathOptions={{ color: '#276e68', weight: 3, opacity: .85 }} />)}
       {history.filter(validPosition).length > 0 && (() => { const fixes = history.filter(validPosition); const first = fixes[0]; const last = fixes[fixes.length - 1]; return <><CircleMarker center={[first.latitude, first.longitude]} radius={5} pathOptions={{ color: '#fff', fillColor: '#276e68', fillOpacity: 1 }}><Tooltip>Inicio · {date(first.observed_at)}</Tooltip></CircleMarker><CircleMarker center={[last.latitude, last.longitude]} radius={5} pathOptions={{ color: '#fff', fillColor: '#c68a3c', fillOpacity: 1 }}><Tooltip>Fin · {date(last.observed_at)}</Tooltip></CircleMarker></>; })()}
       {positioned.map(animal => {

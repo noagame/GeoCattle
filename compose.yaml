@@ -11,6 +11,7 @@ x-backend: &backend
     APP_ENV: ${APP_ENV:-simulation}
     SIMULATION_ENABLED: ${SIMULATION_ENABLED:-true}
     SESSION_SECRET: ${SESSION_SECRET:?Ejecute scripts/configure.py}
+    MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:-}
     INGEST_KEY: ${INGEST_KEY:?Ejecute scripts/configure.py}
     DEMO_PASSWORD: ${DEMO_PASSWORD:-}
     COOKIE_SECURE: ${COOKIE_SECURE:-false}

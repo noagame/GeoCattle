@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     app_env: Literal["simulation", "development", "production"] = "development"
     simulation_enabled: bool = False
     session_secret: str = Field(default="development-change-this-secret-before-use", repr=False)
+    mfa_encryption_key: str | None = Field(default=None, repr=False)
     ingest_key: str = Field(default="development-change-this-ingest-key", repr=False)
     cookie_secure: bool = False
     allowed_origins: str = "http://localhost:5173,http://localhost:8080"

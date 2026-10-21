@@ -1,0 +1,33 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+title Propuestas del trabajador y decisiones del dueño
+actor "Trabajador" as worker
+actor "Dueño" as owner
+rectangle "GeoCattle · aplicación de gestión" {
+  usecase "CU-17\nRegistrar vacuna o antibiótico por trabajador" as CU_17
+  usecase "CU-18\nSolicitar estado o reporte del bovino" as CU_18
+  usecase "CU-19\nReportar cambio de batería" as CU_19
+  usecase "CU-20\nAprobar o rechazar solicitud" as CU_20
+  usecase "CU-21\nConceder o revocar confianza" as CU_21
+  usecase "AUX-01\nPersistir propuesta y notificar al dueño" as AUX_01
+  usecase "AUX-02\nAplicar cambio con decisión y auditoría" as AUX_02
+  usecase "AUX-03\nAplicar directamente por confianza" as AUX_03
+}
+worker -- CU_17
+worker -- CU_18
+worker -- CU_19
+owner -- CU_20
+owner -- CU_21
+CU_17 ..> AUX_01 : <<include>>
+CU_18 ..> AUX_01 : <<include>>
+CU_19 ..> AUX_01 : <<include>>
+AUX_02 ..> CU_20 : <<extend>>\n[dueño aprueba]
+AUX_03 ..> AUX_01 : <<extend>>\n[confianza vigente]
+AUX_03 ..> AUX_02 : <<include>>
+note "Las solicitudes persisten sin modificar la ficha efectiva hasta una decisión autorizada." as note0
+note "«include» significa comportamiento obligatorio; «extend» significa una extensión condicional." as note1
+note "La aplicación directa por confianza es una alternativa; no hereda permisos adicionales." as note2
+note "La revisión/aplicación incluye control de versión, auditoría e idempotencia." as note3
+@enduml

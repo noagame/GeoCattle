@@ -1,0 +1,2895 @@
+[
+  {
+    "name": "users",
+    "group": "Identidad",
+    "description": "Cuenta global; correo normalizado; no se duplica por predio.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "email",
+        "type": "text",
+        "flags": "NOT NULL UNIQUE CHECK(email=lower(btrim(email)) AND position('@' in email)>1)",
+        "description": ""
+      },
+      {
+        "name": "password_hash",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "full_name",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "phone",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "flags": "NOT NULL DEFAULT 'invited' CHECK(status IN ('invited','active','suspended','closed'))",
+        "description": ""
+      },
+      {
+        "name": "email_verified_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "version",
+        "type": "bigint",
+        "flags": "NOT NULL DEFAULT 1 CHECK(version>0)",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": []
+  },
+  {
+    "name": "platform_admins",
+    "group": "Identidad",
+    "description": "Administradores globales, independientes de clientes y predios.",
+    "columns": [
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY REFERENCES users(id)",
+        "description": ""
+      },
+      {
+        "name": "active",
+        "type": "boolean",
+        "flags": "NOT NULL DEFAULT true",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": []
+  },
+  {
+    "name": "mfa_factors",
+    "group": "Identidad",
+    "description": "Factores MFA; secretos cifrados por la aplicación con clave externa.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "kind",
+        "type": "text",
+        "flags": "NOT NULL CHECK(kind IN ('totp','webauthn'))",
+        "description": ""
+      },
+      {
+        "name": "credential_id",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "protected_data",
+        "type": "bytea",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "verified_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "revoked_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": []
+  },
+  {
+    "name": "mfa_recovery_codes",
+    "group": "Identidad",
+    "description": "Códigos de recuperación de un solo uso almacenados con hash.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "code_hash",
+        "type": "text",
+        "flags": "NOT NULL UNIQUE",
+        "description": ""
+      },
+      {
+        "name": "used_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": []
+  },
+  {
+    "name": "login_sessions",
+    "group": "Identidad",
+    "description": "Sesiones emitidas solo después de completar autenticación requerida.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "token_hash",
+        "type": "text",
+        "flags": "NOT NULL UNIQUE",
+        "description": ""
+      },
+      {
+        "name": "csrf_hash",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "authenticated_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "mfa_verified_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "expires_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "revoked_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "CHECK(expires_at>authenticated_at)"
+    ]
+  },
+  {
+    "name": "security_challenges",
+    "group": "Identidad",
+    "description": "Retos MFA/step-up vinculados a sesión, propósito y operación; no contienen OTP en claro.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "session_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES login_sessions(id)",
+        "description": "Referencia a login_sessions"
+      },
+      {
+        "name": "purpose",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "operation_digest",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "expires_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "verified_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "consumed_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "attempts",
+        "type": "integer",
+        "flags": "NOT NULL DEFAULT 0 CHECK(attempts BETWEEN 0 AND 5)",
+        "description": ""
+      }
+    ],
+    "rules": []
+  },
+  {
+    "name": "account_tokens",
+    "group": "Identidad",
+    "description": "Enlaces de verificación de correo/recuperación sin sesión previa; token de un solo uso con hash.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "purpose",
+        "type": "text",
+        "flags": "NOT NULL CHECK(purpose IN ('verify_email','reset_password','close_account'))",
+        "description": ""
+      },
+      {
+        "name": "token_hash",
+        "type": "text",
+        "flags": "NOT NULL UNIQUE",
+        "description": ""
+      },
+      {
+        "name": "pending_email",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "expires_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "consumed_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": []
+  },
+  {
+    "name": "roles",
+    "group": "Identidad",
+    "description": "Catálogo: platform_admin, owner, worker, veterinarian. El alcance se materializa en tablas distintas.",
+    "columns": [
+      {
+        "name": "code",
+        "type": "text",
+        "flags": "PRIMARY KEY",
+        "description": ""
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "scope",
+        "type": "text",
+        "flags": "NOT NULL CHECK(scope IN ('platform','account','farm'))",
+        "description": ""
+      }
+    ],
+    "rules": []
+  },
+  {
+    "name": "permissions",
+    "group": "Identidad",
+    "description": "Catálogo de acciones autorizables.",
+    "columns": [
+      {
+        "name": "code",
+        "type": "text",
+        "flags": "PRIMARY KEY",
+        "description": ""
+      },
+      {
+        "name": "description",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      }
+    ],
+    "rules": []
+  },
+  {
+    "name": "role_permissions",
+    "group": "Identidad",
+    "description": "Permisos por rol; la confianza no agrega permisos, solo elimina revisión en acciones permitidas.",
+    "columns": [
+      {
+        "name": "role_code",
+        "type": "text",
+        "flags": "NOT NULL REFERENCES roles(code)",
+        "description": ""
+      },
+      {
+        "name": "permission_code",
+        "type": "text",
+        "flags": "NOT NULL REFERENCES permissions(code)",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "PRIMARY KEY(role_code,permission_code)"
+    ]
+  },
+  {
+    "name": "owner_accounts",
+    "group": "Predios",
+    "description": "Cliente del sistema, administrado por un dueño principal.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "owner_user_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "display_name",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "max_farms",
+        "type": "integer",
+        "flags": "NOT NULL DEFAULT 1 CHECK(max_farms>0)",
+        "description": ""
+      },
+      {
+        "name": "active",
+        "type": "boolean",
+        "flags": "NOT NULL DEFAULT true",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(owner_user_id)"
+    ]
+  },
+  {
+    "name": "farms",
+    "group": "Predios",
+    "description": "Predio perteneciente a una cuenta cliente.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "account_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES owner_accounts(id)",
+        "description": "Referencia a owner_accounts"
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "rup",
+        "type": "text",
+        "flags": "UNIQUE",
+        "description": ""
+      },
+      {
+        "name": "address",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "region",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "commune",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "timezone",
+        "type": "text",
+        "flags": "NOT NULL DEFAULT 'America/Santiago'",
+        "description": ""
+      },
+      {
+        "name": "boundary",
+        "type": "geometry(MultiPolygon,4326)",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "active",
+        "type": "boolean",
+        "flags": "NOT NULL DEFAULT true",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,account_id)",
+      "CHECK(boundary IS NULL OR (ST_IsValid(boundary) AND NOT ST_IsEmpty(boundary) AND ST_Area(boundary)>0))"
+    ]
+  },
+  {
+    "name": "farm_memberships",
+    "group": "Predios",
+    "description": "Acceso temporal de trabajador/veterinario; el dueño accede mediante su cuenta.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "role_code",
+        "type": "text",
+        "flags": "NOT NULL REFERENCES roles(code) CHECK(role_code IN ('worker','veterinarian'))",
+        "description": ""
+      },
+      {
+        "name": "granted_by",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "valid_from",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "valid_to",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)",
+      "CHECK(valid_to IS NULL OR valid_to>valid_from)",
+      "EXCLUDE USING gist (user_id WITH =,farm_id WITH =,tstzrange(valid_from,valid_to,'[)') WITH &&)"
+    ]
+  },
+  {
+    "name": "invitations",
+    "group": "Predios",
+    "description": "Invitación por predio y rol; acceso solo al aceptar y verificar correo.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "email",
+        "type": "text",
+        "flags": "NOT NULL CHECK(email=lower(btrim(email)))",
+        "description": ""
+      },
+      {
+        "name": "role_code",
+        "type": "text",
+        "flags": "NOT NULL REFERENCES roles(code) CHECK(role_code IN ('worker','veterinarian'))",
+        "description": ""
+      },
+      {
+        "name": "token_hash",
+        "type": "text",
+        "flags": "NOT NULL UNIQUE",
+        "description": ""
+      },
+      {
+        "name": "invited_by",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "expires_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "accepted_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "accepted_user_id",
+        "type": "uuid",
+        "flags": "REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "revoked_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "CHECK((accepted_at IS NULL)=(accepted_user_id IS NULL))"
+    ]
+  },
+  {
+    "name": "trust_grants",
+    "group": "Predios",
+    "description": "Exención de aprobación por trabajador y acción, revocable y con vigencia.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "membership_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farm_memberships(id)",
+        "description": "Referencia a farm_memberships"
+      },
+      {
+        "name": "action",
+        "type": "text",
+        "flags": "NOT NULL CHECK(action IN ('animal_status','animal_report','health_record','battery_replacement'))",
+        "description": ""
+      },
+      {
+        "name": "granted_by",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "valid_from",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "valid_to",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)",
+      "FOREIGN KEY (membership_id,farm_id) REFERENCES farm_memberships(id,farm_id)",
+      "CHECK(valid_to IS NULL OR valid_to>valid_from)",
+      "EXCLUDE USING gist(membership_id WITH =,action WITH =,tstzrange(valid_from,valid_to,'[)') WITH &&)"
+    ]
+  },
+  {
+    "name": "sectors",
+    "group": "Ganado y espacio",
+    "description": "Sector/potrero del predio y su uso actual.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "land_use",
+        "type": "text",
+        "flags": "NOT NULL CHECK(land_use IN ('grazing','available','cropped','restricted','other'))",
+        "description": ""
+      },
+      {
+        "name": "description",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "active",
+        "type": "boolean",
+        "flags": "NOT NULL DEFAULT true",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)",
+      "UNIQUE(farm_id,name)"
+    ]
+  },
+  {
+    "name": "geofences",
+    "group": "Ganado y espacio",
+    "description": "Versiones inmutables de límites; se cierra vigencia sin cambiar coordenadas.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "sector_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES sectors(id)",
+        "description": "Referencia a sectors"
+      },
+      {
+        "name": "version",
+        "type": "integer",
+        "flags": "NOT NULL CHECK(version>0)",
+        "description": ""
+      },
+      {
+        "name": "geometry",
+        "type": "geometry(Polygon,4326)",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "created_by",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "valid_from",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "valid_to",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)",
+      "UNIQUE(sector_id,version)",
+      "FOREIGN KEY (sector_id,farm_id) REFERENCES sectors(id,farm_id)",
+      "CHECK(ST_IsValid(geometry) AND NOT ST_IsEmpty(geometry) AND ST_Area(geometry)>0 AND ST_NumInteriorRings(geometry)=0 AND ST_NPoints(ST_ExteriorRing(geometry))>=5)",
+      "CHECK(valid_to IS NULL OR valid_to>valid_from)",
+      "EXCLUDE USING gist (sector_id WITH =, tstzrange(valid_from,valid_to,'[)') WITH &&)"
+    ]
+  },
+  {
+    "name": "animals",
+    "group": "Ganado y espacio",
+    "description": "Identidad global del bovino; edad derivada de fecha de nacimiento.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "diio",
+        "type": "text",
+        "flags": "NOT NULL UNIQUE",
+        "description": ""
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "species",
+        "type": "text",
+        "flags": "NOT NULL DEFAULT 'bovine' CHECK(species='bovine')",
+        "description": ""
+      },
+      {
+        "name": "breed",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "color",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "sex",
+        "type": "text",
+        "flags": "NOT NULL CHECK(sex IN ('female','male','unknown'))",
+        "description": ""
+      },
+      {
+        "name": "birth_date",
+        "type": "date",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "birth_date_estimated",
+        "type": "boolean",
+        "flags": "NOT NULL DEFAULT false",
+        "description": ""
+      },
+      {
+        "name": "production_type",
+        "type": "text",
+        "flags": "NOT NULL CHECK(production_type IN ('milk','meat','dual','other'))",
+        "description": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "flags": "NOT NULL DEFAULT 'active' CHECK(status IN ('active','missing','dead','slaughtered','retired'))",
+        "description": ""
+      },
+      {
+        "name": "version",
+        "type": "bigint",
+        "flags": "NOT NULL DEFAULT 1 CHECK(version>0)",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": []
+  },
+  {
+    "name": "animal_holdings",
+    "group": "Ganado y espacio",
+    "description": "Permanencia histórica del animal en un predio.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "animal_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES animals(id)",
+        "description": "Referencia a animals"
+      },
+      {
+        "name": "valid_from",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "valid_to",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)",
+      "UNIQUE(id,animal_id,farm_id)",
+      "CHECK(valid_to IS NULL OR valid_to>valid_from)",
+      "EXCLUDE USING gist (animal_id WITH =, tstzrange(valid_from,valid_to,'[)') WITH &&)"
+    ]
+  },
+  {
+    "name": "gateways",
+    "group": "IoT",
+    "description": "Inventario de gateways y su ubicación; no se confunde con collar.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "gateway_eui",
+        "type": "text",
+        "flags": "NOT NULL UNIQUE CHECK(gateway_eui ~ '^[0-9a-f]{16}$')",
+        "description": ""
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "position",
+        "type": "geometry(Point,4326)",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "flags": "NOT NULL CHECK(status IN ('installed','maintenance','retired'))",
+        "description": ""
+      },
+      {
+        "name": "installed_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "last_seen_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)"
+    ]
+  },
+  {
+    "name": "devices",
+    "group": "IoT",
+    "description": "Módulos físicos/collares; inventario independiente de asignación activa.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "serial_number",
+        "type": "text",
+        "flags": "NOT NULL UNIQUE",
+        "description": ""
+      },
+      {
+        "name": "dev_eui",
+        "type": "text",
+        "flags": "UNIQUE CHECK(dev_eui IS NULL OR dev_eui ~ '^[0-9a-f]{16}$')",
+        "description": ""
+      },
+      {
+        "name": "transport",
+        "type": "text",
+        "flags": "NOT NULL CHECK(transport IN ('academic','lorawan'))",
+        "description": ""
+      },
+      {
+        "name": "hardware_revision",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "firmware_version",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "flags": "NOT NULL CHECK(status IN ('available','installed','maintenance','retired'))",
+        "description": ""
+      },
+      {
+        "name": "interval_seconds",
+        "type": "integer",
+        "flags": "NOT NULL DEFAULT 300 CHECK(interval_seconds BETWEEN 30 AND 86400)",
+        "description": ""
+      },
+      {
+        "name": "config_version",
+        "type": "integer",
+        "flags": "NOT NULL DEFAULT 0 CHECK(config_version>=0)",
+        "description": ""
+      },
+      {
+        "name": "last_observed_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "last_received_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)"
+    ]
+  },
+  {
+    "name": "assignments",
+    "group": "IoT",
+    "description": "Historial de animal/collar sin duplicidad temporal.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "animal_holding_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES animal_holdings(id)",
+        "description": "Referencia a animal_holdings"
+      },
+      {
+        "name": "animal_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES animals(id)",
+        "description": "Referencia a animals"
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES devices(id)",
+        "description": "Referencia a devices"
+      },
+      {
+        "name": "assigned_by",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "valid_from",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "valid_to",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)",
+      "UNIQUE(id,device_id,farm_id)",
+      "FOREIGN KEY(animal_holding_id,animal_id,farm_id) REFERENCES animal_holdings(id,animal_id,farm_id)",
+      "FOREIGN KEY (device_id,farm_id) REFERENCES devices(id,farm_id)",
+      "CHECK(valid_to IS NULL OR valid_to>valid_from)",
+      "EXCLUDE USING gist (animal_id WITH =, tstzrange(valid_from,valid_to,'[)') WITH &&)",
+      "EXCLUDE USING gist(device_id WITH =,tstzrange(valid_from,valid_to,'[)') WITH &&)"
+    ]
+  },
+  {
+    "name": "pasture_assignments",
+    "group": "Ganado y espacio",
+    "description": "Pastoreo temporal del animal en una versión de geocerca.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "animal_holding_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES animal_holdings(id)",
+        "description": "Referencia a animal_holdings"
+      },
+      {
+        "name": "animal_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES animals(id)",
+        "description": "Referencia a animals"
+      },
+      {
+        "name": "geofence_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES geofences(id)",
+        "description": "Referencia a geofences"
+      },
+      {
+        "name": "assigned_by",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "valid_from",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "valid_to",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "FOREIGN KEY(animal_holding_id,animal_id,farm_id) REFERENCES animal_holdings(id,animal_id,farm_id)",
+      "FOREIGN KEY (geofence_id,farm_id) REFERENCES geofences(id,farm_id)",
+      "CHECK(valid_to IS NULL OR valid_to>valid_from)",
+      "EXCLUDE USING gist (animal_id WITH =, tstzrange(valid_from,valid_to,'[)') WITH &&)"
+    ]
+  },
+  {
+    "name": "telemetry",
+    "group": "IoT",
+    "description": "Lectura inmutable y deduplicada; atribución por instante de captura.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES devices(id)",
+        "description": "Referencia a devices"
+      },
+      {
+        "name": "assignment_id",
+        "type": "uuid",
+        "flags": "REFERENCES assignments(id)",
+        "description": "Referencia a assignments"
+      },
+      {
+        "name": "animal_id",
+        "type": "uuid",
+        "flags": "REFERENCES animals(id)",
+        "description": "Referencia a animals"
+      },
+      {
+        "name": "session_id",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "seq",
+        "type": "bigint",
+        "flags": "NOT NULL CHECK(seq>=0)",
+        "description": ""
+      },
+      {
+        "name": "observed_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "received_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "point",
+        "type": "geometry(Point,4326)",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "gnss_valid",
+        "type": "boolean",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "surface_temperature_c",
+        "type": "numeric",
+        "flags": "CHECK(surface_temperature_c BETWEEN -60 AND 100)",
+        "description": ""
+      },
+      {
+        "name": "activity_index",
+        "type": "numeric",
+        "flags": "CHECK(activity_index>=0)",
+        "description": ""
+      },
+      {
+        "name": "battery_mv",
+        "type": "integer",
+        "flags": "CHECK(battery_mv BETWEEN 0 AND 20000)",
+        "description": ""
+      },
+      {
+        "name": "source",
+        "type": "text",
+        "flags": "NOT NULL CHECK(source IN ('sim','academic','lorawan'))",
+        "description": ""
+      },
+      {
+        "name": "quality",
+        "type": "jsonb",
+        "flags": "NOT NULL DEFAULT '{}'::jsonb",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)",
+      "UNIQUE(device_id,session_id,seq)",
+      "FOREIGN KEY (device_id,farm_id) REFERENCES devices(id,farm_id)",
+      "FOREIGN KEY(assignment_id,device_id,farm_id) REFERENCES assignments(id,device_id,farm_id)",
+      "CHECK((assignment_id IS NULL)=(animal_id IS NULL))",
+      "CHECK((gnss_valid AND point IS NOT NULL) OR (NOT gnss_valid AND point IS NULL))",
+      "CHECK(point IS NULL OR (ST_X(point) BETWEEN -180 AND 180 AND ST_Y(point) BETWEEN -90 AND 90))",
+      "CHECK(observed_at<=received_at+interval '5 minutes')"
+    ]
+  },
+  {
+    "name": "telemetry_receptions",
+    "group": "IoT",
+    "description": "Recepción de una lectura por gateway; varias antenas no duplican telemetría.",
+    "columns": [
+      {
+        "name": "telemetry_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES telemetry(id)",
+        "description": "Referencia a telemetry"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "gateway_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES gateways(id)",
+        "description": "Referencia a gateways"
+      },
+      {
+        "name": "received_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "rssi_dbm",
+        "type": "numeric",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "snr_db",
+        "type": "numeric",
+        "flags": "",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "PRIMARY KEY(telemetry_id,gateway_id)",
+      "FOREIGN KEY (telemetry_id,farm_id) REFERENCES telemetry(id,farm_id)",
+      "FOREIGN KEY (gateway_id,farm_id) REFERENCES gateways(id,farm_id)"
+    ]
+  },
+  {
+    "name": "animal_states",
+    "group": "Operación",
+    "description": "Proyección reconstruible, no historial clínico.",
+    "columns": [
+      {
+        "name": "animal_id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY REFERENCES animals(id)",
+        "description": ""
+      },
+      {
+        "name": "telemetry_id",
+        "type": "uuid",
+        "flags": "REFERENCES telemetry(id)",
+        "description": "Referencia a telemetry"
+      },
+      {
+        "name": "position_telemetry_id",
+        "type": "uuid",
+        "flags": "REFERENCES telemetry(id)",
+        "description": "Referencia a telemetry"
+      },
+      {
+        "name": "geofence_status",
+        "type": "text",
+        "flags": "NOT NULL DEFAULT 'unknown' CHECK(geofence_status IN ('unknown','inside','outside','pending'))",
+        "description": ""
+      },
+      {
+        "name": "outside_count",
+        "type": "integer",
+        "flags": "NOT NULL DEFAULT 0 CHECK(outside_count>=0)",
+        "description": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": []
+  },
+  {
+    "name": "rule_settings",
+    "group": "Operación",
+    "description": "Reglas configuradas por predio y auditadas.",
+    "columns": [
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY REFERENCES farms(id)",
+        "description": ""
+      },
+      {
+        "name": "version",
+        "type": "integer",
+        "flags": "NOT NULL DEFAULT 1 CHECK(version>0)",
+        "description": ""
+      },
+      {
+        "name": "battery_low_mv",
+        "type": "integer",
+        "flags": "NOT NULL DEFAULT 3300 CHECK(battery_low_mv BETWEEN 0 AND 20000)",
+        "description": ""
+      },
+      {
+        "name": "temperature_enabled",
+        "type": "boolean",
+        "flags": "NOT NULL DEFAULT false",
+        "description": ""
+      },
+      {
+        "name": "temperature_high_c",
+        "type": "numeric",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "activity_enabled",
+        "type": "boolean",
+        "flags": "NOT NULL DEFAULT false",
+        "description": ""
+      },
+      {
+        "name": "activity_low_threshold",
+        "type": "numeric",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "activity_window_minutes",
+        "type": "integer",
+        "flags": "NOT NULL DEFAULT 30 CHECK(activity_window_minutes>0)",
+        "description": ""
+      },
+      {
+        "name": "proximity_enabled",
+        "type": "boolean",
+        "flags": "NOT NULL DEFAULT false",
+        "description": ""
+      },
+      {
+        "name": "proximity_meters",
+        "type": "numeric",
+        "flags": "CHECK(proximity_meters>=0)",
+        "description": ""
+      },
+      {
+        "name": "updated_by",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "CHECK(NOT temperature_enabled OR temperature_high_c IS NOT NULL)",
+      "CHECK(NOT activity_enabled OR activity_low_threshold IS NOT NULL)",
+      "CHECK(NOT proximity_enabled OR proximity_meters IS NOT NULL)"
+    ]
+  },
+  {
+    "name": "events",
+    "group": "Operación",
+    "description": "Alerta técnica; atender no implica resolver su condición.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES devices(id)",
+        "description": "Referencia a devices"
+      },
+      {
+        "name": "animal_id",
+        "type": "uuid",
+        "flags": "REFERENCES animals(id)",
+        "description": "Referencia a animals"
+      },
+      {
+        "name": "telemetry_id",
+        "type": "uuid",
+        "flags": "REFERENCES telemetry(id)",
+        "description": "Referencia a telemetry"
+      },
+      {
+        "name": "geofence_id",
+        "type": "uuid",
+        "flags": "REFERENCES geofences(id)",
+        "description": "Referencia a geofences"
+      },
+      {
+        "name": "type",
+        "type": "text",
+        "flags": "NOT NULL CHECK(type IN ('escape','communication_timeout','low_battery','high_surface_temperature','low_activity','proximity','config_timeout'))",
+        "description": ""
+      },
+      {
+        "name": "severity",
+        "type": "text",
+        "flags": "NOT NULL CHECK(severity IN ('warning','critical'))",
+        "description": ""
+      },
+      {
+        "name": "condition",
+        "type": "text",
+        "flags": "NOT NULL CHECK(condition IN ('active','resolved'))",
+        "description": ""
+      },
+      {
+        "name": "attention",
+        "type": "text",
+        "flags": "NOT NULL DEFAULT 'pending' CHECK(attention IN ('pending','acknowledged','in_review','concluded'))",
+        "description": ""
+      },
+      {
+        "name": "opened_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "resolved_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "detail",
+        "type": "jsonb",
+        "flags": "NOT NULL DEFAULT '{}'::jsonb",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)",
+      "FOREIGN KEY (device_id,farm_id) REFERENCES devices(id,farm_id)",
+      "FOREIGN KEY (telemetry_id,farm_id) REFERENCES telemetry(id,farm_id)",
+      "FOREIGN KEY (geofence_id,farm_id) REFERENCES geofences(id,farm_id)",
+      "CHECK((condition='active' AND resolved_at IS NULL) OR (condition='resolved' AND resolved_at IS NOT NULL AND resolved_at>=opened_at))"
+    ]
+  },
+  {
+    "name": "event_actions",
+    "group": "Operación",
+    "description": "Historial inmutable de atención de alertas.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "event_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES events(id)",
+        "description": "Referencia a events"
+      },
+      {
+        "name": "actor_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "action",
+        "type": "text",
+        "flags": "NOT NULL CHECK(action IN ('acknowledge','review','conclude','reopen'))",
+        "description": ""
+      },
+      {
+        "name": "note",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "FOREIGN KEY (event_id,farm_id) REFERENCES events(id,farm_id)"
+    ]
+  },
+  {
+    "name": "device_configs",
+    "group": "IoT",
+    "description": "Ciclo solicitud/envío/confirmación de configuración.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES devices(id)",
+        "description": "Referencia a devices"
+      },
+      {
+        "name": "version",
+        "type": "integer",
+        "flags": "NOT NULL CHECK(version>0)",
+        "description": ""
+      },
+      {
+        "name": "interval_seconds",
+        "type": "integer",
+        "flags": "NOT NULL CHECK(interval_seconds BETWEEN 30 AND 86400)",
+        "description": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "flags": "NOT NULL CHECK(status IN ('requested','sent','applied','failed'))",
+        "description": ""
+      },
+      {
+        "name": "requested_by",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "requested_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "sent_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "applied_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "error",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(device_id,version)",
+      "FOREIGN KEY (device_id,farm_id) REFERENCES devices(id,farm_id)"
+    ]
+  },
+  {
+    "name": "change_requests",
+    "group": "Aprobaciones",
+    "description": "Propuesta inmutable; los datos efectivos no cambian mientras esté pendiente.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "requested_by",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "membership_id",
+        "type": "uuid",
+        "flags": "REFERENCES farm_memberships(id)",
+        "description": "Referencia a farm_memberships"
+      },
+      {
+        "name": "action",
+        "type": "text",
+        "flags": "NOT NULL CHECK(action IN ('animal_profile','animal_status','animal_report','health_record','battery_replacement','health_schedule'))",
+        "description": ""
+      },
+      {
+        "name": "animal_holding_id",
+        "type": "uuid",
+        "flags": "REFERENCES animal_holdings(id)",
+        "description": "Referencia a animal_holdings"
+      },
+      {
+        "name": "animal_id",
+        "type": "uuid",
+        "flags": "REFERENCES animals(id)",
+        "description": "Referencia a animals"
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "flags": "REFERENCES devices(id)",
+        "description": "Referencia a devices"
+      },
+      {
+        "name": "expected_version",
+        "type": "bigint",
+        "flags": "CHECK(expected_version>0)",
+        "description": ""
+      },
+      {
+        "name": "payload",
+        "type": "jsonb",
+        "flags": "NOT NULL CHECK(jsonb_typeof(payload)='object')",
+        "description": ""
+      },
+      {
+        "name": "idempotency_key",
+        "type": "uuid",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)",
+      "UNIQUE(requested_by,idempotency_key)",
+      "FOREIGN KEY (membership_id,farm_id) REFERENCES farm_memberships(id,farm_id)",
+      "FOREIGN KEY(animal_holding_id,animal_id,farm_id) REFERENCES animal_holdings(id,animal_id,farm_id)",
+      "FOREIGN KEY (device_id,farm_id) REFERENCES devices(id,farm_id)",
+      "CHECK((animal_holding_id IS NULL)=(animal_id IS NULL))",
+      "CHECK((action='battery_replacement' AND device_id IS NOT NULL) OR (action<>'battery_replacement' AND animal_id IS NOT NULL))"
+    ]
+  },
+  {
+    "name": "change_decisions",
+    "group": "Aprobaciones",
+    "description": "Decisión única e inmutable: revisión del dueño o aplicación directa autorizada.",
+    "columns": [
+      {
+        "name": "request_id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY REFERENCES change_requests(id)",
+        "description": ""
+      },
+      {
+        "name": "decided_by",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "decision",
+        "type": "text",
+        "flags": "NOT NULL CHECK(decision IN ('approved','rejected','direct'))",
+        "description": ""
+      },
+      {
+        "name": "trust_grant_id",
+        "type": "uuid",
+        "flags": "REFERENCES trust_grants(id)",
+        "description": "Referencia a trust_grants"
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "CHECK(decision<>'rejected' OR nullif(btrim(reason),'') IS NOT NULL)"
+    ]
+  },
+  {
+    "name": "change_applications",
+    "group": "Aprobaciones",
+    "description": "Prueba única de aplicación efectiva, misma transacción que decisión y mutación.",
+    "columns": [
+      {
+        "name": "request_id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY REFERENCES change_decisions(request_id)",
+        "description": ""
+      },
+      {
+        "name": "entity_type",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "entity_id",
+        "type": "uuid",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": []
+  },
+  {
+    "name": "animal_measurements",
+    "group": "Salud",
+    "description": "Peso/altura históricos; correcciones referencian medición previa.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "animal_holding_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES animal_holdings(id)",
+        "description": "Referencia a animal_holdings"
+      },
+      {
+        "name": "animal_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES animals(id)",
+        "description": "Referencia a animals"
+      },
+      {
+        "name": "request_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES change_requests(id)",
+        "description": "Referencia a change_requests"
+      },
+      {
+        "name": "measured_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "weight_kg",
+        "type": "numeric",
+        "flags": "CHECK(weight_kg>0)",
+        "description": ""
+      },
+      {
+        "name": "height_cm",
+        "type": "numeric",
+        "flags": "CHECK(height_cm>0)",
+        "description": ""
+      },
+      {
+        "name": "corrects_id",
+        "type": "uuid",
+        "flags": "REFERENCES animal_measurements(id)",
+        "description": "Referencia a animal_measurements"
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)",
+      "FOREIGN KEY(animal_holding_id,animal_id,farm_id) REFERENCES animal_holdings(id,animal_id,farm_id)",
+      "FOREIGN KEY (request_id,farm_id) REFERENCES change_requests(id,farm_id)",
+      "CHECK(weight_kg IS NOT NULL OR height_cm IS NOT NULL)"
+    ]
+  },
+  {
+    "name": "animal_reports",
+    "group": "Salud",
+    "description": "Reporte del animal aplicado por dueño o trabajador autorizado.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "animal_holding_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES animal_holdings(id)",
+        "description": "Referencia a animal_holdings"
+      },
+      {
+        "name": "request_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES change_requests(id)",
+        "description": "Referencia a change_requests"
+      },
+      {
+        "name": "description",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "occurred_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "FOREIGN KEY (animal_holding_id,farm_id) REFERENCES animal_holdings(id,farm_id)",
+      "FOREIGN KEY (request_id,farm_id) REFERENCES change_requests(id,farm_id)"
+    ]
+  },
+  {
+    "name": "health_events",
+    "group": "Salud",
+    "description": "Versión clínica inmutable; CRUD se expresa mediante registro, corrección y anulación.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "animal_holding_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES animal_holdings(id)",
+        "description": "Referencia a animal_holdings"
+      },
+      {
+        "name": "request_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES change_requests(id)",
+        "description": "Referencia a change_requests"
+      },
+      {
+        "name": "event_type",
+        "type": "text",
+        "flags": "NOT NULL CHECK(event_type IN ('examination','vaccination','antibiotic','pathology','diagnosis','procedure','injury','death','observation'))",
+        "description": ""
+      },
+      {
+        "name": "operation",
+        "type": "text",
+        "flags": "NOT NULL CHECK(operation IN ('record','correct','void'))",
+        "description": ""
+      },
+      {
+        "name": "target_event_id",
+        "type": "uuid",
+        "flags": "REFERENCES health_events(id)",
+        "description": "Referencia a health_events"
+      },
+      {
+        "name": "occurred_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "recorded_by",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "description",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "diagnosis",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)",
+      "FOREIGN KEY (animal_holding_id,farm_id) REFERENCES animal_holdings(id,farm_id)",
+      "FOREIGN KEY (request_id,farm_id) REFERENCES change_requests(id,farm_id)",
+      "FOREIGN KEY (target_event_id,farm_id) REFERENCES health_events(id,farm_id)",
+      "CHECK((operation='record' AND target_event_id IS NULL) OR (operation IN ('correct','void') AND target_event_id IS NOT NULL))"
+    ]
+  },
+  {
+    "name": "health_treatments",
+    "group": "Salud",
+    "description": "Uno o varios fármacos/vacunas por evento.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "health_event_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES health_events(id)",
+        "description": "Referencia a health_events"
+      },
+      {
+        "name": "product_name",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "product_registration",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "batch_number",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "dose_value",
+        "type": "numeric",
+        "flags": "NOT NULL CHECK(dose_value>0)",
+        "description": ""
+      },
+      {
+        "name": "dose_unit",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "route",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "administered_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "withdrawal_meat_until",
+        "type": "date",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "withdrawal_milk_until",
+        "type": "date",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "withdrawal_basis",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "FOREIGN KEY (health_event_id,farm_id) REFERENCES health_events(id,farm_id)"
+    ]
+  },
+  {
+    "name": "health_schedules",
+    "group": "Salud",
+    "description": "Próxima vacuna/control/antibiótico planificado; planificación no equivale a administración.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "animal_holding_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES animal_holdings(id)",
+        "description": "Referencia a animal_holdings"
+      },
+      {
+        "name": "request_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES change_requests(id)",
+        "description": "Referencia a change_requests"
+      },
+      {
+        "name": "kind",
+        "type": "text",
+        "flags": "NOT NULL CHECK(kind IN ('vaccination','antibiotic','checkup'))",
+        "description": ""
+      },
+      {
+        "name": "description",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "due_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "operation",
+        "type": "text",
+        "flags": "NOT NULL CHECK(operation IN ('plan','replace','cancel','complete'))",
+        "description": ""
+      },
+      {
+        "name": "target_schedule_id",
+        "type": "uuid",
+        "flags": "REFERENCES health_schedules(id)",
+        "description": "Referencia a health_schedules"
+      },
+      {
+        "name": "completed_event_id",
+        "type": "uuid",
+        "flags": "REFERENCES health_events(id)",
+        "description": "Referencia a health_events"
+      },
+      {
+        "name": "created_by",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)",
+      "FOREIGN KEY (animal_holding_id,farm_id) REFERENCES animal_holdings(id,farm_id)",
+      "FOREIGN KEY (request_id,farm_id) REFERENCES change_requests(id,farm_id)",
+      "FOREIGN KEY (target_schedule_id,farm_id) REFERENCES health_schedules(id,farm_id)",
+      "FOREIGN KEY (completed_event_id,farm_id) REFERENCES health_events(id,farm_id)",
+      "CHECK((operation='plan' AND target_schedule_id IS NULL) OR (operation<>'plan' AND target_schedule_id IS NOT NULL))",
+      "CHECK((operation='complete')=(completed_event_id IS NOT NULL))"
+    ]
+  },
+  {
+    "name": "maintenance",
+    "group": "IoT",
+    "description": "Mantenimiento efectivo inmutable; solicitud pendiente no cambia batería confirmada.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES devices(id)",
+        "description": "Referencia a devices"
+      },
+      {
+        "name": "request_id",
+        "type": "uuid",
+        "flags": "REFERENCES change_requests(id)",
+        "description": "Referencia a change_requests"
+      },
+      {
+        "name": "responsible_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "kind",
+        "type": "text",
+        "flags": "NOT NULL CHECK(kind IN ('inspection','recharge','replacement','retirement'))",
+        "description": ""
+      },
+      {
+        "name": "battery_id",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "result",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "occurred_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "FOREIGN KEY (device_id,farm_id) REFERENCES devices(id,farm_id)",
+      "FOREIGN KEY (request_id,farm_id) REFERENCES change_requests(id,farm_id)"
+    ]
+  },
+  {
+    "name": "notifications",
+    "group": "Operación",
+    "description": "Cola de avisos por alerta, solicitud o agenda, con destinatario explícito.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "recipient_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "event_id",
+        "type": "uuid",
+        "flags": "REFERENCES events(id)",
+        "description": "Referencia a events"
+      },
+      {
+        "name": "request_id",
+        "type": "uuid",
+        "flags": "REFERENCES change_requests(id)",
+        "description": "Referencia a change_requests"
+      },
+      {
+        "name": "schedule_id",
+        "type": "uuid",
+        "flags": "REFERENCES health_schedules(id)",
+        "description": "Referencia a health_schedules"
+      },
+      {
+        "name": "channel",
+        "type": "text",
+        "flags": "NOT NULL CHECK(channel IN ('in_app','email','external'))",
+        "description": ""
+      },
+      {
+        "name": "recipient_address",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "flags": "NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','failed','expired','read'))",
+        "description": ""
+      },
+      {
+        "name": "message",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "next_attempt_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      },
+      {
+        "name": "read_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "FOREIGN KEY (event_id,farm_id) REFERENCES events(id,farm_id)",
+      "FOREIGN KEY (request_id,farm_id) REFERENCES change_requests(id,farm_id)",
+      "FOREIGN KEY (schedule_id,farm_id) REFERENCES health_schedules(id,farm_id)"
+    ]
+  },
+  {
+    "name": "notification_attempts",
+    "group": "Operación",
+    "description": "Intentos inmutables; aceptación externa no prueba lectura.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "notification_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES notifications(id)",
+        "description": "Referencia a notifications"
+      },
+      {
+        "name": "attempt",
+        "type": "integer",
+        "flags": "NOT NULL CHECK(attempt>0)",
+        "description": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "provider_id",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "error",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(notification_id,attempt)"
+    ]
+  },
+  {
+    "name": "audit_log",
+    "group": "Administración",
+    "description": "Auditoría global o predial, con identidad del actor y contexto de sesión.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "account_id",
+        "type": "uuid",
+        "flags": "REFERENCES owner_accounts(id)",
+        "description": "Referencia a owner_accounts"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "actor_id",
+        "type": "uuid",
+        "flags": "REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "session_id",
+        "type": "uuid",
+        "flags": "REFERENCES login_sessions(id)",
+        "description": "Referencia a login_sessions"
+      },
+      {
+        "name": "actor_kind",
+        "type": "text",
+        "flags": "NOT NULL CHECK(actor_kind IN ('user','service'))",
+        "description": ""
+      },
+      {
+        "name": "action",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "entity_type",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "entity_id",
+        "type": "uuid",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "before_data",
+        "type": "jsonb",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "after_data",
+        "type": "jsonb",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "ip_address",
+        "type": "inet",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "request_id",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "occurred_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "FOREIGN KEY(farm_id,account_id) REFERENCES farms(id,account_id)",
+      "CHECK(farm_id IS NULL OR account_id IS NOT NULL)",
+      "CHECK(actor_kind<>'user' OR actor_id IS NOT NULL)"
+    ]
+  },
+  {
+    "name": "request_metrics",
+    "group": "Administración",
+    "description": "Métricas técnicas por petición; sin body, secretos ni query string.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "account_id",
+        "type": "uuid",
+        "flags": "REFERENCES owner_accounts(id)",
+        "description": "Referencia a owner_accounts"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "actor_id",
+        "type": "uuid",
+        "flags": "REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "request_id",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "method",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "route_template",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "status_code",
+        "type": "integer",
+        "flags": "NOT NULL CHECK(status_code BETWEEN 100 AND 599)",
+        "description": ""
+      },
+      {
+        "name": "duration_ms",
+        "type": "numeric",
+        "flags": "NOT NULL CHECK(duration_ms>=0)",
+        "description": ""
+      },
+      {
+        "name": "request_bytes",
+        "type": "bigint",
+        "flags": "NOT NULL CHECK(request_bytes>=0)",
+        "description": ""
+      },
+      {
+        "name": "response_bytes",
+        "type": "bigint",
+        "flags": "NOT NULL CHECK(response_bytes>=0)",
+        "description": ""
+      },
+      {
+        "name": "occurred_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "FOREIGN KEY(farm_id,account_id) REFERENCES farms(id,account_id)",
+      "CHECK(farm_id IS NULL OR account_id IS NOT NULL)"
+    ]
+  },
+  {
+    "name": "features",
+    "group": "Administración",
+    "description": "Catálogo de módulos funcionales de software, separado del hardware.",
+    "columns": [
+      {
+        "name": "code",
+        "type": "text",
+        "flags": "PRIMARY KEY",
+        "description": ""
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      }
+    ],
+    "rules": []
+  },
+  {
+    "name": "farm_features",
+    "group": "Administración",
+    "description": "Módulos de software habilitados por predio; no es facturación.",
+    "columns": [
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "feature_code",
+        "type": "text",
+        "flags": "NOT NULL REFERENCES features(code)",
+        "description": ""
+      },
+      {
+        "name": "enabled",
+        "type": "boolean",
+        "flags": "NOT NULL DEFAULT true",
+        "description": ""
+      },
+      {
+        "name": "enabled_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "PRIMARY KEY(farm_id,feature_code)"
+    ]
+  },
+  {
+    "name": "sag_movements",
+    "group": "Extensión FMA",
+    "description": "Documento de traslado opcional; estado oficial requiere evidencia externa.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "farm_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES farms(id)",
+        "description": "Referencia a farms"
+      },
+      {
+        "name": "fma_folio",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "origin_rup",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "destination_rup",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "flags": "NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','confirmed','submitted','externally_confirmed','executed','cancelled'))",
+        "description": ""
+      },
+      {
+        "name": "departure_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "arrival_at",
+        "type": "timestamptz",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "external_evidence",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "created_by",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "UNIQUE(id,farm_id)",
+      "UNIQUE(fma_folio)",
+      "CHECK(origin_rup<>destination_rup)",
+      "CHECK(arrival_at IS NULL OR (departure_at IS NOT NULL AND arrival_at>=departure_at))"
+    ]
+  },
+  {
+    "name": "movement_animals",
+    "group": "Extensión FMA",
+    "description": "Detalle con DIIO preservado.",
+    "columns": [
+      {
+        "name": "movement_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES sag_movements(id)",
+        "description": "Referencia a sag_movements"
+      },
+      {
+        "name": "animal_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES animals(id)",
+        "description": "Referencia a animals"
+      },
+      {
+        "name": "diio_snapshot",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      }
+    ],
+    "rules": [
+      "PRIMARY KEY(movement_id,animal_id)"
+    ]
+  },
+  {
+    "name": "movement_status_events",
+    "group": "Extensión FMA",
+    "description": "Historial inmutable de transición del documento.",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "flags": "PRIMARY KEY DEFAULT gen_random_uuid()",
+        "description": "Identificador interno"
+      },
+      {
+        "name": "movement_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES sag_movements(id)",
+        "description": "Referencia a sag_movements"
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "flags": "NOT NULL",
+        "description": ""
+      },
+      {
+        "name": "actor_id",
+        "type": "uuid",
+        "flags": "NOT NULL REFERENCES users(id)",
+        "description": "Referencia a users"
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "flags": "",
+        "description": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamptz",
+        "flags": "NOT NULL DEFAULT now()",
+        "description": ""
+      }
+    ],
+    "rules": []
+  }
+]

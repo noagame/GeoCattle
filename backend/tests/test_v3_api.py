@@ -2,6 +2,7 @@
 Los datos y las métricas de cada prueba se revierten en una transacción externa.
 """
 import os
+import secrets
 from contextlib import ExitStack, contextmanager
 from datetime import timedelta
 from types import SimpleNamespace
@@ -341,3 +342,234 @@ def test_owner_can_manage_inactive_farm_without_using_it_as_context(v3):
     enabled=client.patch(f'/api/v1/v3/farms/{farm.id}',json={'active':True})
     assert enabled.status_code==200,enabled.text
     assert client.get('/api/v1/dashboard').status_code==200
+
+
+@pytest.mark.parametrize('profile', ['worker', 'vet', 'viewer'])
+def test_collaborator_read_views_and_owner_only_actions_are_separated(v3, profile):
+    client = v3.client(profile)
+    for path in ('/api/v1/dashboard', '/api/v1/animals', '/api/v1/geofences',
+                 '/api/v1/events', '/api/v1/v3/gateways'):
+        response = client.get(path)
+        assert response.status_code == 200, (profile, path, response.text)
+    for path in ('/api/v1/v3/admin/users', '/api/v1/v3/admin/owners',
+                 '/api/v1/v3/audit', '/api/v1/v3/memberships',
+                 '/api/v1/v3/invitations', '/api/v1/v3/trust',
+                 '/api/v1/hardware/receiver'):
+        response = client.get(path)
+        assert response.status_code == 403, (profile, path, response.text)
+    foreign = v3.animals['other_owner'].id
+    assert client.get(f'/api/v1/animals/{foreign}').status_code == 403
+    assert client.get(f'/api/v1/v3/animals/{foreign}/record').status_code == 403
+    assert client.post('/api/v1/auth/context', json={'farm_id': str(v3.farms['other_owner'].id)}).status_code == 403
+
+
+def test_worker_can_propose_own_health_correction_but_not_veterinary_report(v3):
+    worker = v3.client('worker')
+    owner = v3.client('owner')
+    vet = v3.client('vet')
+    submitted = worker.post('/api/v1/v3/changes', json=body(v3, 'health_record', {
+        'event_type': 'vaccination', 'description': 'Reporte propio de vacuna administrada'}))
+    assert submitted.status_code == 201 and submitted.json()['status'] == 'pending'
+    approved = owner.post(f"/api/v1/v3/changes/{submitted.json()['id']}/decision", json={'decision': 'approved'})
+    assert approved.status_code == 200, approved.text
+    own_event = approved.json()['entity_id']
+    record = worker.get(f"/api/v1/v3/animals/{v3.animals['owner'].id}/record")
+    assert record.status_code == 200, record.text
+    own = next(event for event in record.json()['health_events'] if event['id'] == own_event)
+    assert own['recorded_by'] == str(v3.users['worker'].id)
+    correction = worker.post('/api/v1/v3/changes', json=body(v3, 'health_record', {
+        'event_type': 'vaccination', 'operation': 'correct', 'target_event_id': own_event,
+        'description': 'Corrección de mi propio reporte'}))
+    assert correction.status_code == 201 and correction.json()['status'] == 'pending', correction.text
+    veterinary = vet.post('/api/v1/v3/changes', json=body(v3, 'health_record', {
+        'event_type': 'vaccination', 'description': 'Vacunación registrada por veterinario'}))
+    assert veterinary.status_code == 201 and veterinary.json()['status'] == 'applied'
+    for operation in ('correct', 'void'):
+        denied = worker.post('/api/v1/v3/changes', json=body(v3, 'health_record', {
+            'event_type': 'vaccination', 'operation': operation,
+            'target_event_id': veterinary.json()['entity_id'], 'description': 'Intento sobre reporte ajeno'}))
+        assert denied.status_code == 403, denied.text
+
+
+def test_veterinarian_cannot_change_lifecycle_or_battery_or_allocate_collars(v3):
+    vet = v3.client('vet')
+    response = vet.post('/api/v1/v3/changes', json=body(v3, 'animal_status', {'status': 'missing'}))
+    assert response.status_code == 403, response.text
+    response = vet.post('/api/v1/v3/changes', json={
+        'action': 'battery_replacement', 'device_id': str(uuid4()),
+        'payload': {'result': 'Fuera del permiso veterinario'}, 'idempotency_key': str(uuid4())})
+    assert response.status_code == 403, response.text
+    response = vet.post('/api/v1/assignments', json={
+        'device_id': str(uuid4()), 'animal_id': str(v3.animals['owner'].id)})
+    assert response.status_code == 403, response.text
+
+
+def test_revoked_membership_is_removed_from_existing_session_context(v3):
+    worker = v3.client('worker')
+    before = worker.get('/api/v1/auth/me')
+    assert before.status_code == 200 and before.json()['user']['farm_id'] == str(v3.farms['owner'].id)
+    v3.members['worker'].valid_to = utcnow() - timedelta(seconds=1)
+    v3.db.flush()
+    after = worker.get('/api/v1/auth/me')
+    assert after.status_code == 200, after.text
+    assert after.json()['user']['farm_id'] is None and after.json()['user']['farms'] == []
+    denied = worker.get(f"/api/v1/animals/{v3.animals['owner'].id}")
+    assert denied.status_code == 403, denied.text
+    assert worker.get(f"/api/v1/v3/animals/{v3.animals['owner'].id}/record").status_code in (403, 409)
+    assert worker.post('/api/v1/auth/context', json={'farm_id': str(v3.farms['owner'].id)}).status_code == 403
+
+
+def issue_enrol_invitation(v3, role, email, owner_key='owner'):
+    owner = v3.client(owner_key)
+    secret = enable_owner_mfa(v3, owner)
+    response = operation_write(v3, owner, secret, 'POST', '/api/v1/v3/invitations',
+        {'email': email, 'role_code': role})
+    assert response.status_code == 201, response.text
+    return response.json()['invitation_token']
+
+
+@pytest.mark.parametrize('role', ['worker', 'veterinarian'])
+def test_owner_invitation_previews_and_enrols_each_collaborator_role(v3, role):
+    email = f'enrol-{role}-{uuid4().hex}@qa.test'
+    token = issue_enrol_invitation(v3, role, email)
+    visitor = v3.client('worker', login=False)
+    preview = visitor.post('/api/v1/v3/enrol/preview', json={'token': token})
+    assert preview.status_code == 200, preview.text
+    data = preview.json()
+    assert set(data) == {'email', 'role_code', 'farm_name', 'expires_at', 'account_exists'}
+    assert data['email'] == email and data['role_code'] == role
+    assert data['farm_name'] == v3.farms['owner'].name and data['account_exists'] is False
+    assert data['expires_at']
+    # The role and farm are read-only facts from the invitation, not caller inputs.
+    forged = visitor.post('/api/v1/v3/enrol', json={'token': token, 'password': PASSWORD,
+        'full_name': 'Nuevo colaborador', 'role_code': 'admin', 'farm_id': str(v3.farms['other_owner'].id)})
+    assert forged.status_code == 422, forged.text
+    enrolled = visitor.post('/api/v1/v3/enrol', json={'token': token, 'password': PASSWORD,
+        'full_name': 'Nuevo colaborador'})
+    assert enrolled.status_code == 201 and enrolled.json() == {'enrolled': True, 'username': email}, enrolled.text
+    identity = v3.db.scalar(select(User).where(User.username == email))
+    member = v3.db.execute(text('SELECT role_code,farm_id FROM farm_memberships WHERE user_id=:u'), {'u': identity.id}).one()
+    assert member.role_code == role and member.farm_id == v3.farms['owner'].id
+    assert visitor.post('/api/v1/v3/enrol/preview', json={'token': token}).status_code == 401
+    assert visitor.post('/api/v1/v3/enrol', json={'token': token, 'password': PASSWORD, 'full_name': 'Otra persona'}).status_code == 401
+    logged = visitor.post('/api/v1/auth/login', json={'username': email, 'password': PASSWORD})
+    assert logged.status_code == 200, logged.text
+    assert logged.json()['user']['role'] == role and logged.json()['user']['farm_id'] == str(v3.farms['owner'].id)
+    assert v3.db.execute(text("SELECT count(*) FROM audit_log WHERE actor_id=:u AND action='accept_invitation'"), {'u': identity.id}).scalar_one() == 1
+
+
+@pytest.mark.parametrize('state,expected', [
+    ('unknown', 401), ('expired', 401), ('accepted', 401), ('revoked', 401),
+    ('inactive_farm', 403), ('inactive_account', 403), ('other_environment', 403),
+])
+def test_enrol_preview_and_acceptance_share_token_and_farm_validation(v3, state, expected):
+    token = secrets.token_urlsafe(40)
+    ident = uuid4()
+    email = f'blocked-{uuid4().hex}@qa.test'
+    if state != 'unknown':
+        v3.db.execute(text("""INSERT INTO invitations(id,farm_id,email,role_code,token_hash,invited_by,expires_at)
+            VALUES(:id,:farm,:email,'worker',:token,:owner,:expires)"""),
+            {'id': ident, 'farm': v3.farms['owner'].id, 'email': email,
+             'token': token_hash(token), 'owner': v3.users['owner'].id,
+             'expires': utcnow() + timedelta(hours=48)})
+    if state == 'expired':
+        v3.db.execute(text('UPDATE invitations SET expires_at=:at WHERE id=:id'), {'at': utcnow()-timedelta(seconds=1), 'id': ident})
+    elif state == 'accepted':
+        v3.db.execute(text('UPDATE invitations SET accepted_at=now(),accepted_user_id=:u WHERE id=:id'), {'u': v3.users['worker'].id, 'id': ident})
+    elif state == 'revoked':
+        v3.db.execute(text('UPDATE invitations SET revoked_at=now() WHERE id=:id'), {'id': ident})
+    elif state == 'inactive_farm':
+        v3.farms['owner'].active = False
+    elif state == 'inactive_account':
+        v3.db.execute(text('UPDATE owner_accounts SET active=false WHERE id=:id'), {'id': v3.farms['owner'].account_id})
+    elif state == 'other_environment':
+        v3.farms['owner'].environment = 'simulation'
+    # Commit the fixture savepoint so rejected HTTP requests cannot undo its state.
+    v3.db.commit()
+    visitor = v3.client('worker', login=False)
+    preview = visitor.post('/api/v1/v3/enrol/preview', json={'token': token})
+    assert preview.status_code == expected, preview.text
+    accepted = visitor.post('/api/v1/v3/enrol', json={'token': token, 'password': PASSWORD, 'full_name': 'No se debe crear'})
+    assert accepted.status_code == expected, accepted.text
+    assert v3.db.scalar(select(User).where(User.username == email)) is None
+
+
+@pytest.mark.parametrize('payload', [
+    {'password': 'short', 'full_name': 'Nombre nuevo'},
+    {'password': PASSWORD},
+])
+def test_new_enrolment_still_requires_name_and_twelve_character_password(v3, payload):
+    email = f'incomplete-{uuid4().hex}@qa.test'
+    token = issue_enrol_invitation(v3, 'worker', email)
+    visitor = v3.client('worker', login=False)
+    rejected = visitor.post('/api/v1/v3/enrol', json={'token': token, **payload})
+    assert rejected.status_code == 422, rejected.text
+    assert v3.db.scalar(select(User).where(User.username == email)) is None
+    assert visitor.post('/api/v1/v3/enrol/preview', json={'token': token}).status_code == 200
+
+
+def test_existing_enrolment_uses_current_password_and_preserves_identity(v3):
+    from geocattle.security import verify_password
+    identity = v3.users['worker']
+    existing_password = 'old8pass'
+    existing_hash = hash_password(existing_password)
+    identity.password_hash = existing_hash
+    original_name = identity.full_name
+    v3.db.commit()
+    token = issue_enrol_invitation(v3, 'veterinarian', identity.username, owner_key='other_owner')
+    visitor = v3.client('worker', login=False)
+    preview = visitor.post('/api/v1/v3/enrol/preview', json={'token': token})
+    assert preview.status_code == 200 and preview.json()['account_exists'] is True
+    assert preview.json()['role_code'] == 'veterinarian' and preview.json()['farm_name'] == v3.farms['other_owner'].name
+    wrong = visitor.post('/api/v1/v3/enrol', json={'token': token, 'password': 'unrelated-new-password', 'full_name': 'Do not rename'})
+    assert wrong.status_code == 401, wrong.text
+    assert visitor.post('/api/v1/v3/enrol/preview', json={'token': token}).status_code == 200
+    accepted = visitor.post('/api/v1/v3/enrol', json={'token': token, 'password': existing_password, 'full_name': 'Do not rename'})
+    assert accepted.status_code == 201, accepted.text
+    v3.db.refresh(identity)
+    assert identity.password_hash == existing_hash and identity.full_name == original_name
+    assert verify_password(identity.password_hash, existing_password)
+    assert not verify_password(identity.password_hash, 'unrelated-new-password')
+    logged = visitor.post('/api/v1/auth/login', json={'username': identity.username, 'password': existing_password})
+    assert logged.status_code == 200, logged.text
+    visitor.headers['X-CSRF-Token'] = logged.json()['csrf_token']
+    selected = visitor.post('/api/v1/auth/context', json={'farm_id': str(v3.farms['other_owner'].id)})
+    assert selected.status_code == 200 and selected.json()['user']['role'] == 'veterinarian', selected.text
+
+
+def test_admin_support_can_manage_members_but_cannot_invite_new_collaborators(v3):
+    admin = v3.client('admin', login=False)
+    challenge = admin.post('/api/v1/auth/login', json={'username': v3.users['admin'].username, 'password': PASSWORD})
+    secret = challenge.json()['secret']
+    verified = admin.post('/api/v1/auth/mfa/verify', json={'challenge_token': challenge.json()['challenge_token'], 'code': totp(secret)})
+    assert verified.status_code == 200, verified.text
+    admin.headers['X-CSRF-Token'] = verified.json()['csrf_token']
+    context = admin.post('/api/v1/auth/context', json={'farm_id': str(v3.farms['owner'].id)})
+    assert context.status_code == 200, context.text
+    assert admin.get('/api/v1/v3/memberships').status_code == 200
+    assert admin.get('/api/v1/v3/invitations').status_code == 200
+    invitation = {'email': 'admin-cannot-invite@qa.test', 'role_code': 'worker'}
+    denied = admin.post('/api/v1/v3/invitations', json=invitation)
+    assert denied.status_code == 403, denied.text
+    denied_operation = admin.post('/api/v1/auth/operation', json={'password': PASSWORD, 'code': totp(secret),
+        'method': 'POST', 'path': '/api/v1/v3/invitations', 'payload': invitation})
+    assert denied_operation.status_code == 403, denied_operation.text
+    # Administrative support still manages already enrolled collaborators.
+    v3.clock['value'] += 30
+    member_path = f"/api/v1/v3/memberships/{v3.members['worker'].id}"
+    body = {'active': False}
+    operation = admin.post('/api/v1/auth/operation', json={'password': PASSWORD, 'code': totp(secret),
+        'method': 'PATCH', 'path': member_path, 'payload': body})
+    assert operation.status_code == 200, operation.text
+    updated = admin.patch(member_path, json=body, headers={'X-Operation-Token': operation.json()['operation_token']})
+    assert updated.status_code == 200 and updated.json()['active'] is False, updated.text
+
+
+@pytest.mark.parametrize('profile', ['worker', 'vet'])
+def test_collaborators_cannot_issue_invitations_or_authorize_them(v3, profile):
+    client = v3.client(profile)
+    payload = {'email': f'{profile}-cannot-invite@qa.test', 'role_code': 'worker'}
+    assert client.post('/api/v1/v3/invitations', json=payload).status_code == 403
+    response = client.post('/api/v1/auth/operation', json={'password': PASSWORD, 'code': '000000',
+        'method': 'POST', 'path': '/api/v1/v3/invitations', 'payload': payload})
+    assert response.status_code == 403, response.text

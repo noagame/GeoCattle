@@ -12,7 +12,8 @@ Base `/api/v1`. Fechas ISO 8601 UTC y UUID textuales. GeoJSON WGS84 `[longitud, 
 
 - `GET /dashboard` → `{farm:{id,name,environment},summary:{total,normal,warning,critical,unknown,active_events},animals:Animal[],events:Event[],sectors:Sector[]}`.
 - `GET /animals?q=&sector_id=&limit=100&offset=0` → `{items:Animal[],total}`.
-- `GET /animals/{id}` → Animal.
+- `GET /animals/{id}` → Animal, ampliado con `collar_assignment` y `pasture_assignment` actuales (o `null`); el listado y dashboard no incorporan estos detalles adicionales.
+- `GET /animals/{id}/assignments?limit=50&offset=0` → `{items:Association[],total}`; máximo 200 por petición, orden de inicio descendente y alcance por predio.
 - `GET /animals/{id}/history?start=&end=&limit=500&offset=0` → `{items:Telemetry[],total}` (orden captura).
 - `GET /devices` → `{items:Device[],total}`.
 - `GET /sectors` → `{items:Sector[],total}`.
@@ -53,3 +54,73 @@ Device: `{id,hardware_id,dev_eui,name,transport,enabled,interval_seconds,config_
 Sector: `{id,name}`. Geofence: `{id,sector_id,name,version,active,geometry,created_at}`. Event: `{id,animal_id,animal_name,diio,device_id,type,severity,condition:"active"|"resolved",attention:"pending"|"acknowledged"|"in_review"|"concluded",opened_at,resolved_at,detail,actions:[]}`.
 
 Errores `{detail:string}` con 401 sin sesión, 403 permisos/CSRF/predio, 409 conflicto versión/identidad/asociación, 422 validación. Las pantallas mantienen el estado anterior si falla una escritura.
+
+
+## Asociación actual e historial por animal
+
+`collar_assignment`: `{id,device_id,valid_from,valid_to}` o `null`.
+
+`pasture_assignment`: `{id,geofence_id,geofence_name,geofence_version,sector_id,sector_name,valid_from,valid_to}` o `null`.
+
+`Association`: `{id,kind:"collar"|"pasture",valid_from,valid_to,active,assigned_by,assigned_by_name,device_id,device_name,hardware_id,geofence_id,geofence_name,geofence_version,sector_id,sector_name}`. Los campos de la otra clase de asociación son `null`. El acceso requiere sesión y animal del predio autorizado; las lecturas conservan su asignación histórica.
+
+Cambiar de sector manualmente contradiciendo una asignación de pastoreo vigente devuelve 409; se debe asignar la nueva zona. Las nuevas geocercas y asignaciones exigen sector activo. Un reemplazo de collar no puede recortar lecturas ya persistidas de la asociación anterior. El cierre de eventos por reasignación conserva evidencia y atención, y no representa recuperación física del sensor.
+
+## Captura radio JSON V5
+
+El protocolo de radio se convierte al contrato de ingestión anterior mediante
+`adapters/lora_json.py` y `adapters/lora_usb.py`. Es diferente de `schema_version`
+de la API. Se conserva compatibilidad con CSV V4.
+
+| Campo radio | Significado / destino |
+|---|---|
+| `v` | Versión 5 del protocolo físico |
+| `id`, `s`, `q` | Identificador de collar, sesión de 16 caracteres hexadecimales y secuencia |
+| `u` | Tiempo encendido en ms → `quality.uptime_ms` |
+| `g` | `[latitud, longitud, edad_ms, satélites_usados, HDOP]` |
+| `t` | Temperatura del sensor en °C |
+| `a` | `[x,y,z]` en g → `quality.acceleration_g` |
+| `m` | `[estado,RMS_g]`, estado -1 desconocido, 0 reposo, 1 movimiento |
+| `b` | `[mV,porcentaje_estimado,presente,cargando,USB]` |
+| `p` | Intervalo anunciado, entre 30000 y 40000 ms |
+| `f` | Bits: 1 sin posición GPS, 2 sin temperatura, 4 sin acelerómetro |
+| `e` | Motivo: 0 inicio, 1 periódico, 2 inicio de movimiento |
+| `d` | Opcional: `[bytes_NMEA,sentencias_válidas,errores_checksum]` |
+
+El receptor entrega una línea JSON con el sobre
+`{"packet": objetoV5, "radio": {"rssi_dbm": numero, "snr_db": numero}}`.
+El objeto de radio no supera 255 bytes. Las mediciones ausentes se transmiten
+como `null`; en estados y contadores opcionales se utiliza -1 para desconocido.
+El decodificador valida tipos, rangos, consistencia de flags y estados de batería.
+Un fix válido requiere ambas coordenadas y edad menor de 5000 ms; no se inventa
+una posición cuando no hay fix. Los satélites visibles y C/N₀ no se transmiten
+en esta versión.
+
+La identidad de deduplicación es collar/sesión/secuencia. El puente conserva la
+hora de primera recepción del PC porque el paquete no aporta fecha UTC GPS;
+`quality.observed_at_estimated` lo hace explícito. No se debe modificar el
+historial inmutable para corregirlo ni simular mediciones ausentes.
+
+Consultas de visualización, con sesión y predio autorizado:
+
+- `GET /hardware/overview`: última lectura y última posición válida por collar.
+- `GET /hardware/telemetry?day=AAAA-MM-DD&hardware_id=REAL01&limit=100&offset=0`: historial del día en la zona horaria del predio, con paginación (máximo 500).
+- `GET /hardware/daily?hardware_id=REAL01&days=30`: conteos de muestras y extremos de temperatura; `days` entre 1 y 366.
+- `GET /hardware/receiver`: estado del puente USB; solo dueño/administrador. Un estado de más de 30 s se considera vencido.
+
+Las asignaciones a bovinos siguen usando su fecha efectiva. El collar puede
+consultarse antes de asignarlo; las capturas antiguas sin asignación se conservan.
+Las pruebas de referencia están en `qa/test_lora_json.py`, `qa/test_lora_usb.py`,
+`qa/test_esp32_contract.py` y `qa/test_hardware_api.py`.
+
+## Registro de colaboradores mediante el dueño
+
+- `POST /v3/invitations`: solo el dueño en su predio, con autorización MFA para esa operación. Admite correo y rol `worker` o `veterinarian`. Soporte administra colaboradores existentes pero no emite altas nuevas.
+- `POST /v3/enrol/preview` `{token}`: valida vigencia, no consumo/revocación y cuenta/predio activos del entorno. Devuelve `{email,role_code,farm_name,expires_at,account_exists}`. El token se envía en el cuerpo. No crea cuenta ni membresía.
+- `POST /v3/enrol` `{token,password,full_name?}`: consume la invitación. Cuenta nueva: nombre y contraseña de al menos doce caracteres. Cuenta existente: contraseña actual, sin cambiar nombre/hash. El rol y el predio proceden exclusivamente de la invitación.
+
+Invitación manual, válida durante 48 horas y de un uso. Sin registro público libre ni envío automático de correo. Guía: [USUARIOS_Y_REGISTRO.md](USUARIOS_Y_REGISTRO.md).
+
+## Configuración desde el panel de alertas
+
+El dueño y el administrador con predio seleccionado pueden ajustar los parámetros mediante **Alertas y atención → Configurar alertas**. Se comparte formulario y versión con **Reglas del predio**. GET/PUT `/settings` incorporan `capabilities` con permisos de edición, entorno y disponibilidad de activación preventiva; esa metadata no se acepta como parámetro de escritura ni forma parte del historial de reglas. El contrato de campos y la validación existentes se conservan. Ver [CONFIGURACION_ALERTAS.md](CONFIGURACION_ALERTAS.md).

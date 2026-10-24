@@ -73,6 +73,8 @@ class OperationIn(BaseModel):
 def authorize_operation(body: OperationIn, request: Request, user=Depends(current_user), db=Depends(get_db, scope='function')):
     if user.role not in ('owner', 'admin'):
         raise HTTPException(403, 'Solo el dueño o administrador puede autorizar esta operación')
+    if body.method=='POST' and body.path==_PREFIX+'invitations' and user.role!='owner':
+        raise HTTPException(403, 'Solo el dueño del predio puede autorizar nuevas invitaciones')
     if not user.farm_id:
         raise HTTPException(409, 'Selecciona un predio autorizado antes de administrar el equipo')
     # All MFA flows use user -> factor to serialize the identity-wide budget.
@@ -118,6 +120,8 @@ def require_operation(request, db, user, payload: dict):
         raise HTTPException(403, 'La autorización requiere una sesión vigente')
     method, path = request.method.upper(), request.url.path
     validate_target(method, path)
+    if method=='POST' and path==_PREFIX+'invitations' and user.role!='owner':
+        raise HTTPException(403, 'Solo el dueño del predio puede autorizar nuevas invitaciones')
     challenge = one(db, 'SELECT * FROM auth_challenges WHERE token_hash=:t FOR UPDATE', t=token_hash(token))
     expected = operation_digest(method, path, payload, user.farm_id)
     if (not challenge or challenge['purpose'] != 'step_up' or challenge['user_id'] != user.id

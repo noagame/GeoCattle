@@ -56,7 +56,7 @@ def main():
         'NOTIFICATION_WEBHOOK_URL': '',
     }
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, 'w') as file:
+    with os.fdopen(fd, 'w', encoding='utf-8') as file:
         file.write('# Configuración privada generada; no incluir en control de versiones.\n')
         file.write('\n'.join(f'{key}={value}' for key, value in values.items()) + '\n')
     print(f'Creado {path.name} con secretos aleatorios y permisos 600.')

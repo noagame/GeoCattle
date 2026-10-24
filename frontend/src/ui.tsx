@@ -7,7 +7,7 @@ export const eventLabels: Record<string, string> = {
   escape: 'Fuera de geocerca', geofence_exit: 'Fuera de geocerca', outside_geofence: 'Fuera de geocerca',
   communication_loss: 'Sin comunicación', communication_timeout: 'Sin comunicación', config_timeout: 'Configuración sin confirmar', timeout: 'Sin comunicación', low_battery: 'Batería baja',
   no_fix: 'Sin posición GNSS', high_surface_temperature: 'Temperatura superficial elevada', temperature_high: 'Temperatura elevada', high_temperature: 'Temperatura elevada',
-  low_activity: 'Actividad reducida', activity_low: 'Actividad reducida', proximity: 'Proximidad', proximity_alert: 'Proximidad',
+  low_activity: 'Actividad reducida', activity_low: 'Actividad reducida', proximity: 'Cerca del límite de geocerca', proximity_alert: 'Cerca del límite de geocerca',
 };
 export const attentionLabels: Record<string, string> = { pending: 'Pendiente', acknowledged: 'Reconocido', in_review: 'En revisión', concluded: 'Concluido' };
 export const actionLabels: Record<string, string> = { acknowledge: 'Reconocer', review: 'Iniciar revisión', conclude: 'Concluir atención', reopen: 'Reabrir atención' };

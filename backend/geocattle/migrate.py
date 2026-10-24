@@ -13,7 +13,7 @@ def migrate():
         conn.execute(text("CREATE TABLE IF NOT EXISTS schema_migrations(version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"))
         for path in sorted(migrations.glob("*.sql")):
             if conn.execute(text("SELECT 1 FROM schema_migrations WHERE version=:v"), {"v":path.name}).scalar(): continue
-            conn.connection.driver_connection.execute(path.read_text(), prepare=False)
+            conn.connection.driver_connection.execute(path.read_text(encoding='utf-8'), prepare=False)
             conn.execute(text("INSERT INTO schema_migrations(version) VALUES(:v)"), {"v":path.name})
             print(f"Applied {path.name}")
         if settings().app_database_password:

@@ -1,100 +1,132 @@
-# GeoCattle SaaS · V1
+# GeoCattle
 
-## Actualización V3 — 21 de octubre de 2026
+Aplicación de supervisión bovina con mapas, geocercas, telemetría de collares y gestión sanitaria por predio. Frontend **React/TypeScript/Leaflet**, backend **FastAPI** y base **PostgreSQL/PostGIS**.
 
-La instancia local incorpora paneles de administrador, dueño, trabajador y veterinario, contexto multipredio, MFA TOTP, invitaciones, confianza y aprobación de cambios, fichas sanitarias históricas, agenda, gateways y KPIs. El modelo operativo se amplía con `003_application_v3.sql`, conservando datos V1.
+## Actualización del 24 de octubre de 2026
 
-- Aplicación: [http://localhost:8080](http://localhost:8080).
-- Modelo real: [MODELO_BASE_DATOS.md](docs/MODELO_BASE_DATOS.md) y [MIGRACION_V3.md](docs/MIGRACION_V3.md).
-- Validación de integración: [IMPLEMENTACION_V3.md](docs/IMPLEMENTACION_V3.md).
-- Gantt e informe: `docs/planificacion/` y `../actualizacion_informe.md`.
-- El acceso inicial del administrador creado en esta sesión se guardó en `.runtime/acceso_administrador_v3.json` con permisos privados. No añadirlo a Git ni compartirlo. El titular debe activar TOTP al primer ingreso; la credencial del dueño existente se conserva.
-- En instalaciones nuevas, `scripts/start.sh` concilia el seed legado con V3. El primer administrador se crea explícitamente con `python -m geocattle.seed_v3 --admin-email CORREO` y la variable `V3_ADMIN_PASSWORD` (mínimo 12 caracteres), usando el servicio tools/seed con credencial de migración.
+Esta versión incorpora la recepción física USB/LoRa, la visualización completa de sensores, mejoras de mapas y asociaciones históricas, el registro de colaboradores mediante el dueño y la configuración de alertas por predio.
 
-Recuperación/cambio de correo y cierre autónomo de cuenta, entrega externa de invitaciones, FMA oficial y pruebas físicas no se declaran completos. La verificación sensible utiliza una ventana MFA de diez minutos; el reto ligado a cada escritura se mantiene como mejora pendiente. El alcance y los límites exactos están en la evidencia de integración.
-
-
-Aplicación web de supervisión bovina basada en el segundo informe de desarrollo de GeoCattle. Frontend React/TypeScript/Leaflet, backend FastAPI y PostgreSQL/PostGIS, con operación local y entornos de simulación y piloto separados. Los informes y archivos originales se conservaron intactos.
-
-## Inicio rápido
-
-Requiere Docker, Docker Compose 2 o superior y Python 3 para generar configuración. Si existe un ejecutable oficial local en `.runtime/docker-compose`, el wrapper lo utiliza; no se necesita modificar Docker globalmente.
-
-```bash
-cd geocattle-saas
-bash scripts/start.sh
-```
-
-Abre [GeoCattle](http://localhost:8080). Usuario: `demo@geocattle.local`. La contraseña aleatoria está en `DEMO_PASSWORD` del archivo privado `.env`; ese archivo se genera con permisos 600 y no se incluye en Git. La demo inicial contiene 70 bovinos sintéticos, collares y sectores de ejemplo. Nunca se presenta como telemetría real.
-
-El arranque aplica migraciones versionadas, inicia API y worker y carga la demo mediante un comando explícito. Repetir la carga conserva los datos existentes. La API y el worker usan un usuario de base de datos distinto del usuario que realiza migraciones.
-
-```bash
-# Estado, logs y apagado sin borrar datos
-bash scripts/compose.sh ps
-bash scripts/compose.sh logs --tail=100 api worker
-bash scripts/compose.sh down
-
-# Volver a iniciar, conservar volúmenes y datos
-bash scripts/compose.sh up -d
-```
+Consulta [resumen.md](resumen.md) para ver los cambios, las verificaciones y los límites de esta entrega.
 
 ## Funcionalidades
 
-- Cuentas con sesión HttpOnly, vencimiento, CSRF y permisos por predio/rol.
-- Resumen del rebaño y mapa Leaflet con filtros, estado, calidad y antigüedad explícitos. Cuadrícula local disponible sin cartografía externa.
-- Registro DIIO, carne/leche, sectores, collares y asignaciones históricas.
-- Geocercas GeoJSON válidas y versionadas, edición de polígonos e impacto confirmado.
-- Telemetría autenticada, idempotente y permanente; asociación según captura e historial paginado por período.
-- Salida tras dos posiciones válidas exteriores; borde interior, GNSS inválido no demuestra regreso.
-- Detección independiente de ausencia de comunicación y reglas preventivas configurables.
-- Alertas con condición técnica y atención humana independientes; acciones y cambios auditables.
-- Muestreo solicitado pendiente hasta confirmación de versión por el dispositivo.
-- Bitácora de mantenimiento, avisos externos en cola e intentos visibles, exportación e indicadores locales.
-- Simulación de escenarios identificada y bloqueada en producción; puente académico con buffer persistente.
+- Sesiones HttpOnly, CSRF, permisos por predio y roles de administrador, dueño, trabajador y veterinario. MFA TOTP para administración y operaciones sensibles.
+- Contexto multipredio, gestión de clientes, invitaciones, membresías, confianza por acción y aprobación de propuestas del trabajador.
+- Bovinos con DIIO, ficha técnica y sanitaria, historial, tratamientos y agenda con autoría.
+- Mapa Leaflet con OpenStreetMap opcional y cuadrícula local, recentrado y dibujo de geocercas versionadas.
+- Asociaciones históricas entre collar y animal, sector y geocerca, con vigencias y sin reatribuir lecturas anteriores.
+- Recepción académica LoRa punto a punto mediante una T3 USB: CSV V4 y JSON V5, cola durable, deduplicación y reintentos hacia la API.
+- Visualización de GPS, satélites usados, HDOP, temperatura superficial, aceleración, actividad, movimiento, batería, USB y calidad radio según los campos recibidos.
+- Historial paginado, gráficas y trayectoria por collar, registro diario y exportación JSONL de la página consultada.
+- **Alertas y atención → Configurar alertas**: batería, temperatura, actividad y cercanía al límite de geocerca. Solo dueño y administrador pueden guardar parámetros; cada cambio conserva versión y auditoría.
+- Condición técnica de las alertas separada de su atención humana; supervisión de ausencia de comunicación y vigencia GPS.
+- Gateways, KPI, mantenimiento, auditoría, avisos externos en cola y simulación identificada y separada del hardware real.
 
-La posición se considera vigente hasta `2T + 30 s`. La ausencia de comunicación se detecta al superar `3T + 30 s` desde una recepción nueva. Reentregas y datos tardíos no rejuvenecen la posición ni la comunicación. La batería se presenta en mV; no se inventa un porcentaje ni una autonomía. Temperatura superficial y actividad no diagnostican enfermedades.
+## Inicio rápido con Docker: simulación
+
+Requiere Git, Python 3.11 o superior, Bash, Docker y Docker Compose 2 o superior.
+
+```bash
+git clone https://github.com/noagame/GeoCattle.git
+cd GeoCattle
+bash scripts/start.sh
+```
+
+Abre [GeoCattle](http://localhost:8080). Usuario inicial: `demo@geocattle.local`. Su contraseña aleatoria se genera en `DEMO_PASSWORD` del archivo privado `.env`. La demo contiene 70 bovinos sintéticos y no representa telemetría real.
+
+El arranque genera configuración sin sobrescribirla, aplica migraciones versionadas e inicia API, worker y seed. Repetir la carga conserva los datos existentes. El usuario de aplicación es distinto del que realiza migraciones.
+
+```bash
+# Estado y registros
+bash scripts/compose.sh ps
+bash scripts/compose.sh logs --tail=100 api worker
+
+# Detener conservando los volúmenes; reanudar después
+bash scripts/compose.sh down
+bash scripts/compose.sh up -d
+```
+
+## Prototipo físico en Windows
+
+La instancia local preparada sirve [Recepción de collares](http://localhost:8084/#hardware), con PostgreSQL/PostGIS en el puerto 55434. La T3 de referencia usa COM5 y recibe por LoRa al emisor T-Beam; no hace falta conectar ambos por USB de datos simultáneamente.
+
+**Una clonación nueva no incluye la base física, los binarios locales ni las credenciales del PC.** Los scripts siguientes requieren esa preparación local, `.env.academic`, un entorno Python con las dependencias de backend y adaptadores, y el frontend compilado. Consulta [Desarrollo local](docs/DESARROLLO_LOCAL.md) y [USB COM5](docs/USB_COM5.md). No ejecutar el seed de simulación sobre la base física.
+
+Desde PowerShell en la raíz del proyecto:
+
+```powershell
+.\Iniciar-Prototipo.ps1
+# Reiniciar solo la API después de actualizar Python:
+.\Actualizar-Visualizacion.ps1
+# Liberar COM5 para usar Arduino IDE:
+.\Pausar-Captura-COM5.ps1
+# Cerrar servicios conservando los datos:
+.\Detener-Prototipo.ps1
+```
+
+Cerrar Monitor Serie y Plotter antes de capturar; solo un proceso puede abrir el puerto. `Iniciar-Captura-COM5.ps1` permite capturar en primer plano y `Reiniciar-Prototipo.ps1` reinicia el prototipo completo.
+
+Las capturas diarias y la cola SQLite son un archivo intermedio local; **PostgreSQL/PostGIS sigue siendo la base de la aplicación**. No se necesita Arduino IDE para ejecutar el software. El firmware y las herramientas de programación de placas no forman parte de esta actualización.
+
+## Usuarios y alertas
+
+El administrador crea las cuentas de dueños/clientes. **El dueño invita a trabajadores y veterinarios** desde Equipo y permisos; cada persona activa su cuenta mediante un enlace con vencimiento y uso único. El administrador conserva la gestión de colaboradores ya incorporados, pero no crea nuevas invitaciones en nombre del dueño. Los enlaces se entregan manualmente: no hay correo externo configurado.
+
+Las instalaciones nuevas crean su primer administrador de forma explícita con `python -m geocattle.seed_v3 --admin-email CORREO` y `V3_ADMIN_PASSWORD` (mínimo doce caracteres), usando el servicio tools/seed y la credencial de migración. Debe configurar TOTP para ingresar. No se publican contraseñas ni factores MFA de prueba.
+
+En **Alertas y atención**, solo dueño y administrador del predio seleccionado pueden configurar parámetros. Trabajador y veterinario mantienen consulta y atención. Temperatura y actividad permiten preparar umbrales, pero su activación fuera de simulación conserva la validación preventiva pendiente de terreno. Las reglas automáticas de comunicación y salida de geocerca mantienen su comportamiento.
+
+## Desarrollo y verificaciones
+
+```bash
+# Backend con PostgreSQL/PostGIS de prueba, según docs/VERIFICACION.md
+python3 scripts/local_backend.py test
+
+# Contrato y adaptadores: sin placas ni escritura en la base operativa
+python -m unittest qa.test_lora_json qa.test_lora_usb qa.test_esp32_contract qa.test_academic_bridge
+
+# Interfaz
+cd frontend
+npm ci
+npm run build
+```
+
+Para trabajar sin contenedores en la aplicación, usa PostgreSQL/PostGIS y `uv sync --extra test` dentro de `backend/`. `scripts/local_backend.py` ofrece `migrate`, `seed` y `serve` desde la raíz; Vite usa `http://localhost:5173` con proxy hacia la API en el puerto 8000. Ver [Operación](docs/OPERACION.md) y [Verificación](docs/VERIFICACION.md).
+
+Las pruebas de integración deben apuntar a una base aislada mediante la configuración documentada. Las pruebas de hardware API requieren además `GEOCATTLE_TEST_DATABASE=1` y fixtures preparados; no deben ejecutarse indiscriminadamente sobre la base física.
 
 ## Estructura
 
 ```text
-backend/geocattle/      API, seguridad, reglas, ingestión, worker y comandos
-backend/tests/          Pruebas de reglas y de integración
+backend/geocattle/      API, seguridad, reglas, ingestión y worker
+backend/tests/          Pruebas de dominio e integración
 frontend/               React, TypeScript, Vite y Leaflet
 database/migrations/    Esquema SQL PostgreSQL/PostGIS versionado
+adapters/               Contrato LoRa, captura USB y cola durable
+scripts/                Arranque, configuración, exportación y respaldos
 infrastructure/         Nginx, Mosquitto, ChirpStack y TLS local
-adapters/               Puente académico NDJSON/USB con cola y ACK
-qa/                     Verificaciones API y usuarios de prueba aislados
-scripts/                Configuración, arranque, respaldos y restauración
-docs/                   Requisitos, decisiones, operación y evidencias
+qa/                     Contratos, adaptadores y verificaciones aisladas
+docs/                   Arquitectura, operación, informes y evidencias
 ```
 
-Documentación: [skills seleccionadas](docs/SKILLS_DESARROLLO.md), [requisitos y trazabilidad del informe](docs/REQUISITOS_INFORME_2.md), [arquitectura](docs/ARQUITECTURA.md), [contrato API](docs/CONTRATO_API.md), [operación](docs/OPERACION.md) y [evidencia de verificación](docs/VERIFICACION.md).
+## Documentación
 
-## Desarrollo sin contenedores para la aplicación
+- [Resumen de cambios](resumen.md).
+- [Desarrollo local](docs/DESARROLLO_LOCAL.md) y [visualización de telemetría](docs/VISUALIZACION_TELEMETRIA.md).
+- [Contrato API y radio JSON V5](docs/CONTRATO_API.md#captura-radio-json-v5).
+- [Mapas, asociaciones y perfiles](docs/REVISION_MAPAS_ASOCIACIONES_PERFILES.md).
+- [Usuarios y registro mediante el dueño](docs/USUARIOS_Y_REGISTRO.md).
+- [Configuración de alertas](docs/CONFIGURACION_ALERTAS.md).
+- [Almacenamiento diario e histórico](docs/INFORME_ALMACENAMIENTO_TELEMETRIA.md).
+- [Arquitectura](docs/ARQUITECTURA.md), [modelo de base](docs/MODELO_BASE_DATOS.md) y [migración V3](docs/MIGRACION_V3.md).
+- [Implementación V3](docs/IMPLEMENTACION_V3.md), [requisitos](docs/REQUISITOS_INFORME_2.md), [verificación](docs/VERIFICACION.md) y planificación en `docs/planificacion/`.
 
-La base sigue siendo PostgreSQL/PostGIS; no se sustituye por SQLite.
+## Datos y alcance
 
-```bash
-bash scripts/compose.sh up -d database
-cd backend
-uv sync --extra test
-cd ../frontend
-npm ci
-npm run dev
-```
+Se conservan los documentos originales del repositorio y la telemetría histórica local. `.env*`, `.runtime/`, bases, colas, capturas, credenciales y dependencias generadas quedan fuera de Git; las evidencias nuevas publicadas utilizan datos QA o muestran formularios sin ubicación privada.
 
-Usa `python3 scripts/local_backend.py migrate`, `seed` y `serve` desde la raíz del proyecto para cargar la configuración privada y conectar al PostgreSQL local sin poner contraseñas en la línea de comandos. El frontend Vite usa `http://localhost:5173` y proxy hacia la API `8000`.
+La posición se considera vigente hasta `2T + 30 s`; la ausencia de comunicación supera `3T + 30 s` desde una recepción nueva. Duplicados y datos tardíos no rejuvenecen esos estados. Sin fix no se inventan coordenadas. Si el collar no envía UTC, se marca la hora aproximada de primera recepción del PC.
 
-## Verificaciones
+La batería muestra tensión y, solo si llega en el paquete, porcentaje estimado; no se calcula autonomía ficticia. Temperatura superficial y actividad no diagnostican enfermedades. La captura P2P no es una red LoRaWAN y no garantiza recuperar paquetes que nunca llegaron al PC. Permanecen pendientes la validación de campo, calibración, capacidad de múltiples collares, autonomía, entrega externa de avisos, codec/downlinks, FMA oficial y aceptación del piloto.
 
-```bash
-python3 scripts/local_backend.py test
-cd frontend && npm run build && cd ..
-python3 qa/smoke_api.py
-```
-
-Las pruebas de integración modifican exclusivamente el entorno de simulación. Revisa `docs/VERIFICACION.md` para distinguir lo ejecutado de las pruebas de campo aún pendientes. No se afirma haber alcanzado cobertura, autonomía, disponibilidad de siete días o aceptación del productor por pasar pruebas de software.
-
-La implementación inicia el SaaS definido por el informe. Hardware real, OTAA, codec/downlinks, proveedor de avisos, calibración, restauración periódica y aceptación del piloto deben completarse con los equipos y responsables identificados. No se han incorporado cobros ni planes de suscripción porque el informe no especifica esos flujos.
-
+El archivo histórico por particiones y los resúmenes materializados son una propuesta documentada, todavía no implementada. El resumen diario actual consulta la telemetría original. No se incorporan cobros ni suscripciones.

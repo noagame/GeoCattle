@@ -1,0 +1,6 @@
+services:
+  api:
+    environment:
+      USB_STATUS_PATH: /capture/status.json
+    volumes:
+      - ./.runtime/capture:/capture:ro

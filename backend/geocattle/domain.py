@@ -23,6 +23,23 @@ def freshness(observed_at,received_at,interval,now):
     communication="unknown" if received_at is None else ("recent" if (now-received_at).total_seconds()<=3*interval+30 else "absent")
     return position,communication
 
+def resolve_assignment_events(db,assignment,actor_id=None,at=None):
+    """End the old monitoring context without changing its sensor evidence."""
+    at=at or utcnow()
+    events=db.scalars(select(Event).where(Event.device_id==assignment.device_id,Event.animal_id==assignment.animal_id,Event.condition=="active").with_for_update()).all()
+    for event in events:
+        event.condition="resolved";event.resolved_at=max(at,event.opened_at)
+        event.detail={**event.detail,"resolution_reason":"assignment_closed","resolution":"Asociación cerrada; el evento conserva su evidencia original","closed_assignment_id":str(assignment.id)}
+        append_audit(db,assignment.farm_id,actor_id,"event",event.id,"resolved",after={"condition":"resolved","reason":"assignment_closed","assignment_id":str(assignment.id)})
+
+
+def clear_animal_monitoring(db,animal_id):
+    state=db.get(AnimalState,animal_id,with_for_update=True)
+    if state:
+        state.outside_count=0;state.geofence_status="unknown"
+        state.telemetry_id=None;state.position_telemetry_id=None;state.observed_at=None
+
+
 def condition(db,device,animal_id,event_type,active,severity="warning",telemetry=None,geofence=None,detail=None,at=None):
     current=db.scalar(select(Event).where(Event.device_id==device.id,Event.type==event_type,Event.condition=="active").with_for_update())
     if active is None: return current

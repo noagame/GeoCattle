@@ -1,3 +1,4 @@
+import { HardwarePage } from './HardwarePage';
 import { useEffect, useState, lazy, Suspense, type FormEvent } from 'react';
 import { Activity, ArrowDownLeft, ArrowRight, Bell, Building2, Check, ChevronRight, CircleHelp, ClipboardList, Fence, FileHeart, LayoutDashboard, LogOut, MapPin, Menu, Radio, RefreshCw, Search, Settings2, ShieldCheck, Sprout, UserRound, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { api, ApiError, age, date, message, setSession, useData, write } from './api';
@@ -25,9 +26,10 @@ const UserNotifications = lazy(() => import('./V3Farm').then(module => ({ defaul
 const ChangesPage = lazy(() => import('./V3Health').then(module => ({ default: module.ChangesPage })));
 const HealthPage = lazy(() => import('./V3Health').then(module => ({ default: module.HealthPage })));
 
-type Page = 'overview' | 'animals' | 'devices' | 'geofences' | 'events' | 'operations' | 'settings' | 'admin' | 'owners' | 'users' | 'farms' | 'team' | 'changes' | 'health' | 'gateways' | 'profile' | 'notices' | 'audit';
+type Page = 'hardware' | 'overview' | 'animals' | 'devices' | 'geofences' | 'events' | 'operations' | 'settings' | 'admin' | 'owners' | 'users' | 'farms' | 'team' | 'changes' | 'health' | 'gateways' | 'profile' | 'notices' | 'audit';
 export type Notify = (message: string) => void;
 const allNavigation = [
+  { id: 'hardware' as Page, title: 'Recepción de collares', icon: Radio },
   { id: 'admin' as Page, title: 'Panel administrador', icon: LayoutDashboard, global: true },
   { id: 'owners' as Page, title: 'Dueños y clientes', icon: Building2, global: true },
   { id: 'users' as Page, title: 'Usuarios de plataforma', icon: Users, global: true },
@@ -95,7 +97,7 @@ export default function App() {
   if (hasFarm) {
     ['overview', 'animals', 'events'].forEach(p => allowed.add(p as Page));
     if (role !== 'viewer') allowed.add('health');
-    if (owner) ['devices', 'gateways', 'geofences', 'team', 'changes', 'operations', 'settings', 'audit'].forEach(p => allowed.add(p as Page));
+    if (owner) ['hardware', 'devices', 'gateways', 'geofences', 'team', 'changes', 'operations', 'settings', 'audit'].forEach(p => allowed.add(p as Page));
     if (worker) allowed.add('changes');
   }
   const navigation = allNavigation.filter(item => allowed.has(item.id)).map(item => item.id === 'farms' && admin ? { ...item, title: 'Predios de plataforma' } : item.id === 'changes' && worker ? { ...item, title: 'Mis reportes y solicitudes' } : item.id === 'overview' ? { ...item, title: role === 'owner' ? 'Panel dueño' : role === 'veterinarian' ? 'Panel veterinario' : worker ? 'Panel trabajador' : 'Panel del predio' } : item);
@@ -130,15 +132,15 @@ export default function App() {
         {activePage === 'overview' && <><div className="v3-role-heading"><div><span className="eyebrow">{roleLabels[role ?? '']}</span><p>{role === 'veterinarian' ? 'Las fichas técnicas y sanitarias se aplican directamente y conservan tu autoría.' : worker ? 'Reporta cambios del predio y consulta la decisión del dueño.' : role === 'viewer' ? 'Consulta el mapa y el monitoreo del predio con tu acceso de lectura.' : 'Gestiona el predio, el equipo y las decisiones de tu rebaño.'}</p></div><div className="v3-inline-actions">{role !== 'viewer' && <button className="button secondary small" onClick={() => navigate('health')}><FileHeart size={16} />{worker ? 'Consultar fichas' : 'Fichas y agenda'}</button>}{worker && <button className="button primary small" onClick={() => navigate('changes')}>Registrar reporte</button>}{owner && <button className="button primary small" onClick={() => navigate('changes')}>Revisar aprobaciones</button>}</div></div><OverviewPage overview={overview} canWrite={owner} notify={setToast} navigate={navigate} /></>}
         {activePage === 'farms' && <FarmsPage admin={admin} notify={setToast} onUpdated={refreshSession} />}
         {activePage === 'animals' && <AnimalsPage search={search} setSearch={setSearch} canWrite={owner} notify={setToast} />}
-        {activePage === 'health' && <HealthPage worker={worker} notify={setToast} />}
+        {activePage === 'health' && <HealthPage worker={worker} actorId={session.user.id} notify={setToast} />}
         {activePage === 'changes' && <ChangesPage worker={worker} notify={setToast} />}
         {activePage === 'team' && <TeamPage admin={admin} notify={setToast} />}
         {activePage === 'gateways' && <GatewaysPage notify={setToast} />}
-        {activePage === 'devices' && <DevicesPage canWrite={owner} notify={setToast} />}
+        {activePage === 'hardware' && <HardwarePage farmId={session.user.farm_id ?? ''} />}{activePage === 'devices' && <DevicesPage canWrite={owner} notify={setToast} />}
         {activePage === 'geofences' && <GeofencesPage canWrite={owner} notify={setToast} />}
-        {activePage === 'events' && <EventsPage canWrite={role !== 'viewer'} notify={setToast} />}
+        {activePage === 'events' && <EventsPage canWrite={role !== 'viewer'} canConfigure={owner} simulation={overview.data?.farm.environment === 'simulation'} farmName={farmName} notify={setToast} />}
         {activePage === 'operations' && <OperationsPage canWrite={owner} canAudit={owner} notify={setToast} simulation={overview.data?.farm.environment === 'simulation'} onChange={overview.reload} />}
-        {activePage === 'settings' && <SettingsPage canWrite={owner} notify={setToast} simulation={overview.data?.farm.environment === 'simulation'} />}
+        {activePage === 'settings' && <SettingsPage canWrite={owner} notify={setToast} simulation={overview.data?.farm.environment === 'simulation'} farmName={farmName} />}
         {activePage === 'audit' && <AuditPage global={admin} />}
         {activePage === 'notices' && <UserNotifications notify={setToast} />}
         {activePage === 'profile' && <ProfilePage notify={setToast} mfaEnabled={session.user.mfa_enabled} onUpdated={refreshSession} onSignedOut={() => { setSession(null); updateSession(null); setAuthError(''); setAuthNotice('Contraseña actualizada. Inicia sesión con tu nueva clave.'); location.hash = ''; }} />}

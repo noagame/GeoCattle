@@ -2,7 +2,7 @@ export type AnimalStatus = 'normal' | 'warning' | 'critical' | 'unknown';
 export type User = { id: string; username: string; role: 'admin' | 'owner' | 'worker' | 'veterinarian' | 'operator' | 'viewer'; farm_id: string | null; full_name?: string; email?: string; phone?: string | null; mfa_enabled?: boolean; farms?: { id: string; name: string; role: 'admin' | 'owner' | 'worker' | 'veterinarian' }[] };
 export type Session = { user: User; csrf_token: string };
 export type Telemetry = {
-  id: string; device_id: string; animal_id: string; session_id: string; seq: number;
+  id: string; device_id: string; animal_id: string | null; session_id: string; seq: number;
   observed_at: string; received_at: string; longitude: number | null; latitude: number | null;
   gnss_valid: boolean; surface_temperature_c: number | null; activity_index: number | null;
   battery_mv: number | null; source: 'sim' | 'academic' | 'lorawan'; quality: Record<string, unknown>;
@@ -15,6 +15,8 @@ export type Animal = {
   communication_status: 'recent' | 'absent' | 'unknown';
   geofence_status: 'inside' | 'outside' | 'pending' | 'unknown'; last_telemetry: Telemetry | null; last_position: Telemetry | null;
   position_age_seconds: number | null; active_events: number;
+  pasture_assignment?: { id: string; geofence_id: string; geofence_name: string; geofence_version: number; sector_id: string; sector_name: string; valid_from: string; valid_to: string | null } | null;
+  collar_assignment?: { id: string; device_id: string; valid_from: string; valid_to: string | null } | null;
 };
 export type Device = {
   id: string; hardware_id: string; dev_eui: string | null; name: string;
@@ -43,9 +45,12 @@ export type Settings = {
   version: number; battery_low_mv: number; temperature_high_c: number | null; activity_low_threshold: number | null;
   activity_window_minutes: number; proximity_meters: number;
   temperature_enabled: boolean; activity_enabled: boolean; proximity_enabled: boolean;
+  capabilities?: { can_edit: boolean; environment: 'simulation' | 'development' | 'production'; preventive_rules_validated: boolean; preventive_rules_allowed: boolean };
   [key: string]: unknown;
 };
 export type Audit = { id: string; action: string; at: string; actor_id: string | null; object_type: string; object_id: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null };
 export type Notification = { id: string; status: string; created_at: string; channel: string; event_id: string; attempts: { attempt: number; at: string; status: string; provider_id?: string | null; error?: string | null }[] };
 export type Maintenance = { id: string; device_id: string; device_name: string; battery_id: string | null; kind: 'inspection' | 'recharge' | 'replacement' | 'retirement'; at: string; responsible_id: string; responsible_name: string; result: string };
 export type List<T> = { items: T[]; total: number };
+
+export type AssociationHistory = { id: string; kind: 'collar' | 'pasture'; valid_from: string; valid_to: string | null; active: boolean; assigned_by: string | null; assigned_by_name: string | null; device_id: string | null; device_name: string | null; hardware_id: string | null; geofence_id: string | null; geofence_name: string | null; geofence_version: number | null; sector_id: string | null; sector_name: string | null };

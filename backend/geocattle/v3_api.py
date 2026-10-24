@@ -42,10 +42,11 @@ class OwnerPatch(Strict):
 class InviteIn(Strict):
     email:str=Field(min_length=5,max_length=254,pattern=r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
     role_code:Literal['worker','veterinarian']
-class EnrolIn(Strict):
+class EnrolTokenIn(Strict):
     token:str=Field(min_length=20,max_length=200)
-    password:str=Field(min_length=12,max_length=256)
-    full_name:str=Field(min_length=1,max_length=150)
+class EnrolIn(EnrolTokenIn):
+    password:str=Field(min_length=1,max_length=256)
+    full_name:str|None=Field(default=None,min_length=1,max_length=150)
 class MembershipPatch(Strict):
     role_code:Literal['worker','veterinarian']|None=None
     active:bool|None=None
@@ -271,9 +272,11 @@ def kpis(account_id:UUID|None=None,farm_id:UUID|None=None,start:datetime|None=No
     else:users_count=count('SELECT count(*) FROM users WHERE active')
     usage=one(db,"SELECT count(*) AS requests,count(*) FILTER(WHERE m.status_code>=400) AS error_requests,coalesce(sum(m.request_bytes),0) AS request_bytes,coalesce(sum(m.response_bytes),0) AS response_bytes,percentile_cont(0.95) WITHIN GROUP(ORDER BY m.duration_ms) AS p95_ms FROM request_metrics m LEFT JOIN farms f ON f.id=m.farm_id WHERE m.occurred_at>=:start AND m.occurred_at<:end"+filt,start=usage_start,end=usage_end,**p)
     disk=shutil.disk_usage('/app' if os.path.exists('/app') else '/')
-    resources={'database_bytes':db.scalar(text('SELECT pg_database_size(current_database())')),'disk_free_bytes':disk.free,'load_1m':os.getloadavg()[0]}
+    try:load_1m=os.getloadavg()[0]
+    except (AttributeError,OSError,NotImplementedError):load_1m=None
+    resources={'database_bytes':db.scalar(text('SELECT pg_database_size(current_database())')),'disk_free_bytes':disk.free,'load_1m':load_1m}
     try:resources['api_rss_bytes']=int(Path('/proc/self/statm').read_text().split()[1])*os.sysconf('SC_PAGE_SIZE')
-    except (OSError,ValueError,IndexError):resources['api_rss_bytes']=None
+    except (OSError,ValueError,IndexError,AttributeError,NotImplementedError):resources['api_rss_bytes']=None
     return {'generated_at':now,'period':{'start':alert_start,'end':alert_end},'usage_period':{'start':usage_start,'end':usage_end},'usage_24h':usage,'instance_resources':resources,'users':users_count,
       'animals':count('SELECT count(*) FROM animals a JOIN farms f ON f.id=a.farm_id WHERE a.enabled AND EXISTS(SELECT 1 FROM animal_holdings h WHERE h.animal_id=a.id AND h.farm_id=f.id AND h.valid_from<=now() AND (h.valid_to IS NULL OR h.valid_to>now()))'+filt),
       'farms':count('SELECT count(*) FROM farms f WHERE f.active'+filt),'sectors':count('SELECT count(*) FROM sectors s JOIN farms f ON f.id=s.farm_id WHERE s.active'+filt),
@@ -311,22 +314,44 @@ def invitations(request:Request,user=Depends(owner),db=Depends(get_db,scope='fun
     return listing(rows(db,'SELECT id,email,role_code,expires_at,accepted_at,revoked_at,created_at FROM invitations WHERE farm_id=:f ORDER BY created_at DESC LIMIT 100',f=farm_scope(user)))
 @router.post('/invitations',status_code=201)
 def invite(body:InviteIn,request:Request,user=Depends(owner),db=Depends(get_db,scope='function')):
+    if user.role!='owner':raise HTTPException(403,'Solo el dueño del predio puede invitar colaboradores; soporte administra los ya incorporados')
     require_operation(request,db,user,body.model_dump(mode='json',exclude_unset=True));farm_id=farm_scope(user);token=secrets.token_urlsafe(40);ident=uuid4()
     execute(db,"INSERT INTO invitations(id,farm_id,email,role_code,token_hash,invited_by,expires_at) VALUES(:i,:f,:e,:r,:t,:u,now()+interval '48 hours')",i=ident,f=farm_id,e=body.email.lower().strip(),r=body.role_code,t=token_hash(token),u=user.id)
     audit(db,user,'invite','invitation',ident,after={'email':body.email,'role':body.role_code})
     return {'id':ident,'email':body.email.lower().strip(),'role_code':body.role_code,'invitation_token':token,'delivery':'manual','message':'Comparte el enlace de forma privada con el destinatario; correo externo no configurado'}
+def enrol_context(db,token,lock=False):
+    # Preview and acceptance share the same checks; only acceptance locks/consumes.
+    item=one(db,"""SELECT i.*,f.name AS farm_name,f.active AS farm_active,
+        f.environment AS farm_environment,a.active AS account_active
+        FROM invitations i JOIN farms f ON f.id=i.farm_id
+        JOIN owner_accounts a ON a.id=f.account_id WHERE i.token_hash=:t"""+
+        (' FOR UPDATE OF i' if lock else ''),t=token_hash(token))
+    if not item or item['accepted_at'] or item['revoked_at'] or item['expires_at']<=utcnow():
+        raise HTTPException(401,'Invitación inválida o vencida')
+    if not item['farm_active'] or not item['account_active'] or item['farm_environment']!=settings_env():
+        raise HTTPException(403,'La cuenta o el predio no están disponibles')
+    target=db.scalar(select(User).where(User.username==item['email']))
+    if target and (not target.active or target.role=='admin'):
+        raise HTTPException(403,'La cuenta invitada no está disponible para incorporarse como colaborador')
+    return item,target
+
+@router.post('/enrol/preview')
+def preview_enrol(body:EnrolTokenIn,db=Depends(get_db,scope='function')):
+    item,target=enrol_context(db,body.token)
+    return {'email':item['email'],'role_code':item['role_code'],'farm_name':item['farm_name'],
+        'expires_at':item['expires_at'],'account_exists':target is not None}
+
 @router.post('/enrol',status_code=201)
 def enrol(body:EnrolIn,request:Request,db=Depends(get_db,scope='function')):
-    item=one(db,'SELECT * FROM invitations WHERE token_hash=:t FOR UPDATE',t=token_hash(body.token))
-    if not item or item['accepted_at'] or item['revoked_at'] or item['expires_at']<=utcnow():raise HTTPException(401,'Invitación inválida o vencida')
-    if not one(db,'SELECT f.id FROM farms f JOIN owner_accounts a ON a.id=f.account_id WHERE f.id=:f AND f.active AND a.active',f=item['farm_id']):raise HTTPException(403,'La cuenta o el predio no están disponibles')
-    target=db.scalar(select(User).where(User.username==item['email']))
+    item,target=enrol_context(db,body.token,lock=True)
     if target:
         from .security import verify_password
-        if not target.active or not verify_password(target.password_hash,body.password):raise HTTPException(401,'Usa la contraseña de la cuenta existente para aceptar esta invitación')
-        if target.role=='admin':raise HTTPException(403,'La identidad administrativa no se enrola como colaborador')
+        if not verify_password(target.password_hash,body.password):
+            raise HTTPException(401,'Usa la contraseña actual de tu cuenta para aceptar esta invitación')
     else:
-        target=User(id=uuid4(),username=item['email'],email=item['email'],full_name=body.full_name,password_hash=hash_password(body.password),role=item['role_code'],farm_id=item['farm_id'],active=True)
+        if len(body.password)<12:raise HTTPException(422,'La contraseña nueva requiere al menos 12 caracteres')
+        if not body.full_name or not body.full_name.strip():raise HTTPException(422,'Indica tu nombre completo para crear la cuenta')
+        target=User(id=uuid4(),username=item['email'],email=item['email'],full_name=body.full_name.strip(),password_hash=hash_password(body.password),role=item['role_code'],farm_id=item['farm_id'],active=True)
         db.add(target);db.flush()
     existing=one(db,'SELECT id FROM farm_memberships WHERE farm_id=:f AND user_id=:u AND valid_to IS NULL',f=item['farm_id'],u=target.id)
     if existing:raise HTTPException(409,'Ya existe una membresía en este predio')

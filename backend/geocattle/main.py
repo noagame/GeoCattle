@@ -16,7 +16,7 @@ from .db import get_db
 from .models import *
 from .schemas import *
 from .security import current_user, owner, operator, service_auth, create_session, token_hash, verify_password, hash_password
-from .domain import ingest, append_audit, freshness, at_time, check_timeouts
+from .domain import ingest, append_audit, freshness, at_time, check_timeouts, clear_animal_monitoring, resolve_assignment_events
 from .settings import settings
 
 app=FastAPI(title="GeoCattle API",version="0.1.0",docs_url="/api/docs",openapi_url="/api/openapi.json",redoc_url=None)
@@ -150,10 +150,46 @@ def animals(q:str=Query(default="",max_length=100),sector_id:UUID|None=None,limi
     total=db.scalar(select(func.count()).select_from(query.subquery()))
     return {"items":[animal_json(db,a) for a in db.scalars(query.order_by(Animal.diio).limit(limit).offset(offset)).all()],"total":total}
 @api.get("/animals/{animal_id}")
-def animal(animal_id:UUID,user=Depends(current_user),db=Depends(get_db, scope="function")):return animal_json(db,accessible(db,Animal,animal_id,user))
+def animal(animal_id:UUID,user=Depends(current_user),db=Depends(get_db, scope="function")):
+    a=accessible(db,Animal,animal_id,user)
+    result=animal_json(db,a)
+    at=utcnow()
+    collar=db.scalar(select(Assignment).where(Assignment.animal_id==a.id,Assignment.farm_id==user.farm_id,at_time(Assignment,at)))
+    zone=db.execute(text("""SELECT x.id,x.geofence_id,g.name AS geofence_name,g.version AS geofence_version,
+        g.sector_id,s.name AS sector_name,x.valid_from,x.valid_to
+        FROM pasture_assignments x JOIN geofences g ON g.id=x.geofence_id JOIN sectors s ON s.id=g.sector_id
+        WHERE x.animal_id=:animal AND x.farm_id=:farm AND x.valid_from<=:at AND (x.valid_to IS NULL OR x.valid_to>:at)"""),{"animal":a.id,"farm":user.farm_id,"at":at}).mappings().first()
+    result["collar_assignment"]={"id":collar.id,"device_id":collar.device_id,"valid_from":collar.valid_from,"valid_to":collar.valid_to} if collar else None
+    result["pasture_assignment"]=dict(zone) if zone else None
+    return result
+
+@api.get("/animals/{animal_id}/assignments")
+def association_history(animal_id:UUID,limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0),user=Depends(current_user),db=Depends(get_db,scope="function")):
+    accessible(db,Animal,animal_id,user)
+    params={"animal":animal_id,"farm":user.farm_id,"at":utcnow(),"limit":limit,"offset":offset}
+    total=db.scalar(text("""SELECT (SELECT count(*) FROM assignments WHERE animal_id=:animal AND farm_id=:farm)
+        +(SELECT count(*) FROM pasture_assignments WHERE animal_id=:animal AND farm_id=:farm)"""),params)
+    items=db.execute(text("""SELECT history.*,(valid_from<=:at AND (valid_to IS NULL OR valid_to>:at)) AS active FROM (
+        SELECT x.id,'collar' AS kind,x.valid_from,x.valid_to,x.assigned_by,
+            coalesce(nullif(u.full_name,''),u.username) AS assigned_by_name,
+            x.device_id,d.name AS device_name,d.hardware_id,
+            NULL::uuid AS geofence_id,NULL::text AS geofence_name,NULL::integer AS geofence_version,NULL::uuid AS sector_id,NULL::text AS sector_name
+        FROM assignments x JOIN devices d ON d.id=x.device_id LEFT JOIN users u ON u.id=x.assigned_by
+        WHERE x.animal_id=:animal AND x.farm_id=:farm
+        UNION ALL
+        SELECT x.id,'pasture' AS kind,x.valid_from,x.valid_to,x.assigned_by,
+            coalesce(nullif(u.full_name,''),u.username) AS assigned_by_name,
+            NULL::uuid AS device_id,NULL::text AS device_name,NULL::text AS hardware_id,
+            x.geofence_id,g.name AS geofence_name,g.version AS geofence_version,g.sector_id,s.name AS sector_name
+        FROM pasture_assignments x JOIN geofences g ON g.id=x.geofence_id JOIN sectors s ON s.id=g.sector_id LEFT JOIN users u ON u.id=x.assigned_by
+        WHERE x.animal_id=:animal AND x.farm_id=:farm
+        ) history ORDER BY valid_from DESC,id DESC LIMIT :limit OFFSET :offset"""),params).mappings().all()
+    return {"items":[dict(row) for row in items],"total":total}
 @api.post("/animals",status_code=201)
 def create_animal(body:AnimalIn,user=Depends(owner),db=Depends(get_db, scope="function")):
-    if body.sector_id:accessible(db,Sector,body.sector_id,user)
+    if body.sector_id:
+        sector=accessible(db,Sector,body.sector_id,user)
+        if not sector.active:raise HTTPException(409,"Seleccione un sector activo")
     a=Animal(id=uuid4(),farm_id=user.farm_id,**body.model_dump());db.add(a);db.flush()
     append_audit(db,user.farm_id,user.id,"animal",a.id,"create",after=body.model_dump(mode="json"))
     from .v3_security import execute
@@ -164,7 +200,13 @@ def update_animal(animal_id:UUID,body:AnimalPatch,user=Depends(owner),db=Depends
     a=accessible(db,Animal,animal_id,user,True)
     changes=body.model_dump(exclude_unset=True)
     if any(changes.get(k)==None for k in ("name","orientation","enabled") if k in changes):raise HTTPException(422,"Nombre orientación y habilitación no pueden ser nulos")
-    if body.sector_id:accessible(db,Sector,body.sector_id,user)
+    if body.sector_id:
+        sector=accessible(db,Sector,body.sector_id,user)
+        if not sector.active and body.sector_id!=a.sector_id:raise HTTPException(409,"Seleccione un sector activo")
+    if "sector_id" in changes:
+        zone=db.scalar(select(PastureAssignment).where(PastureAssignment.animal_id==a.id,at_time(PastureAssignment,utcnow())))
+        if zone and db.get(Geofence,zone.geofence_id).sector_id!=changes["sector_id"]:
+            raise HTTPException(409,"El animal tiene una zona de pastoreo vigente. Cambia la zona de pastoreo para actualizar su sector y conservar el historial")
     before={k:str(getattr(a,k)) for k in changes}
     for k,v in changes.items():setattr(a,k,v)
     a.version+=1
@@ -200,15 +242,20 @@ def assign(body:AssignmentIn,user=Depends(owner),db=Depends(get_db, scope="funct
     if existing and not body.replace:raise HTTPException(409,"Asociación existente; cierre explícito requerido")
     for old in existing:
         if old.valid_from>=at:raise HTTPException(409,"Inicio debe ser posterior a asignaciones previas")
+        if db.scalar(select(Telemetry.id).where(Telemetry.assignment_id==old.id,Telemetry.observed_at>=at).limit(1)):
+            raise HTTPException(409,"La vigencia recortaría lecturas históricas de la asociación anterior. Selecciona una fecha posterior a esas lecturas")
+    affected_animals={animal.id}
+    for old in existing:
         old.valid_to=at
+        resolve_assignment_events(db,old,user.id,at)
+        affected_animals.add(old.animal_id)
         append_audit(db,user.farm_id,user.id,"assignment",old.id,"close",after={"valid_to":at.isoformat()})
     db.flush()
     from .v3_api import active_holding
     holding=active_holding(db,animal.id,user.farm_id)
     row=Assignment(id=uuid4(),farm_id=user.farm_id,animal_id=animal.id,animal_holding_id=holding["id"],device_id=device.id,assigned_by=user.id,valid_from=at)
     db.add(row)
-    state=db.get(AnimalState,animal.id)
-    if state:state.outside_count=0;state.geofence_status="unknown";state.telemetry_id=None;state.position_telemetry_id=None;state.observed_at=None
+    for animal_id in sorted(affected_animals,key=str):clear_animal_monitoring(db,animal_id)
     db.flush();append_audit(db,user.farm_id,user.id,"assignment",row.id,"create",after={"animal_id":str(animal.id),"device_id":str(device.id),"valid_from":at.isoformat()})
     return {"id":row.id,"animal_id":animal.id,"device_id":device.id,"valid_from":at,"valid_to":None}
 @api.get("/sectors")
@@ -224,7 +271,8 @@ def fences(user=Depends(current_user),db=Depends(get_db, scope="function")):
     return {"items":[fence_json(db,g) for g in items],"total":len(items)}
 @api.post("/geofences",status_code=201)
 def create_fence(body:GeofenceIn,user=Depends(owner),db=Depends(get_db, scope="function")):
-    accessible(db,Sector,body.sector_id,user,True)
+    sector=accessible(db,Sector,body.sector_id,user,True)
+    if not sector.active:raise HTTPException(409,"Seleccione un sector activo")
     if not body.confirm_impact:raise HTTPException(422,"Debe confirmar el impacto en asignaciones vigentes")
     old=db.scalar(select(Geofence).where(Geofence.sector_id==body.sector_id,Geofence.active).with_for_update())
     if (old.version if old else 0)!=body.expected_version:raise HTTPException(409,"Versión obsoleta; recargue la geocerca")
@@ -232,7 +280,7 @@ def create_fence(body:GeofenceIn,user=Depends(owner),db=Depends(get_db, scope="f
     if not db.scalar(select(func.ST_IsValid(func.ST_SetSRID(func.ST_GeomFromGeoJSON(encoded),4326)))):raise HTTPException(422,"Polígono inválido: intersección o anillo inválido")
     now=utcnow()
     if old:old.active=False;old.valid_to=now;db.flush()
-    g=Geofence(id=uuid4(),farm_id=user.farm_id,sector_id=body.sector_id,name=body.name,version=body.expected_version+1,geometry=func.ST_SetSRID(func.ST_GeomFromGeoJSON(encoded),4326),active=True,created_at=now)
+    g=Geofence(id=uuid4(),farm_id=user.farm_id,sector_id=body.sector_id,name=body.name,version=body.expected_version+1,geometry=func.ST_SetSRID(func.ST_GeomFromGeoJSON(encoded),4326),active=True,created_at=now,created_by=user.id)
     db.add(g);db.flush()
     if old:
         for zone in db.scalars(select(PastureAssignment).where(PastureAssignment.geofence_id==old.id,PastureAssignment.valid_to.is_(None)).with_for_update()).all():
@@ -246,6 +294,8 @@ def create_fence(body:GeofenceIn,user=Depends(owner),db=Depends(get_db, scope="f
 def assign_pasture(body:PastureIn,user=Depends(owner),db=Depends(get_db, scope="function")):
     a=accessible(db,Animal,body.animal_id,user,True);g=accessible(db,Geofence,body.geofence_id,user)
     if not g.active:raise HTTPException(409,"Seleccione la versión activa de la geocerca")
+    if not db.get(Sector,g.sector_id).active:raise HTTPException(409,"Seleccione un sector activo")
+    if not a.enabled:raise HTTPException(409,"El animal debe estar habilitado para asignarle pastoreo")
     at=valid_effective(body.effective_at)
     if at<g.created_at:raise HTTPException(422,"Asignación precede a la versión de geocerca")
     old=db.scalar(select(PastureAssignment).where(PastureAssignment.animal_id==a.id,PastureAssignment.valid_to.is_(None)).with_for_update())
@@ -284,20 +334,31 @@ def config(device_id:UUID,body:ConfigIn,user=Depends(owner),db=Depends(get_db, s
     c=DeviceConfig(id=uuid4(),device_id=d.id,version=last+1,interval_seconds=body.interval_seconds,status="requested");db.add(c);db.flush()
     append_audit(db,user.farm_id,user.id,"device_config",c.id,"requested",after={"version":c.version,"interval_seconds":c.interval_seconds})
     return {"id":c.id,"version":c.version,"interval_seconds":c.interval_seconds,"status":c.status,"requested_at":c.requested_at}
+def settings_response(r,user):
+    config=settings()
+    return {**settings_json(r),"capabilities":{
+        "can_edit":bool(user.farm_id and user.role in ("owner","admin")),
+        "environment":config.app_env,
+        "preventive_rules_validated":config.preventive_rules_validated,
+        "preventive_rules_allowed":config.app_env=="simulation" or config.preventive_rules_validated}}
+
 @api.get("/settings")
 def get_settings(user=Depends(current_user),db=Depends(get_db, scope="function")):
+    if not user.farm_id:raise HTTPException(409,"Selecciona un predio autorizado para consultar las reglas")
     r=db.get(RuleSettings,user.farm_id)
     if not r:raise HTTPException(503,"Reglas no inicializadas")
-    return settings_json(r)
+    return settings_response(r,user)
 @api.put("/settings")
 def update_settings(body:SettingsIn,user=Depends(owner),db=Depends(get_db, scope="function")):
+    if not user.farm_id:raise HTTPException(409,"Selecciona un predio autorizado para configurar las reglas")
     r=db.get(RuleSettings,user.farm_id,with_for_update=True)
+    if not r:raise HTTPException(503,"Reglas no inicializadas")
     if r.version!=body.expected_version:raise HTTPException(409,"Versión de reglas obsoleta")
     if settings().app_env!="simulation" and not settings().preventive_rules_validated and (body.temperature_enabled or body.activity_enabled):raise HTTPException(422,"Sensores preventivos requieren validación de campo PREVENTIVE_RULES_VALIDATED")
     before=settings_json(r)
     for k,v in body.model_dump(exclude={"expected_version"}).items():setattr(r,k,v)
     r.version+=1;db.flush();append_audit(db,user.farm_id,user.id,"rule_settings",user.farm_id,"update",before,settings_json(r))
-    return settings_json(r)
+    return settings_response(r,user)
 @api.get("/audit")
 def audit(limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0),user=Depends(owner),db=Depends(get_db, scope="function")):
     query=select(Audit).where(Audit.farm_id==user.farm_id)
@@ -384,3 +445,6 @@ app.include_router(auth_v3_router)
 app.include_router(operation_auth_router)
 app.include_router(account_auth_router)
 app.include_router(v3_router)
+
+from .hardware_api import router as hardware_router
+app.include_router(hardware_router)

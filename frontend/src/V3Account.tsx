@@ -5,6 +5,7 @@ import { Empty, ErrorNotice, Loading, Modal, PageTitle, Panel, PanelTitle, Submi
 import type { Notify } from './App';
 import type { Session } from './types';
 import type { Profile } from './v3types';
+import { roleLabels } from './v3types';
 
 export function StepUpGate({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
   const [expires, setExpires] = useState(''); const [password, setPassword] = useState(''); const [code, setCode] = useState('');
@@ -32,10 +33,30 @@ function ProfileForm({ initial, onSaved }: { initial: Profile; onSaved: () => vo
   async function submit(event: FormEvent) { event.preventDefault(); setBusy(true); setError(''); try { await write('/v3/profile', { full_name: name, phone: phone || null }, 'PATCH'); onSaved(); } catch (err) { setError(message(err)); } finally { setBusy(false); } }
   return <Panel><PanelTitle title="Datos personales" action={<UserRound size={21} />} /><form className="form-body v3-narrow" onSubmit={submit}><label>Correo de acceso<input type="email" value={initial.email ?? initial.username} disabled autoComplete="email" /><small>Contacta a soporte para cambiar el correo de acceso.</small></label><label>Nombre completo<input required maxLength={150} autoComplete="name" value={name} onChange={e => setName(e.target.value)} /></label><label>Teléfono<input type="tel" maxLength={40} autoComplete="tel" value={phone} onChange={e => setPhone(e.target.value)} /></label><ErrorNotice error={error} /><div className="form-actions"><Submit busy={busy}>Actualizar perfil</Submit></div></form></Panel>;
 }
+type EnrolPreview = { email: string; role_code: 'worker' | 'veterinarian'; farm_name: string; expires_at: string; account_exists: boolean };
 export function EnrolPage({ token, onBack }: { token: string; onBack: () => void }) {
+  const [preview, setPreview] = useState<EnrolPreview | null>(null); const [previewBusy, setPreviewBusy] = useState(true); const [previewError, setPreviewError] = useState(''); const [retry, setRetry] = useState(0);
   const [name, setName] = useState(''); const [password, setPassword] = useState(''); const [repeat, setRepeat] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [done, setDone] = useState(false);
-  async function submit(event: FormEvent) { event.preventDefault(); if (password !== repeat) { setError('Las contraseñas no coinciden.'); return; } setBusy(true); setError(''); try { await write('/v3/enrol', { token, password, full_name: name }); setDone(true); } catch (err) { setError(message(err)); } finally { setBusy(false); } }
-  return <main className="v3-enrol"><Panel><PanelTitle title="Invitación a GeoCattle" subtitle="Activa tu acceso al predio con una identidad propia." action={<KeyRound size={22} />} />{done ? <Empty title="Acceso activado" description="Ya puedes iniciar sesión con el correo de la invitación y tu contraseña." action={<button className="button primary" onClick={onBack}><Check size={17} />Ir al inicio de sesión</button>} /> : <form className="form-body" onSubmit={submit}><label>Nombre completo<input required autoComplete="name" maxLength={150} value={name} onChange={e => setName(e.target.value)} /></label><label>Contraseña<input required autoComplete="new-password" type="password" minLength={12} value={password} onChange={e => setPassword(e.target.value)} /><small>Usa al menos 12 caracteres.</small></label><label>Repite la contraseña<input required autoComplete="new-password" type="password" minLength={12} value={repeat} onChange={e => setRepeat(e.target.value)} /></label><ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" onClick={onBack}>Volver</button><Submit busy={busy}>Aceptar invitación</Submit></div></form>}</Panel><p><LockKeyhole size={14} />La invitación tiene vigencia limitada y se utiliza una sola vez.</p></main>;
+  useEffect(() => {
+    let alive = true;
+    setPreview(null); setPreviewBusy(true); setPreviewError(''); setError(''); setDone(false); setName(''); setPassword(''); setRepeat('');
+    write<EnrolPreview>('/v3/enrol/preview', { token }).then(result => { if (alive) setPreview(result); })
+      .catch(err => { if (alive) setPreviewError(message(err)); }).finally(() => { if (alive) setPreviewBusy(false); });
+    return () => { alive = false; };
+  }, [token, retry]);
+  async function submit(event: FormEvent) {
+    event.preventDefault(); if (!preview || previewBusy) return;
+    if (!preview.account_exists && password !== repeat) { setError('Las contraseñas no coinciden.'); return; }
+    setBusy(true); setError('');
+    try { await write('/v3/enrol', { token, password, ...(!preview.account_exists ? { full_name: name } : {}) }); setPassword(''); setRepeat(''); setDone(true); }
+    catch (err) { setError(message(err)); } finally { setBusy(false); }
+  }
+  return <main className="v3-enrol"><Panel><PanelTitle title="Invitación a GeoCattle" subtitle="Revisa el acceso que te ofrece el dueño antes de aceptarlo." action={<KeyRound size={22} />} />{done ? <Empty title="Acceso activado" description={`Ya puedes iniciar sesión con ${preview?.email ?? 'el correo de la invitación'} y tu contraseña.`} action={<button className="button primary" onClick={onBack}><Check size={17} />Ir al inicio de sesión</button>} /> : previewBusy ? <Loading label="Validando la invitación…" /> : !preview ? <div className="form-body"><ErrorNotice error={previewError || 'La invitación no está disponible.'} /><p>No se puede crear el acceso hasta validar una invitación vigente del dueño.</p><div className="form-actions"><button type="button" className="button secondary" onClick={onBack}>Volver</button><button type="button" className="button primary" onClick={() => setRetry(value => value + 1)}>Volver a comprobar</button></div></div> : <form className="form-body" onSubmit={submit}>
+    <label>Correo invitado<input type="email" readOnly value={preview.email} autoComplete="username" /></label><dl className="enrol-invitation-summary"><div><dt>Perfil asignado por el dueño</dt><dd>{roleLabels[preview.role_code]}</dd></div><div><dt>Predio autorizado</dt><dd>{preview.farm_name}</dd></div><div><dt>Válida hasta</dt><dd>{date(preview.expires_at)}</dd></div></dl>
+    {preview.account_exists ? <p className="notice">Ya tienes una cuenta. Usa tu contraseña actual para incorporar este predio. Tu nombre y contraseña se conservan.</p> : <label>Nombre completo<input required autoComplete="name" maxLength={150} value={name} onChange={e => setName(e.target.value)} /></label>}
+    <label>{preview.account_exists ? 'Contraseña actual' : 'Crea tu contraseña'}<input required autoComplete={preview.account_exists ? 'current-password' : 'new-password'} type="password" minLength={preview.account_exists ? 1 : 12} maxLength={256} value={password} onChange={e => setPassword(e.target.value)} /><small>{preview.account_exists ? 'La contraseña no se modifica al aceptar la invitación.' : 'Usa al menos 12 caracteres.'}</small></label>
+    {!preview.account_exists && <label>Repite la contraseña<input required autoComplete="new-password" type="password" minLength={12} maxLength={256} value={repeat} onChange={e => setRepeat(e.target.value)} /></label>}
+    <ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" disabled={busy} onClick={onBack}>Volver</button><Submit busy={busy}>Aceptar invitación</Submit></div></form>}</Panel><p><LockKeyhole size={14} />El dueño define el perfil y el predio. La invitación tiene vigencia limitada y se utiliza una sola vez.</p></main>;
 }
 
 function MfaSetup({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {

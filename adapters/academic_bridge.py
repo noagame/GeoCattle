@@ -5,6 +5,7 @@ No decodifica Zigbee ni una carga LoRaWAN. El receptor entrega el contrato lógi
 documentado; `observed_at`, sesión y secuencia deben proceder del nodo.
 """
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 import os
@@ -30,8 +31,16 @@ class Spool:
                 UNIQUE(hardware_id, session_id, seq))''')
         path.chmod(0o600)
 
+    @contextmanager
     def connection(self):
-        return sqlite3.connect(self.path, timeout=10)
+        db = sqlite3.connect(self.path, timeout=10)
+        try:
+            with db:
+                yield db
+        finally:
+            # SQLite's transaction context does not close the connection.
+            # Close explicitly to release the file handle on Windows.
+            db.close()
 
     def enqueue(self, payload):
         identity = (payload['hardware_id'], payload['session_id'], payload['seq'])

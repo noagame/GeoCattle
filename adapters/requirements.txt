@@ -1,2 +1,2 @@
 pyserial==3.5
-
+tzdata==2026.5

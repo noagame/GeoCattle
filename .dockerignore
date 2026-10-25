@@ -9,3 +9,5 @@
 output
 backups
 .runtime
+**/*.tsbuildinfo
+**/.venv-capture

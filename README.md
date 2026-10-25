@@ -2,9 +2,9 @@
 
 Aplicación de supervisión bovina con mapas, geocercas, telemetría de collares y gestión sanitaria por predio. Frontend **React/TypeScript/Leaflet**, backend **FastAPI** y base **PostgreSQL/PostGIS**.
 
-## Actualización del 24 de octubre de 2026
+## Actualización del 25 de octubre de 2026
 
-Esta versión incorpora la recepción física USB/LoRa, la visualización completa de sensores, mejoras de mapas y asociaciones históricas, el registro de colaboradores mediante el dueño y la configuración de alertas por predio.
+Esta versión incorpora la recepción física USB/LoRa por identidad USB, la visualización de sensores, mejoras de mapas y asociaciones históricas, el registro de colaboradores mediante el dueño y la configuración de alertas por predio. Incluye además el arranque Docker para Windows/Linux y su verificación aislada.
 
 Consulta [resumen.md](resumen.md) para ver los cambios, las verificaciones y los límites de esta entrega.
 
@@ -22,35 +22,46 @@ Consulta [resumen.md](resumen.md) para ver los cambios, las verificaciones y los
 - Condición técnica de las alertas separada de su atención humana; supervisión de ausencia de comunicación y vigencia GPS.
 - Gateways, KPI, mantenimiento, auditoría, avisos externos en cola y simulación identificada y separada del hardware real.
 
-## Inicio rápido con Docker: simulación
+## Docker en Windows y Linux
 
-Requiere Git, Python 3.11 o superior, Bash, Docker y Docker Compose 2 o superior.
+El arranque común utiliza Python 3.11+ y Docker con contenedores Linux y Compose 2+. No exige Bash, Node ni PostgreSQL instalados en el anfitrión. Docker Desktop incluye Compose; en Linux también puede utilizarse Docker Engine con el plugin Compose. Ver [instalación oficial](https://docs.docker.com/compose/install/).
 
-```bash
-git clone https://github.com/noagame/GeoCattle.git
-cd GeoCattle
-bash scripts/start.sh
+Desde la raíz del repositorio, en Windows:
+
+```powershell
+py -3 scripts/docker_project.py start
 ```
 
-Abre [GeoCattle](http://localhost:8080). Usuario inicial: `demo@geocattle.local`. Su contraseña aleatoria se genera en `DEMO_PASSWORD` del archivo privado `.env`. La demo contiene 70 bovinos sintéticos y no representa telemetría real.
-
-El arranque genera configuración sin sobrescribirla, aplica migraciones versionadas e inicia API, worker y seed. Repetir la carga conserva los datos existentes. El usuario de aplicación es distinto del que realiza migraciones.
+En Linux:
 
 ```bash
-# Estado y registros
-bash scripts/compose.sh ps
-bash scripts/compose.sh logs --tail=100 api worker
-
-# Detener conservando los volúmenes; reanudar después
-bash scripts/compose.sh down
-bash scripts/compose.sh up -d
+python3 scripts/docker_project.py start
 ```
+
+La simulación abre `http://localhost:8080`, utiliza `.env` y prepara una demo sintética. La cuenta inicial es `demo@geocattle.local`; la contraseña aleatoria se consulta localmente en `DEMO_PASSWORD`. Los 70 bovinos de la demo no son una prueba de capacidad radio.
+
+Para una instalación Docker separada que reciba datos físicos, usar `start --environment development`, opcionalmente con `--owner-email CORREO --farm "Nombre del predio"` para crear su primer dueño. Utiliza `.env.docker`, web `8086`, PostgreSQL `55436` y archivo `.runtime/docker-capture/`; no importa ni modifica la instancia nativa `8084` y `.env.academic`.
+
+```text
+python scripts/docker_project.py status
+python scripts/docker_project.py logs
+python scripts/docker_project.py backup
+python scripts/docker_project.py stop
+```
+
+En Linux, utilizar `python3`; para desarrollo, añadir `--environment development` a cada acción. `stop` conserva los volúmenes. Los archivos de configuración existentes no se sobrescriben y los respaldos se generan en `backups/` sin imprimir credenciales.
+
+La captura USB se ejecuta en el anfitrión con `scripts/start_capture.py --backend docker`, usando un Python con `adapters/requirements.txt`. La receptora se identifica por USB y su puerto puede cambiar: no se presupone un COM fijo ni un USB directamente accesible dentro del contenedor. Registrar los dispositivos y asociaciones en la instalación elegida antes de atribuir las lecturas.
+
+La revisión aprobó **90 pruebas Windows**, **113 pruebas backend y 94 de adaptadores/hardware en Linux**, **126 comprobaciones HTTP** y la persistencia de **589 lecturas QA** tras reiniciar Docker. También se comprobaron MQTT, el worker de alertas y el esquema de ChirpStack. Linux se ejecutó en contenedores x86_64 sobre Docker Desktop; otro PC físico, ARM y el USB real hacia Docker siguen pendientes. Consulta [revisión Docker y portabilidad](docs/REVISION_DOCKER_PORTABILIDAD.md) y [evidencia QA](docs/evidencias/docker_portabilidad_2026-10-25.json).
 
 ## Prototipo físico en Windows
 
-La instancia local preparada sirve [Recepción de collares](http://localhost:8084/#hardware), con PostgreSQL/PostGIS en el puerto 55434. La T3 de referencia usa COM5 y recibe por LoRa al emisor T-Beam; no hace falta conectar ambos por USB de datos simultáneamente.
+La instancia local preparada sirve [Recepción de collares](http://localhost:8084/#hardware), con PostgreSQL/PostGIS en el puerto 55434. La T3 se reconoce por su identidad USB y recibe por LoRa al emisor T-Beam; no hace falta conectar ambos por USB de datos simultáneamente.
 
 **Una clonación nueva no incluye la base física, los binarios locales ni las credenciales del PC.** Los scripts siguientes requieren esa preparación local, `.env.academic`, un entorno Python con las dependencias de backend y adaptadores, y el frontend compilado. Consulta [Desarrollo local](docs/DESARROLLO_LOCAL.md) y [USB COM5](docs/USB_COM5.md). No ejecutar el seed de simulación sobre la base física.
+
+Para capturar con un solo paso, abre **Iniciar-Captura.cmd**. La receptora se reconoce por su identidad USB y puede cambiar de COM. El primer enlace se confirma con un paquete LoRa; consulta [Desarrollo local](docs/DESARROLLO_LOCAL.md#captura-con-doble-clic-e-identidad-usb).
 
 Desde PowerShell en la raíz del proyecto:
 
@@ -83,7 +94,7 @@ En **Alertas y atención**, solo dueño y administrador del predio seleccionado 
 python3 scripts/local_backend.py test
 
 # Contrato y adaptadores: sin placas ni escritura en la base operativa
-python -m unittest qa.test_lora_json qa.test_lora_usb qa.test_esp32_contract qa.test_academic_bridge
+python -m unittest qa.test_capture_startup qa.test_serial_receiver qa.test_capture_runtime qa.test_lora_json qa.test_lora_usb qa.test_esp32_contract qa.test_academic_bridge
 
 # Interfaz
 cd frontend
@@ -110,6 +121,8 @@ docs/                   Arquitectura, operación, informes y evidencias
 ```
 
 ## Documentación
+
+- [Revisión Docker y portabilidad Windows/Linux](docs/REVISION_DOCKER_PORTABILIDAD.md).
 
 - [Resumen de cambios](resumen.md).
 - [Desarrollo local](docs/DESARROLLO_LOCAL.md) y [visualización de telemetría](docs/VISUALIZACION_TELEMETRIA.md).

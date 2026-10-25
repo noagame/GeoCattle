@@ -209,50 +209,63 @@ def load_env(path):
     return values
 
 
-def main():
+def capture(args):
     import serial
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--port', default='COM5')
-    parser.add_argument('--baud', type=int, default=115200)
-    parser.add_argument('--env-file', type=Path, default=Path('.env.academic'))
-    parser.add_argument('--directory', type=Path, default=Path('.runtime/capture'))
-    parser.add_argument('--url', default='http://127.0.0.1:8084/api/v1/ingest/telemetry')
-    args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+    from serial.tools.list_ports import comports
+    from adapters.serial_receiver import choose_receiver, load_receiver, save_receiver, ReceiverSelectionError
+
     private = load_env(args.env_file)
     if not private.get('INGEST_KEY'):
-        parser.error('Falta INGEST_KEY en archivo privado')
+        raise ValueError('Falta INGEST_KEY en archivo privado')
     archive = Archive(args.directory)
     stop = threading.Event()
-    status = {'port': args.port, 'connected': False, 'error': None, 'last_line_at': None}
+    binding_path = args.directory / 'receiver.json'
+    status = {'capture_version': 2, 'pid': os.getpid(), 'requested_port': args.port,
+              'port': None, 'connected': False, 'receiver_verified': False,
+              'state': 'waiting_device', 'error': None,
+              'last_line_at': None, 'last_packet_at': None}
+
+    def write_status():
+        snapshot = {**status, **archive.stats(), 'updated_at': datetime.now(timezone.utc).isoformat()}
+        target = args.directory / 'status.json'
+        temporary = target.with_suffix('.tmp')
+        temporary.write_text(json.dumps(snapshot), encoding='utf-8')
+        os.replace(temporary, target)
 
     def background():
         while not stop.is_set():
             try:
                 archive.deliver(args.url, private['INGEST_KEY'])
-                snapshot = {**status, **archive.stats(), 'updated_at': datetime.now(timezone.utc).isoformat()}
-                target = args.directory / 'status.json'
-                temporary = target.with_suffix('.tmp')
-                temporary.write_text(json.dumps(snapshot), encoding='utf-8')
-                os.replace(temporary, target)
+                if not stop.is_set():
+                    write_status()
             except Exception:
                 LOG.exception('Error actualizando entrega/estado; capturas conservadas')
             stop.wait(2)
 
     worker = threading.Thread(target=background, daemon=True)
     worker.start()
+    last_problem = None
+    last_warning = 0.0
     try:
         while not stop.is_set():
             try:
+                remembered = load_receiver(binding_path) if args.port.lower() == 'auto' else None
+                selected = choose_receiver(list(comports()), remembered, args.port)
+                if selected is None:
+                    raise ReceiverSelectionError('Receptora desconectada. Esperando su identidad USB; conecta su cable de datos.')
                 connection = serial.Serial()
-                connection.port = args.port
+                connection.port = selected.device
                 connection.baudrate = args.baud
                 connection.timeout = 1
                 connection.dtr = False
                 connection.rts = False
                 connection.open()
-                status.update(connected=True, error=None)
-                LOG.info('Puerto %s abierto a %s', args.port, args.baud)
+                # An unbound USB is only a candidate until receiver radio metadata arrives.
+                verified = remembered is not None and args.port.lower() == 'auto'
+                status.update(port=selected.device, connected=True, receiver_verified=verified,
+                              state='waiting_packet', error=None)
+                last_problem = None
+                LOG.info('USB %s abierto a %s; esperando paquetes LoRa de la receptora', selected.device, args.baud)
                 radio = None
                 radio_time = 0.0
                 with connection:
@@ -260,7 +273,6 @@ def main():
                         raw = connection.read_until(b'\n', 4097)
                         if not raw:
                             continue
-                        # Un timeout puede entregar una linea incompleta.
                         while not raw.endswith(b'\n') and len(raw) <= 4096:
                             raw += connection.read_until(b'\n', 4097 - len(raw))
                             if stop.is_set():
@@ -270,6 +282,8 @@ def main():
                                 raw = connection.read_until(b'\n', 4097)
                             LOG.warning('Linea excesiva descartada')
                             continue
+                        if stop.is_set():
+                            break
                         instant = datetime.now(timezone.utc)
                         line = raw.decode('utf-8', errors='replace').strip()
                         archive.append_raw(line, instant)
@@ -280,21 +294,67 @@ def main():
                             radio_time = time.monotonic()
                         try:
                             decoded = decode(line, instant, radio if time.monotonic() - radio_time < 3 else None,
-                                             receiver=f'PC-{args.port}')
-                            if decoded and archive.enqueue(*decoded):
+                                             receiver=f'PC-{selected.device}')
+                            if not decoded:
+                                continue
+                            if not verified:
+                                if not decoded[0]['quality'].get('radio'):
+                                    status.update(state='waiting_receiver', error='USB abierto, pero falta un mensaje de receptor con RSSI/SNR. No se vincula un emisor por error.')
+                                    continue
+                                save_receiver(binding_path, selected)
+                                verified = True
+                                status.update(receiver_verified=True, error=None)
+                                LOG.info('Receptora confirmada y recordada por identidad USB; el numero COM puede cambiar')
+                            status.update(last_packet_at=instant.isoformat(), state='receiving', error=None)
+                            if archive.enqueue(*decoded):
                                 LOG.info('Capturado %s seq=%s', decoded[0]['hardware_id'], decoded[0]['seq'])
                         except (ValueError, OverflowError):
                             LOG.warning('Paquete invalido; linea original conservada', exc_info=True)
-            except (serial.SerialException, OSError, sqlite3.Error) as error:
-                status.update(connected=False, error=str(error))
-                LOG.warning('Puerto no disponible: %s; reintento en 5 s', error)
-                stop.wait(5)
+            except (serial.SerialException, OSError, sqlite3.Error, ReceiverSelectionError, ValueError) as error:
+                message = str(error)
+                status.update(connected=False, receiver_verified=False, state='waiting_device', error=message)
+                if message != last_problem or time.monotonic() - last_warning >= 60:
+                    LOG.warning('%s Reintento en 3 s.', message)
+                    last_problem, last_warning = message, time.monotonic()
+                stop.wait(3)
     except KeyboardInterrupt:
         LOG.info('Captura detenida; archivo y pendientes conservados')
     finally:
         stop.set()
         worker.join(timeout=7)
+        status.update(connected=False, state='stopped', error='Captura detenida; datos conservados')
+        write_status()
+
+
+def main():
+    from adapters.serial_receiver import CaptureLease, CaptureAlreadyRunning
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--port', default='auto', help='auto: identidad USB guardada; COMx solo para una seleccion manual')
+    parser.add_argument('--baud', type=int, default=115200)
+    parser.add_argument('--env-file', type=Path, default=Path('.env.academic'))
+    parser.add_argument('--directory', type=Path, default=Path('.runtime/capture'))
+    parser.add_argument('--url', default='http://127.0.0.1:8084/api/v1/ingest/telemetry')
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+    try:
+        with CaptureLease(args.directory):
+            # A pre-identity collector does not hold the new lease. Migrate once before opening a second reader.
+            try:
+                previous = json.loads((args.directory / 'status.json').read_text(encoding='utf-8-sig'))
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(previous['updated_at'])).total_seconds()
+                legacy = previous.get('capture_version') != 2 and 0 <= age < 15
+                paused = str(previous.get('error') or '').startswith(('Captura pausada', 'Captura detenida'))
+            except (OSError, ValueError, KeyError):
+                legacy, paused = False, False
+            if legacy and not paused:
+                LOG.error('El lector anterior sigue activo. Ejecuta una sola vez Pausar-Captura-COM5.ps1 antes del nuevo iniciador.')
+                return 1
+            capture(args)
+    except CaptureAlreadyRunning:
+        LOG.info('La captura ya esta iniciada para este archivo. No se abrira otra instancia.')
+    except ValueError as error:
+        parser.error(str(error))
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

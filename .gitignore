@@ -14,4 +14,4 @@ backups/
 output/playwright/
 *.sqlite3
 *.sqlite3-*
-
+.venv-capture/

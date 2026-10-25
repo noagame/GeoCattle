@@ -2,7 +2,6 @@
 import json
 import os
 from pathlib import Path
-from types import SimpleNamespace
 import sys
 import tempfile
 import unittest
@@ -13,35 +12,74 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend'))
 
-@unittest.skipUnless(os.environ.get('GEOCATTLE_TEST_DATABASE') == '1', 'Requires explicit local PostgreSQL test environment')
+@unittest.skipUnless(os.environ.get('GEOCATTLE_TEST_DATABASE') == '1' and bool(os.environ.get('TEST_DATABASE_URL')),
+    'Requires GEOCATTLE_TEST_DATABASE=1 and an explicit migrated TEST_DATABASE_URL')
 class HardwareTests(unittest.TestCase):
     def setUp(self):
-        from geocattle.db import SessionLocal
-        from geocattle.models import Farm, Device, Telemetry, User
-        from sqlalchemy import select, func
-        self.db = SessionLocal()
+        from sqlalchemy import create_engine, func
+        from sqlalchemy.engine import make_url
+        from sqlalchemy.orm import Session
+        from zoneinfo import ZoneInfo
+        from geocattle.models import Farm, Device, Telemetry, User, OwnerAccount, FarmMembership
+        from geocattle.settings import settings
+
+        url = make_url(os.environ['TEST_DATABASE_URL'])
+        if url.get_backend_name() != 'postgresql':
+            raise RuntimeError('Hardware QA requires a dedicated PostgreSQL/PostGIS test database')
+        engine = create_engine(url)
+        self.addCleanup(engine.dispose)
+        connection = engine.connect()
+        self.addCleanup(connection.close)
+        outer = connection.begin()
+        self.addCleanup(lambda: outer.rollback() if outer.is_active else None)
+        self.db = Session(connection, join_transaction_mode='create_savepoint', expire_on_commit=False)
         self.addCleanup(self.db.close)
-        self.addCleanup(self.db.rollback)
-        existing = self.db.scalar(select(User).where(User.username == 'prototipo@geocattle.local'))
-        self.user = SimpleNamespace(farm_id=existing.farm_id, role='owner')
-        self.now = datetime.now(timezone.utc)
+
+        # Freeze the API clock at local noon: pagination still sees both fixture
+        # readings when CI happens to run in the first ten minutes of a day.
+        self.now = datetime.now(ZoneInfo('America/Santiago')).replace(hour=12, minute=0,
+            second=0, microsecond=0).astimezone(timezone.utc)
+        fixed_now = self.now
+        class FixtureDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed_now.astimezone(tz) if tz is not None else fixed_now.replace(tzinfo=None)
+        clock = patch('geocattle.hardware_api.datetime', FixtureDateTime)
+        clock.start()
+        self.addCleanup(clock.stop)
+
         token = uuid4().hex[:12]
-        other = Farm(name='QA transaction only', environment='development', timezone='America/Santiago')
-        self.db.add(other); self.db.flush()
-        self.other_user = SimpleNamespace(farm_id=other.id, role='owner')
+        owners, farms = [], []
+        for index in range(2):
+            email = f'hardware-{token}-{index}@qa.invalid'
+            owner = User(username=email, email=email, full_name='QA hardware fixture',
+                password_hash='qa-fixture-unused-for-authentication', role='owner', active=True)
+            self.db.add(owner); self.db.flush()
+            account = OwnerAccount(owner_user_id=owner.id, display_name='QA hardware account', max_farms=1)
+            self.db.add(account); self.db.flush()
+            farm = Farm(name='QA hardware transaction only', account_id=account.id,
+                environment=settings().app_env, timezone='America/Santiago')
+            self.db.add(farm); self.db.flush()
+            owner.farm_id = farm.id
+            self.db.add(FarmMembership(farm_id=farm.id, user_id=owner.id, role_code='owner',
+                granted_by=owner.id, valid_from=self.now-timedelta(days=1)))
+            owners.append(owner); farms.append(farm)
+        self.db.flush()
+        self.user, self.other_user = owners
         self.devices = []
-        for index, farm in enumerate((existing.farm_id, existing.farm_id, other.id)):
-            d = Device(farm_id=farm, hardware_id=f'QA{token}{index}', name='Rolled back fixture', transport='academic', interval_seconds=30)
-            self.db.add(d); self.db.flush(); self.devices.append(d)
+        for index, farm in enumerate((farms[0].id, farms[0].id, farms[1].id)):
+            device = Device(farm_id=farm, hardware_id=f'QA{token}{index}', name='Rolled back fixture',
+                transport='academic', interval_seconds=30)
+            self.db.add(device); self.db.flush(); self.devices.append(device)
         self.rows = []
         for seq, seconds, fix in ((1, 600, True), (2, 10, False)):
-            t = Telemetry(farm_id=existing.farm_id, device_id=self.devices[0].id, session_id=token, seq=seq,
+            row = Telemetry(farm_id=farms[0].id, device_id=self.devices[0].id, session_id=token, seq=seq,
                 observed_at=self.now-timedelta(seconds=seconds), received_at=self.now,
                 point=func.ST_SetSRID(func.ST_MakePoint(-70.6,-33.4),4326) if fix else None,
                 gnss_valid=fix, latitude=-33.4 if fix else None, longitude=-70.6 if fix else None,
                 surface_temperature_c=17+seq, activity_index=.1*seq, battery_mv=3900, source='academic',
-                quality={'movement_state':'rest' if seq==1 else 'moving','period_ms':35000})
-            self.db.add(t);self.db.flush();self.rows.append(t)
+                quality={'movement_state':'rest' if seq==1 else 'moving','period_ms':35000,'test_fixture':True})
+            self.db.add(row); self.db.flush(); self.rows.append(row)
 
     def test_latest_and_last_valid_position_are_independent_and_farm_scoped(self):
         from geocattle.hardware_api import overview
@@ -89,7 +127,7 @@ class HardwareTests(unittest.TestCase):
                 path.write_text(json.dumps({'connected':True,'updated_at':(self.now-timedelta(minutes=1)).isoformat()}), encoding='utf-8-sig')
                 data=receiver(self.user)
                 self.assertFalse(data['available']);self.assertFalse(data['connected'])
-                path.write_text(json.dumps({'connected':True,'updated_at':datetime.now(timezone.utc).isoformat()}),encoding='utf-8')
+                path.write_text(json.dumps({'connected':True,'updated_at':self.now.isoformat()}),encoding='utf-8')
                 self.assertTrue(receiver(self.user)['connected'])
 
 if __name__ == '__main__': unittest.main()

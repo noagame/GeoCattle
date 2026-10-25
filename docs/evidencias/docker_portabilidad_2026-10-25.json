@@ -1,0 +1,276 @@
+{
+  "project": "geocattle-portability-qa-528959",
+  "started_at": "2026-10-25T18:27:04.579953+00:00",
+  "status": "passed",
+  "checks": [
+    {
+      "check": "docker-info",
+      "passed": true,
+      "exit_code": 0,
+      "log": "docker-info.log"
+    },
+    {
+      "check": "Docker usa contenedores Linux",
+      "passed": true
+    },
+    {
+      "check": "compose-config",
+      "passed": true,
+      "exit_code": 0,
+      "log": "compose-config.log"
+    },
+    {
+      "check": "build-and-start-runtime",
+      "passed": true,
+      "exit_code": 0,
+      "log": "build-and-start-runtime.log"
+    },
+    {
+      "check": "seed-simulation",
+      "passed": true,
+      "exit_code": 0,
+      "log": "seed-simulation.log"
+    },
+    {
+      "check": "reconcile-v3",
+      "passed": true,
+      "exit_code": 0,
+      "log": "reconcile-v3.log"
+    },
+    {
+      "check": "Nginx sirve HTML de GeoCattle",
+      "passed": true
+    },
+    {
+      "check": "HTML referencia assets generados",
+      "passed": true
+    },
+    {
+      "check": "Asset real index-CTV407q5.css",
+      "passed": true
+    },
+    {
+      "check": "Asset real index-lO3Ba7cC.js",
+      "passed": true
+    },
+    {
+      "check": "CSP admite dominio exacto de teselas OSM",
+      "passed": true
+    },
+    {
+      "check": "API y PostgreSQL QA responden",
+      "passed": true
+    },
+    {
+      "check": "Contrato desplegado incluye telemetria USB",
+      "passed": true
+    },
+    {
+      "check": "Contrato desplegado incluye asociaciones historicas",
+      "passed": true
+    },
+    {
+      "check": "redis-ping",
+      "passed": true,
+      "exit_code": 0,
+      "log": "redis-ping.log"
+    },
+    {
+      "check": "Redis responde PONG",
+      "passed": true
+    },
+    {
+      "check": "Interfaz local de ChirpStack responde",
+      "passed": true
+    },
+    {
+      "check": "chirpstack-schema",
+      "passed": true,
+      "exit_code": 0,
+      "log": "chirpstack-schema.log"
+    },
+    {
+      "check": "ChirpStack tiene extensiones y tablas migradas",
+      "passed": true
+    },
+    {
+      "check": "mqtt-end-to-end",
+      "passed": true,
+      "exit_code": 0,
+      "log": "mqtt-end-to-end.log"
+    },
+    {
+      "check": "MQTT QoS1 llega a ingestor PostgreSQL y API",
+      "passed": true
+    },
+    {
+      "check": "worker-independent-timeout",
+      "passed": true,
+      "exit_code": 0,
+      "log": "worker-independent-timeout.log"
+    },
+    {
+      "check": "Worker independiente abre ausencia con 3T+30",
+      "passed": true
+    },
+    {
+      "check": "Lectura nueva resuelve ausencia y conserva historia",
+      "passed": true
+    },
+    {
+      "check": "http-functional-smoke",
+      "passed": true,
+      "exit_code": 0,
+      "log": "http-functional-smoke.log"
+    },
+    {
+      "check": "Smoke HTTP completo",
+      "passed": true
+    },
+    {
+      "check": "HTTP owner con contexto QA",
+      "passed": true
+    },
+    {
+      "check": "Vista hardware acepta datos simulados",
+      "passed": true
+    },
+    {
+      "check": "Resumen diario responde con zona horaria",
+      "passed": true
+    },
+    {
+      "check": "Sin USB se declara no disponible",
+      "passed": true
+    },
+    {
+      "check": "Sesion de comprobacion cerrada",
+      "passed": true
+    },
+    {
+      "check": "build-linux-test-image",
+      "passed": true,
+      "exit_code": 0,
+      "log": "build-linux-test-image.log"
+    },
+    {
+      "check": "create-isolated-test-database",
+      "passed": true,
+      "exit_code": 0,
+      "log": "create-isolated-test-database.log"
+    },
+    {
+      "check": "migrate-test-database",
+      "passed": true,
+      "exit_code": 0,
+      "log": "migrate-test-database.log"
+    },
+    {
+      "check": "pytest-linux-backend",
+      "passed": true,
+      "exit_code": 0,
+      "log": "pytest-linux-backend.log"
+    },
+    {
+      "check": "unittest-linux-adapters",
+      "passed": true,
+      "exit_code": 0,
+      "log": "unittest-linux-adapters.log"
+    },
+    {
+      "check": "persistence-before",
+      "passed": true,
+      "exit_code": 0,
+      "log": "persistence-before.log"
+    },
+    {
+      "check": "stop-qa-preserving-volumes",
+      "passed": true,
+      "exit_code": 0,
+      "log": "stop-qa-preserving-volumes.log"
+    },
+    {
+      "check": "restart-existing-qa",
+      "passed": true,
+      "exit_code": 0,
+      "log": "restart-existing-qa.log"
+    },
+    {
+      "check": "persistence-after",
+      "passed": true,
+      "exit_code": 0,
+      "log": "persistence-after.log"
+    },
+    {
+      "check": "Reinicio conserva telemetria QA",
+      "passed": true,
+      "detail": {
+        "before": 589,
+        "after": 589
+      }
+    },
+    {
+      "check": "Nginx sirve HTML de GeoCattle",
+      "passed": true
+    },
+    {
+      "check": "HTML referencia assets generados",
+      "passed": true
+    },
+    {
+      "check": "Asset real index-CTV407q5.css",
+      "passed": true
+    },
+    {
+      "check": "Asset real index-lO3Ba7cC.js",
+      "passed": true
+    },
+    {
+      "check": "CSP admite dominio exacto de teselas OSM",
+      "passed": true
+    },
+    {
+      "check": "API y PostgreSQL QA responden",
+      "passed": true
+    },
+    {
+      "check": "Contrato desplegado incluye telemetria USB",
+      "passed": true
+    },
+    {
+      "check": "Contrato desplegado incluye asociaciones historicas",
+      "passed": true
+    },
+    {
+      "check": "final-stop-qa",
+      "passed": true,
+      "exit_code": 0,
+      "log": "final-stop-qa.log"
+    }
+  ],
+  "environment": "simulation",
+  "url": "http://127.0.0.1:18084",
+  "ports": {
+    "web": 18084,
+    "database": 55440,
+    "mqtt": 18884
+  },
+  "actual_usb": "not_checked",
+  "real_database": "not_accessed",
+  "linux_engine": "Docker Desktop",
+  "limits": [
+    "No comprueba USB real, GPS, cobertura radio, batería ni capacidad de 70 collares físicos.",
+    "No convierte los datos QA simulados en mediciones reales."
+  ],
+  "engine": {
+    "OSType": "linux",
+    "OperatingSystem": "Docker Desktop",
+    "ServerVersion": "29.9.2",
+    "Architecture": "x86_64"
+  },
+  "http_checks_passed": 126,
+  "backend_tests_passed": 113,
+  "adapter_tests_passed": 94,
+  "containers": "stopped; volumes preserved",
+  "finished_at": "2026-10-25T18:29:37.465184+00:00"
+}

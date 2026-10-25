@@ -5,6 +5,7 @@ x-backend: &backend
   build:
     context: .
     dockerfile: backend/Dockerfile
+    target: runtime
   environment: &backend-env
     DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-geocattle}:${POSTGRES_PASSWORD:?Ejecute scripts/configure.py}@database:5432/${POSTGRES_DB:-geocattle_simulation}
     APP_DATABASE_PASSWORD: ${APP_DATABASE_PASSWORD:?Ejecute scripts/configure.py}
@@ -16,17 +17,27 @@ x-backend: &backend
     DEMO_PASSWORD: ${DEMO_PASSWORD:-}
     COOKIE_SECURE: ${COOKIE_SECURE:-false}
     ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080}
+    SESSION_HOURS: ${SESSION_HOURS:-12}
     MQTT_HOST: broker
     MQTT_PORT: 1883
     MQTT_USERNAME: ${MQTT_USERNAME:-geocattle}
     MQTT_PASSWORD: ${MQTT_PASSWORD:?Ejecute scripts/configure.py}
     MQTT_TOPIC: ${MQTT_TOPIC:-application/+/device/+/event/up}
+    MQTT_ACK_TOPIC: ${MQTT_ACK_TOPIC:-geocattle/academic/committed}
+    MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-geocattle-ingestor}
+    MQTT_TLS: ${MQTT_TLS:-false}
     MQTT_SPOOL_PATH: /data/mqtt-spool.sqlite3
+    PREVENTIVE_RULES_VALIDATED: ${PREVENTIVE_RULES_VALIDATED:-false}
+    WORKER_INTERVAL_SECONDS: ${WORKER_INTERVAL_SECONDS:-15}
+    CONFIG_TIMEOUT_SECONDS: ${CONFIG_TIMEOUT_SECONDS:-3600}
     CONFIG_DOWNLINK_ENABLED: ${CONFIG_DOWNLINK_ENABLED:-false}
     CONFIG_CODEC_VALIDATED: ${CONFIG_CODEC_VALIDATED:-false}
     CHIRPSTACK_APPLICATION_ID: ${CHIRPSTACK_APPLICATION_ID:-}
     CONFIG_FPORT: ${CONFIG_FPORT:-10}
     NOTIFICATION_WEBHOOK_URL: ${NOTIFICATION_WEBHOOK_URL:-}
+    NOTIFICATION_WEBHOOK_TOKEN: ${NOTIFICATION_WEBHOOK_TOKEN:-}
+    NOTIFICATION_MAX_ATTEMPTS: ${NOTIFICATION_MAX_ATTEMPTS:-3}
+    NOTIFICATION_EXPIRY_HOURS: ${NOTIFICATION_EXPIRY_HOURS:-24}
   restart: unless-stopped
   security_opt:
     - no-new-privileges:true
@@ -98,6 +109,9 @@ services:
   seed:
     <<: *backend
     profiles: [tools]
+    environment:
+      <<: *backend-env
+      V3_ADMIN_PASSWORD: ${V3_ADMIN_PASSWORD:-}
     command: [python, -m, geocattle.seed]
     depends_on:
       migrate:
@@ -175,6 +189,17 @@ services:
       retries: 20
     restart: unless-stopped
 
+  chirpstack-init:
+    image: postgres:16-alpine
+    profiles: [lorawan]
+    environment:
+      PGPASSWORD: ${CHIRPSTACK_DB_PASSWORD:?Ejecute scripts/configure.py}
+    command: [psql, --host, chirpstack-database, --username, chirpstack, --dbname, chirpstack, -v, ON_ERROR_STOP=1, -c, 'CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS hstore;']
+    depends_on:
+      chirpstack-database:
+        condition: service_healthy
+    restart: 'no'
+
   redis:
     image: redis:7-alpine
     profiles: [lorawan]
@@ -197,8 +222,8 @@ services:
     volumes:
       - ./infrastructure/chirpstack:/etc/chirpstack:ro
     depends_on:
-      chirpstack-database:
-        condition: service_healthy
+      chirpstack-init:
+        condition: service_completed_successfully
       redis:
         condition: service_started
     restart: unless-stopped

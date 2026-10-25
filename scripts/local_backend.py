@@ -17,7 +17,7 @@ def main():
     if not config.exists():
         parser.error('Ejecute primero python3 scripts/configure.py')
     private = {}
-    for line in config.read_text().splitlines():
+    for line in config.read_text(encoding='utf-8-sig').splitlines():
         if '=' in line and not line.lstrip().startswith('#'):
             key, value = line.split('=', 1)
             private[key] = value
@@ -33,7 +33,9 @@ def main():
         if private.get('APP_ENV') != 'simulation':
             parser.error('Las pruebas integradas requieren una base de simulación separada')
         env['TEST_DATABASE_URL'] = env['DATABASE_URL']
-    python = root / 'backend' / '.venv' / 'bin' / 'python'
+    suffix = Path('Scripts/python.exe') if os.name == 'nt' else Path('bin/python')
+    candidates = [root / 'backend' / '.venv' / suffix, root / '.venv' / suffix]
+    python = next((candidate for candidate in candidates if candidate.exists()), candidates[0])
     if not python.exists():
         parser.error('Instale dependencias: cd backend && uv sync --extra test')
     commands = {

@@ -166,8 +166,9 @@ class Smoke:
         device = self.request("POST", "/devices", {"hardware_id": self.hardware,
                               "name": "Collar QA " + self.run_id, "transport": "academic", "interval_seconds": 300}, 201)
         device_id = device["id"]
-        assignment_body = {"animal_id": animal["id"], "device_id": device_id,
-                           "effective_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()}
+        # New V3 animals have a holding that starts at registration. A fixture
+        # must not backdate its collar outside that holding's valid interval.
+        assignment_body = {"animal_id": animal["id"], "device_id": device_id}
         self.request("POST", "/assignments", assignment_body, 201)
         self.request("POST", "/assignments", assignment_body, 409)
 
@@ -254,13 +255,24 @@ class Smoke:
         self.request("POST", "/pasture-assignments", {"animal_id": animal["id"], "geofence_id": fence["id"]}, 409)
         self.ingest()
         self.check("Nueva versión conserva asignación vigente", self.request("GET", "/animals/" + animal["id"])["geofence_status"] == "inside")
-        self.request("POST", "/simulation/scenarios", {"scenario": "timeout", "animal_id": animal["id"]})
-        timeout = [e for e in self.event_rows(animal["id"]) if e["type"] == "communication_timeout" and e["condition"] == "active"]
+        # A newly registered holding/assignment must get its own supervision
+        # window; it cannot inherit silence from before the collar was assigned.
+        # The seed has day-old assignments suitable for this timeout scenario.
+        timeout_animal = next((row for row in baseline["animals"] if row.get("device_id")), None)
+        if timeout_animal is None:
+            raise RuntimeError("Falta un animal del seed con asignacion antigua para comprobar ausencia")
+        timeout_id = timeout_animal["id"]
+        timeout_device = self.device(timeout_animal["device_id"])
+        threshold = 3 * timeout_device["interval_seconds"] + 30
+        self.request("POST", "/simulation/scenarios", {"scenario": "normal", "animal_id": timeout_id})
+        self.check("Escenario normal prepara comunicacion reciente", not any(e["type"] == "communication_timeout" and e["condition"] == "active" for e in self.event_rows(timeout_id)))
+        self.request("POST", "/simulation/scenarios", {"scenario": "timeout", "animal_id": timeout_id})
+        timeout = [e for e in self.event_rows(timeout_id) if e["type"] == "communication_timeout" and e["condition"] == "active"]
         self.check("Temporizador independiente genera ausencia", len(timeout) == 1 and
-                   self.request("GET", "/animals/" + animal["id"])["communication_status"] == "absent")
-        self.check("Ausencia usa 3T+30 segundos", bool(timeout) and timeout[0]["detail"].get("threshold_seconds") == 570)
-        self.ingest()
-        self.check("Paquete nuevo resuelve ausencia", not any(e["type"] == "communication_timeout" and e["condition"] == "active" for e in self.event_rows(animal["id"])))
+                   self.request("GET", "/animals/" + timeout_id)["communication_status"] == "absent")
+        self.check("Ausencia usa 3T+30 segundos", bool(timeout) and timeout[0]["detail"].get("threshold_seconds") == threshold)
+        self.request("POST", "/simulation/scenarios", {"scenario": "normal", "animal_id": timeout_id})
+        self.check("Paquete nuevo resuelve ausencia", not any(e["type"] == "communication_timeout" and e["condition"] == "active" for e in self.event_rows(timeout_id)))
         bad_packet = dict(packet, seq=999999)
         code, _, _ = anon.call("POST", "/ingest/telemetry", bad_packet)
         self.check("Ingesta sin credencial 401", code == 401)
@@ -311,7 +323,7 @@ class Smoke:
                     code, data, _ = role_api.call("POST", f"/events/{event['id']}/actions", {"action": "review", "note": "QA operador"})
                     self.check("Operator puede revisar sin alterar condición", code == 200 and data["condition"] == "resolved" and data["attention"] == "in_review")
                     code, _, _ = role_api.call("POST", "/maintenance", dict(maintenance_body, kind="recharge"))
-                    self.check("Operator registra mantenimiento autorizado", code == 201)
+                    self.check("Worker no registra mantenimiento directo fuera de aprobacion", code == 403)
             role_api.call("POST", "/auth/logout")
 
         second_animal = self.request("POST", "/animals", dict(animal_body, diio="QA2" + self.run_id, name="Reasignación QA " + self.run_id), 201)

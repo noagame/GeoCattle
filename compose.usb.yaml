@@ -3,4 +3,4 @@ services:
     environment:
       USB_STATUS_PATH: /capture/status.json
     volumes:
-      - ./.runtime/capture:/capture:ro
+      - ${USB_CAPTURE_DIR:-./.runtime/capture}:/capture:ro

@@ -148,13 +148,14 @@ def main():
         try:
             from datetime import datetime, timezone
             status = json.loads((ROOT / '.runtime/capture/status.json').read_text(encoding='utf-8'))
-            active = status.get('connected') and (datetime.now(timezone.utc) - datetime.fromisoformat(status['updated_at'])).total_seconds() < 15
+            fresh = 0 <= (datetime.now(timezone.utc) - datetime.fromisoformat(status['updated_at'])).total_seconds() < 15
+            active = fresh and (status.get('connected') or (status.get('capture_version') == 2 and status.get('state') != 'stopped' and not str(status.get('error') or '').startswith(('Captura pausada', 'Captura detenida'))))
         except (OSError, ValueError, KeyError):
             pass
         if active:
-            print('Captura COM5: ya activa; no se abre otro lector')
+            print('Captura USB: ya iniciada; se espera la receptora por identidad')
         else:
-            spawn('prototype-usb', [sys.executable, '-u', '-m', 'adapters.lora_usb', '--port', 'COM5'], environment())
+            spawn('prototype-usb', [sys.executable, '-u', '-m', 'adapters.lora_usb', '--port', 'auto'], environment())
     if args.action == 'start':
         print('GeoCattle: http://localhost:8084/#hardware')
         print('Acceso privado: .runtime/acceso_prototipo.json')

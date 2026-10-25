@@ -3,6 +3,26 @@
 Estado de referencia: 23 de octubre de 2026. Esta carpeta queda dedicada al
 software, la recepción de telemetría, sus pruebas y la documentación del proyecto.
 
+## Captura con doble clic e identidad USB
+
+Abre **Iniciar-Captura.cmd** desde la raiz del proyecto. No necesitas conocer el numero COM. El iniciador reutiliza GeoCattle y PostgreSQL si responden, o inicia los servicios locales preparados.
+
+En el primer inicio deja solamente la T3 receptora por USB de datos, cierra Monitor Serie/Plotter y enciende el emisor. La placa se recuerda en `.runtime/capture/receiver.json` solo despues de recibir un paquete valido con RSSI/SNR. Esto evita vincular como receptora un emisor que solo imprime sus sensores. La identidad usa VID/PID y numero de serie USB; el COM guardado es solo informativo.
+
+Mantener abierta la ventana. Si desconectas la receptora, el capturador espera esa misma placa y la recupera aunque Windows cambie el COM. No salta a otra T-Beam con el mismo chip. Si hay varias candidatas sin vinculo previo, pide una seleccion explicita en lugar de adivinar. Sin numero de serie USB se usa la ubicacion fisica, y cambiar de conector requerira seleccion manual.
+
+El bloqueo exclusivo impide dos capturadores para el mismo archivo, incluso con la placa desconectada. Ctrl+C conserva los datos; `Pausar-Captura-COM5.ps1` sigue permitiendo liberar el puerto. Los antiguos comandos de captura COM5 ahora pasan al iniciador nuevo.
+
+### Migrar una captura anterior
+
+Si queda ejecutandose la version fijada a COM5, ejecuta **una sola vez** `Pausar-Captura-COM5.ps1` desde PowerShell normal. Despues abre `Iniciar-Captura.cmd`. El nuevo iniciador detecta esa version vieja y pide pausarla antes de abrir otro lector; no cierra aplicaciones ajenas.
+
+Para seleccionar voluntariamente otra receptora, detiene primero la captura y ejecuta `python scripts/start_capture.py --port COMx` desde la raiz, sustituyendo COMx por el puerto de esa placa. El vinculo se actualiza solo al verificar un mensaje de receptor con radio. Las siguientes aperturas vuelven a identificarla automaticamente.
+
+El estado local separa `last_line_at` (cualquier linea de diagnostico), `last_packet_at` (paquete valido durante esta ejecucion) y `last_capture` (ultima lectura unica archivada). Los contadores historicos no prueban recepcion actual.
+
+Verificacion de software: 55 pruebas correctas de identidad USB, reconexion, instancia unica, inicializacion, contratos y archivo durable. La prueba de lectura fisica requiere abrir el iniciador con el usuario Windows, fuera del entorno restringido. Registro local: `.runtime/review/capture-identity-tests-2026-10-24.txt`.
+
 ## Ejecutar y detener
 
 Abrir PowerShell en la raíz del proyecto y ejecutar:

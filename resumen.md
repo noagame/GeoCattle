@@ -1,6 +1,6 @@
 # Resumen de cambios de GeoCattle
 
-Fecha: **24 de octubre de 2026**, America/Santiago. Base de comparación: commit `2689c0a` de `noagame/GeoCattle`.
+Actualizado: **25 de octubre de 2026**, America/Santiago. Base original de comparación: commit `2689c0a` de `noagame/GeoCattle`; la sección 8 describe la ampliación posterior a `3bf3d19`.
 
 ## Resultado
 
@@ -61,7 +61,7 @@ No se publican `.env*`, `.runtime/`, PostgreSQL local, colas SQLite, registros s
 
 ## 7. Verificación y límites
 
-La verificación de publicación ejecutó **109 pruebas de backend correctas**, incluidas comprobaciones de roles, aislamiento, asociaciones, invitaciones y configuración de alertas. También se verificaron **26 pruebas de contrato/adaptadores** y la compilación TypeScript/Vite. Las pruebas de integración se ejecutan en una base QA aislada; la revisión visual incluye dueño, trabajador, veterinario y administrador, guardado de reglas y conflictos entre versiones.
+La verificación del 24 de octubre ejecutó **109 pruebas de backend correctas**, incluidas comprobaciones de roles, aislamiento, asociaciones, invitaciones y configuración de alertas. También se verificaron **26 pruebas de contrato/adaptadores** y la compilación TypeScript/Vite. Las pruebas de integración se ejecutan en una base QA aislada; la revisión visual incluye dueño, trabajador, veterinario y administrador, guardado de reglas y conflictos entre versiones.
 
 La recepción física y la persistencia se comprobaron localmente. Eso no acredita calibración clínica, autonomía de batería, aceptación del productor, disponibilidad prolongada ni capacidad de una red de múltiples collares.
 
@@ -74,3 +74,18 @@ Pendientes relevantes:
 - Preparación independiente de cada nuevo entorno Windows; el clon no incluye los datos ni binarios privados del prototipo.
 
 Ver [Configuración de alertas](docs/CONFIGURACION_ALERTAS.md), [revisión de mapas, asociaciones y perfiles](docs/REVISION_MAPAS_ASOCIACIONES_PERFILES.md), [registro de usuarios](docs/USUARIOS_Y_REGISTRO.md) y [contrato de integración](docs/CONTRATO_API.md).
+
+## 8. Captura por identidad USB y Docker para Windows/Linux — 25 de octubre
+
+- Captura con `Iniciar-Captura.cmd` y reconocimiento de la receptora por VID/PID y número de serie USB (o ubicación cuando no hay serie), sin depender de un número COM fijo. La vinculación inicial exige un paquete de receptor con información radio.
+- Reconexión a la misma placa y exclusión de lectores duplicados mediante un bloqueo de archivo compatible con Windows/Linux; se conserva el archivo diario y la cola durable.
+- Arranque común `scripts/docker_project.py` para preparar, iniciar, detener, consultar y respaldar Docker sin Bash en el anfitrión. Simulación usa `.env`; desarrollo físico Docker usa `.env.docker`, otros puertos y otra carpeta de captura. La instancia nativa y sus datos se conservan.
+- Objetivos Docker `runtime` y `test`, variables de configuración conectadas a los servicios, finales LF para scripts POSIX, `tzdata` para el capturador y CSP de OpenStreetMap corregida.
+- Inicialización idempotente de las extensiones `pg_trgm`/`hstore` antes de ChirpStack; comprobación de sus tablas, Redis y recorrido MQTT hasta PostgreSQL y API.
+- Ejecutable de prueba `qa/docker_portability.py` y acceso Windows `Probar-Docker.cmd`, con configuración, base y volúmenes QA separados. La prueba no abre USB ni consulta la base nativa y no elimina volúmenes.
+
+La verificación terminó correctamente en contenedores **Linux x86_64 sobre Docker Desktop en Windows**: **113 pytest backend**, **94 unittest de adaptadores/hardware** y **126 comprobaciones HTTP**, además de worker independiente, MQTT y persistencia de **589 lecturas QA** antes y después del reinicio. También pasaron **90 unittest en Windows**. Los conteos corresponden a suites distintas y algunas se repiten entre sistemas; no representan pruebas de campo ni carga física de múltiples collares.
+
+La captura USB permanece en el anfitrión. No se ha probado otra máquina física, ARM, USB real hacia Docker ni una red LoRaWAN física. El primer intento fallido y su corrección quedan documentados; no se modificó la protección temporal de las nuevas asignaciones de collar.
+
+Ver [revisión Docker y portabilidad](docs/REVISION_DOCKER_PORTABILIDAD.md) y [evidencia QA sin credenciales](docs/evidencias/docker_portabilidad_2026-10-25.json). Se conservan los archivos originales y los datos privados fuera de Git.

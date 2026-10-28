@@ -61,7 +61,11 @@ La instancia local preparada sirve [Recepción de collares](http://localhost:808
 
 **Una clonación nueva no incluye la base física, los binarios locales ni las credenciales del PC.** Los scripts siguientes requieren esa preparación local, `.env.academic`, un entorno Python con las dependencias de backend y adaptadores, y el frontend compilado. Consulta [Desarrollo local](docs/DESARROLLO_LOCAL.md) y [USB COM5](docs/USB_COM5.md). No ejecutar el seed de simulación sobre la base física.
 
+Para abrir la aplicación nativa en Windows sin iniciar la captura USB, utiliza **Abrir-GeoCattle.cmd**. Conserva los datos y requiere la preparación local indicada arriba.
+
 Para capturar con un solo paso, abre **Iniciar-Captura.cmd**. La receptora se reconoce por su identidad USB y puede cambiar de COM. El primer enlace se confirma con un paquete LoRa; consulta [Desarrollo local](docs/DESARROLLO_LOCAL.md#captura-con-doble-clic-e-identidad-usb).
+
+El protocolo físico JSON V5 admite `p` entre `30000` y `45000` ms, incluido el emisor de 45 segundos y los anteriores de 30–40 segundos. El período anunciado se conserva en `quality.period_ms`; no confirma una configuración remota. Después de actualizar el adaptador, detén el lector con Ctrl+C y vuelve a abrir **Iniciar-Captura.cmd** para cargar el código nuevo; no hace falta reiniciar la API por este cambio.
 
 Desde PowerShell en la raíz del proyecto:
 

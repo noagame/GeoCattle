@@ -69,6 +69,19 @@ class CaptureRuntimeTests(unittest.TestCase):
             self.assertIsNotNone(status['last_packet_at'])
             self.assertFalse(status['connected'])
 
+    def test_45_second_receiver_frame_is_archived_with_radio(self):
+        packet = {**SAMPLE, 'p': 45000}
+        frame = json.dumps({'packet': packet, 'radio': {'rssi_dbm': -40, 'snr_db': 8}}).encode() + b'\n'
+        with tempfile.TemporaryDirectory() as folder:
+            archive, status = self.exercise(folder, [Connection([frame])], [[usb()]])
+            self.assertEqual(archive.stats()['captured'], 1)
+            self.assertIsNotNone(status['last_packet_at'])
+            self.assertEqual(load_receiver(Path(folder) / 'receiver.json')['serial_number'], 'QA-RECEIVER')
+            with archive.connection() as db:
+                payload = json.loads(db.execute('SELECT payload FROM captures').fetchone()[0])
+            self.assertEqual(payload['quality']['period_ms'], 45000)
+            self.assertEqual(payload['quality']['radio']['rssi_dbm'], -40)
+
     def test_bound_receiver_moves_com_while_other_board_is_present(self):
         with tempfile.TemporaryDirectory() as folder:
             archive,status=self.exercise(folder,[Connection([json.dumps(SAMPLE).encode()+b'\n'])],[[usb('COM7','QA-EMITTER'),usb('COM9')]],bind=True)

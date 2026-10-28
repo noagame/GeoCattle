@@ -29,6 +29,17 @@ class JsonProtocolTests(unittest.TestCase):
         self.assertEqual(checked.quality['tx_reason'],'movement_start')
         self.assertFalse(checked.quality['usb_present'])
 
+    def test_supported_periods_preserve_value_in_raw_and_receiver_frames(self):
+        for period in (30000, 35000, 40000, 45000):
+            packet = {**SAMPLE, 'p': period}
+            envelope = {'packet': packet, 'radio': {'rssi_dbm': -40, 'snr_db': 9.5}}
+            for message in (packet, envelope):
+                with self.subTest(period=period, wrapped='packet' in message):
+                    payload, original = decode(wire(message), NOW)
+                    checked = TelemetryIn.model_validate(payload)
+                    self.assertEqual(checked.quality['period_ms'], period)
+                    self.assertEqual(json.loads(original)['p'], period)
+
     def test_no_fix_and_usb_only(self):
         p=copy.deepcopy(SAMPLE);p.update(g=[None,None,-1,0,99.99],b=[-1,-1,0,0,1],f=1,m=[0,0.004])
         result,_=decode('Contenido: '+wire(p),NOW)
@@ -55,7 +66,7 @@ class JsonProtocolTests(unittest.TestCase):
             self.assertTrue(archive.enqueue(p1,w1));self.assertFalse(archive.enqueue(p2,w2))
 
     def test_reject_wrong_types_nonfinite_stale_fix_inconsistent_flags_and_battery(self):
-        mutations=[('q',True),('q',-1),('p',29000),('p',40001),('v',True),('id','BAD,ID'),
+        mutations=[('q',True),('q',-1),('p',29000),('p',45001),('p',True),('p',45000.0),('p','45000'),('p',None),('v',True),('id','BAD,ID'),
                    ('s','bad'),('g',[-33.,None,0,8,1.]),('g',[-33.,-70.,5000,8,1.]),
                    ('g',[-91.,-70.,0,8,1.]),('a',[float('inf'),0,1]),
                    ('m',[1,None]),('b',[-1,-1,0,1,1]),('b',[4000,101,1,0,0]),

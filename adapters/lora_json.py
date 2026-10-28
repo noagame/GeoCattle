@@ -56,7 +56,7 @@ def decode_json(text, received_at, radio=None, receiver='PC-COM5'):
 
     whole(message['q'], 0, 2**32 - 1)
     whole(message['u'], 0, 2**32 - 1)
-    whole(message['p'], 30000, 40000)
+    whole(message['p'], 30000, 45000)
     whole(message['f'], 0, 7)
     reason = whole(message['e'], 0, 2)
     lat, lon, age, sats, hdop = arr('g', 5)

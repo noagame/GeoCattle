@@ -89,3 +89,12 @@ La verificación terminó correctamente en contenedores **Linux x86_64 sobre Doc
 La captura USB permanece en el anfitrión. No se ha probado otra máquina física, ARM, USB real hacia Docker ni una red LoRaWAN física. El primer intento fallido y su corrección quedan documentados; no se modificó la protección temporal de las nuevas asignaciones de collar.
 
 Ver [revisión Docker y portabilidad](docs/REVISION_DOCKER_PORTABILIDAD.md) y [evidencia QA sin credenciales](docs/evidencias/docker_portabilidad_2026-10-25.json). Se conservan los archivos originales y los datos privados fuera de Git.
+
+## 9. Compatibilidad del emisor de 45 segundos — 28 de octubre de 2026
+
+- Corregido el máximo de `p` en el adaptador JSON V5: `45000` ms. El límite anterior de `40000` ms rechazaba mensajes válidos del firmware actualizado.
+- Se mantiene la compatibilidad con 30–40 segundos y las validaciones de tipos, sensores, flags, batería, radio y tamaño del paquete.
+- Añadida regresión para paquetes de 45 segundos, tanto directos como con el sobre del receptor, y recepción/archivo simulado. Se ejecutaron 57 pruebas de captura y adaptadores con resultado correcto, sin utilizar placas en esas pruebas.
+- En la comprobación física posterior se recuperaron dos líneas rechazadas conservando su hora de recepción; se respaldó la cola SQLite antes del rescate y se verificó la deduplicación. La captura reanudada recibió nuevas lecturas y confirmó su persistencia mediante la API.
+- Los registros serie, datos recuperados, respaldos y credenciales permanecen privados en `.runtime/`; no se añaden al repositorio. Este cambio no modifica firmware ni requiere reiniciar la API.
+- Se incluye `Abrir-GeoCattle.cmd` para abrir la aplicación nativa preparada sin iniciar la captura USB.

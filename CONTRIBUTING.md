@@ -16,7 +16,7 @@ Ambos colaboradores conservan la posibilidad de modificar cualquier area. Los ar
 3. Actualizar la rama remota correspondiente y revisar los cambios de `develop`. La guia ampliada muestra los comandos.
 4. Crear commits pequenos, con el problema y resultado descritos, y subirlos a la rama de trabajo.
 5. Abrir un pull request hacia `develop`. Mantenerlo en borrador mientras existan verificaciones o integraciones pendientes.
-6. Solicitar la revision del otro integrante y completar los tres checks de CI. Integrar por merge normal para conservar el historial. No forzar subidas sobre ramas compartidas.
+6. Solicitar la revision del otro integrante y completar los checks de CI, incluida la integracion con PostGIS. Integrar por merge normal para conservar el historial. No forzar subidas sobre ramas compartidas.
 7. Promover `develop` a `main` cuando la revision funcional correspondiente este completada.
 
 No incluir archivos `.env` con valores reales, `.runtime/`, colas SQLite, datos de collares, credenciales, `node_modules/` ni otros archivos generados. `.env.example` puede actualizarse con valores de ejemplo sin secretos. Las pruebas de base de datos deben usar una instalacion aislada, no los datos operativos.

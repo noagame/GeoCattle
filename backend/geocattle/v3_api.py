@@ -113,15 +113,35 @@ class SchedulePayload(Strict):
 class GatewayIn(Strict):
     gateway_eui:str=Field(pattern=r'^[0-9a-fA-F]{16}$')
     name:str=Field(min_length=1,max_length=150)
-    longitude:float|None=Field(default=None,ge=-180,le=180)
-    latitude:float|None=Field(default=None,ge=-90,le=90)
-    @model_validator(mode='after')
-    def coordinates(self):
-        if (self.longitude is None)!=(self.latitude is None):raise ValueError('Latitud y longitud se informan juntas')
-        return self
+    longitude:float=Field(ge=-180,le=180,allow_inf_nan=False,strict=True)
+    latitude:float=Field(ge=-90,le=90,allow_inf_nan=False,strict=True)
+    @field_validator('gateway_eui')
+    @classmethod
+    def normalize_eui(cls,value):return value.lower()
+    @field_validator('name')
+    @classmethod
+    def nonblank_name(cls,value):
+        value=value.strip()
+        if not value:raise ValueError('Nombre requerido')
+        return value
 class GatewayPatch(Strict):
+    expected_version:int=Field(ge=1)
     name:str|None=Field(default=None,min_length=1,max_length=150)
     status:Literal['installed','maintenance','retired']|None=None
+    longitude:float|None=Field(default=None,ge=-180,le=180,allow_inf_nan=False,strict=True)
+    latitude:float|None=Field(default=None,ge=-90,le=90,allow_inf_nan=False,strict=True)
+    @model_validator(mode='after')
+    def valid_changes(self):
+        changes=self.model_fields_set-{'expected_version'}
+        if any(getattr(self,key) is None for key in changes):raise ValueError('Los campos enviados no pueden ser nulos')
+        if ('latitude' in changes)!=('longitude' in changes):raise ValueError('Latitud y longitud se actualizan juntas')
+        if self.name is not None:
+            self.name=self.name.strip()
+            if not self.name:raise ValueError('Nombre requerido')
+        return self
+class GatewayArchiveIn(Strict):
+    expected_version:int=Field(ge=1)
+    confirm:Literal[True]
 
 
 def listing(data):return {'items':data,'total':len(data)}
@@ -560,23 +580,72 @@ def record(ident:UUID,user=Depends(current_user),db=Depends(get_db,scope='functi
       'measurements':rows(db,'SELECT * FROM animal_measurements WHERE animal_holding_id=ANY(:ids) ORDER BY measured_at DESC LIMIT 100',ids=ids),
       'reports':rows(db,'SELECT * FROM animal_reports WHERE animal_holding_id=ANY(:ids) ORDER BY occurred_at DESC LIMIT 100',ids=ids),'pending':pending,
       'pending_health_warning':any(x['action']=='health_record' for x in pending)}
+GATEWAY_FIELDS="g.id,g.farm_id,g.gateway_eui,g.name,g.status,g.installed_at,g.last_seen_at,g.archived_at,g.archived_by,g.version,ST_X(g.position) AS longitude,ST_Y(g.position) AS latitude"
+
+def gateway_record(db,ident,user,lock=False):
+    result=one(db,f'SELECT {GATEWAY_FIELDS} FROM gateways g WHERE g.id=:i AND g.farm_id=:f'+(' FOR UPDATE OF g' if lock else ''),i=ident,f=farm_scope(user))
+    if not result:raise HTTPException(403,'Gateway no autorizado en este predio')
+    return result
+
 @router.get('/gateways')
-def gateways(user=Depends(current_user),db=Depends(get_db,scope='function')):
-    return listing(rows(db,'SELECT id,farm_id,gateway_eui,name,status,last_seen_at,ST_X(position) AS longitude,ST_Y(position) AS latitude FROM gateways WHERE farm_id=:f ORDER BY name',f=farm_scope(user)))
+def gateways(include_archived:bool=False,user=Depends(current_user),db=Depends(get_db,scope='function')):
+    return listing(rows(db,f'SELECT {GATEWAY_FIELDS} FROM gateways g WHERE g.farm_id=:f AND (:include OR g.archived_at IS NULL) ORDER BY g.name,g.id',f=farm_scope(user),include=include_archived))
+
+@router.get('/gateways/{ident}')
+def gateway_detail(ident:UUID,user=Depends(current_user),db=Depends(get_db,scope='function')):
+    result=gateway_record(db,ident,user)
+    result['reception_count']=one(db,'SELECT count(*) AS count FROM telemetry_receptions WHERE farm_id=:f AND gateway_id=:i',f=farm_scope(user),i=ident)['count']
+    return result
+
+@router.get('/gateways/{ident}/receptions')
+def gateway_receptions(ident:UUID,limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0),user=Depends(current_user),db=Depends(get_db,scope='function')):
+    gateway_record(db,ident,user)
+    params=dict(f=farm_scope(user),i=ident,limit=limit,offset=offset)
+    total=one(db,'SELECT count(*) AS count FROM telemetry_receptions WHERE farm_id=:f AND gateway_id=:i',**params)['count']
+    items=rows(db,"""SELECT r.telemetry_id,r.gateway_id,r.received_at AS reception_at,r.rssi_dbm,r.snr_db,
+        t.observed_at,t.received_at AS server_received_at,t.device_id,t.animal_id,t.source,d.hardware_id
+        FROM telemetry_receptions r JOIN telemetry t ON t.id=r.telemetry_id AND t.farm_id=r.farm_id
+        JOIN devices d ON d.id=t.device_id AND d.farm_id=r.farm_id
+        WHERE r.farm_id=:f AND r.gateway_id=:i ORDER BY r.received_at DESC,r.telemetry_id DESC LIMIT :limit OFFSET :offset""",**params)
+    return {'items':items,'total':total}
+
 @router.post('/gateways',status_code=201)
 def create_gateway(body:GatewayIn,user=Depends(owner),db=Depends(get_db,scope='function')):
+    farm=farm_scope(user)
+    if one(db,'SELECT id FROM gateways WHERE gateway_eui=:e',e=body.gateway_eui):raise HTTPException(409,'Gateway EUI ya registrado; revisa el inventario, incluidos los archivados')
     ident=uuid4()
-    execute(db,"INSERT INTO gateways(id,farm_id,gateway_eui,name,position,status,installed_at) VALUES(:i,:f,:e,:n,CASE WHEN CAST(:lon AS double precision) IS NULL THEN NULL ELSE ST_SetSRID(ST_Point(CAST(:lon AS double precision),CAST(:lat AS double precision)),4326) END,'installed',now())",i=ident,f=farm_scope(user),e=body.gateway_eui.lower(),n=body.name,lon=body.longitude,lat=body.latitude)
-    audit(db,user,'create','gateway',ident,after=body.model_dump())
-    return {'id':ident,**body.model_dump(),'status':'installed'}
+    execute(db,"""INSERT INTO gateways(id,farm_id,gateway_eui,name,position,status,installed_at)
+        VALUES(:i,:f,:e,:n,ST_SetSRID(ST_Point(:lon,:lat),4326),'installed',now())""",i=ident,f=farm,e=body.gateway_eui,n=body.name,lon=body.longitude,lat=body.latitude)
+    result=gateway_record(db,ident,user)
+    audit(db,user,'create','gateway',ident,after=result)
+    return result
+
 @router.patch('/gateways/{ident}')
 def update_gateway(ident:UUID,body:GatewayPatch,user=Depends(owner),db=Depends(get_db,scope='function')):
-    scoped(db,'gateways',ident,user,True)
-    for k,v in body.model_dump(exclude_unset=True).items():
-        if v is None:raise HTTPException(422,'Nombre y estado no pueden ser nulos')
-        execute(db,f'UPDATE gateways SET {k}=:v WHERE id=:i',v=v,i=ident)
-    audit(db,user,'update','gateway',ident,after=body.model_dump(exclude_unset=True))
-    return scoped(db,'gateways',ident,user)
+    before=gateway_record(db,ident,user,True)
+    if before['archived_at']:raise HTTPException(409,'Un gateway archivado conserva su historial y no se puede editar')
+    if before['version']!=body.expected_version:raise HTTPException(409,'El gateway cambió; recarga su versión antes de guardar')
+    changes=body.model_dump(exclude_unset=True,exclude={'expected_version'})
+    if not any(before[key]!=value for key,value in changes.items()):return before
+    execute(db,"""UPDATE gateways SET name=:name,status=:status,
+        position=CASE WHEN :move THEN ST_SetSRID(ST_Point(CAST(:lon AS double precision),CAST(:lat AS double precision)),4326) ELSE position END,
+        version=version+1 WHERE id=:i AND farm_id=:f""",
+        name=changes.get('name',before['name']),status=changes.get('status',before['status']),move='latitude' in changes,
+        lon=changes.get('longitude'),lat=changes.get('latitude'),i=ident,f=farm_scope(user))
+    result=gateway_record(db,ident,user)
+    audit(db,user,'update','gateway',ident,before=before,after=result)
+    return result
+
+@router.delete('/gateways/{ident}')
+def archive_gateway(ident:UUID,body:GatewayArchiveIn,user=Depends(owner),db=Depends(get_db,scope='function')):
+    before=gateway_record(db,ident,user,True)
+    if before['archived_at']:return before
+    if before['version']!=body.expected_version:raise HTTPException(409,'El gateway cambió; recarga antes de archivar')
+    execute(db,'UPDATE gateways SET archived_at=now(),archived_by=:u,version=version+1 WHERE id=:i AND farm_id=:f',u=user.id,i=ident,f=farm_scope(user))
+    result=gateway_record(db,ident,user)
+    audit(db,user,'archive','gateway',ident,before=before,after=result)
+    return result
+
 @router.get('/notifications')
 def notifications(user=Depends(current_user),db=Depends(get_db,scope='function')):
     return listing(rows(db,"SELECT id,message,channel,status,read_at,created_at,request_id,schedule_id FROM notifications WHERE recipient_id=:u AND farm_id=:f ORDER BY created_at DESC LIMIT 100",u=user.id,f=farm_scope(user)))

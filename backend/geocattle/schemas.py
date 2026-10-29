@@ -37,11 +37,19 @@ class SectorIn(Strict):
     description: str | None = Field(default=None,max_length=1000)
     name: str = Field(min_length=1,max_length=100)
 class GeofenceIn(Strict):
-    sector_id: UUID
+    geofence_key: UUID | None = None
+    sector_id: UUID | None = None
+    sector_ids: list[UUID] = Field(default_factory=list, max_length=100)
     name: str = Field(min_length=1,max_length=100)
     geometry: dict
     expected_version: int = Field(ge=0)
     confirm_impact: bool
+    @model_validator(mode="after")
+    def sectors(self):
+        if not self.sector_ids and self.sector_id is None: raise ValueError("Seleccione al menos un sector")
+        if len(set(self.sector_ids)) != len(self.sector_ids): raise ValueError("Sectores repetidos")
+        if self.sector_id and self.sector_ids and self.sector_id not in self.sector_ids: raise ValueError("Sector principal no asociado")
+        return self
     @field_validator("geometry")
     @classmethod
     def polygon(cls,v):
@@ -55,6 +63,7 @@ class GeofenceIn(Strict):
             for p in ring:
                 if not isinstance(p,list) or len(p)!=2 or isinstance(p[0],bool) or isinstance(p[1],bool) or not isinstance(p[0],(float,int)) or not isinstance(p[1],(float,int)) or not -180<=p[0]<=180 or not -90<=p[1]<=90: raise ValueError("Coordenadas WGS84 inválidas")
             if len({tuple(p) for p in ring[:-1]})<4:raise ValueError("Se requieren cuatro vértices distintos")
+            if len({tuple(p) for p in ring[:-1]}) != len(ring)-1:raise ValueError("No se permiten vértices repetidos")
             count+=len(ring)
         if count>10000: raise ValueError("Máximo 10000 vértices")
         return v

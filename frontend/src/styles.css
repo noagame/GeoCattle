@@ -28,3 +28,19 @@
 
 /* Rule configuration is shared by the alerts panel and the farm settings page. */
 .alert-settings-modal{padding:20px}.alert-settings-modal .panel:last-child{margin-bottom:0}.alert-settings-actions{align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.alert-settings-actions>span{font-size:11px;color:#6f8065}.alert-validation-note{margin-top:12px}.alert-settings-modal .setting-row>div:first-child{max-width:530px}.alert-settings-modal .form-grid{min-width:260px}.alert-settings-modal .notice-warning{flex-wrap:wrap}@media(max-width:650px){.alert-settings-modal{padding:12px}.alert-settings-modal .form-grid{min-width:0;width:100%}.alert-settings-actions{align-items:stretch;flex-direction:column}}
+
+/* Geofence vertices use the same identity and selection in map and form. */
+.vertex-marker { border: 2px solid #fff; border-radius: 50%; background: #236b52; color: #fff; box-shadow: 0 1px 6px #172d3377; display: grid; place-items: center; font: 700 13px/1 sans-serif; cursor: grab; }
+.vertex-marker.selected { background: #ac6021; outline: 3px solid #f3bb69; }
+.vertex-marker:focus-visible { outline: 3px solid #ac6021; }
+.vertex-list { max-height: 360px; overflow: auto; padding: 5px; }
+.vertex-list > div { padding: 10px; border: 1px solid #dce5df; border-radius: 8px; margin-bottom: 8px; }
+.vertex-list > div.vertex-selected { background: #fff8ea; border-color: #ac6021; }
+.vertex-select { width: 32px; height: 32px; border-radius: 50%; border: 1px solid #236b52; background: #fff; color: #236b52; font-weight: 700; }
+.geofence-sectors { padding: 14px; border: 1px solid #dce5df; border-radius: 10px; display: flex; flex-wrap: wrap; gap: 12px; }
+.geofence-sectors legend { padding: 0 6px; font-weight: 600; }
+.geofence-sectors .form-intro { flex-basis: 100%; }
+.event-location { margin: 18px 0; }
+@media (max-width: 600px) { .vertex-list > div { display: grid; grid-template-columns: 36px 1fr; gap: 8px; } .vertex-list label { grid-column: 2; } .vertex-list .button { grid-column: 2; } }
+.collar-location-marker { border: 3px solid #fff; border-radius: 50%; background: #276e68; color: #fff; display: grid; place-items: center; box-shadow: 0 0 0 2px #276e68, 0 2px 6px #223b4b66; font-size: 12px; }
+.collar-location-marker.historical { background: #77887c; box-shadow: 0 0 0 2px #77887c, 0 2px 6px #223b4b66; border-style: dashed; }

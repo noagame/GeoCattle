@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
-import { CircleMarker, MapContainer, Polygon as MapPolygon, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
+import { CircleMarker, Marker, MapContainer, Polygon as MapPolygon, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import { Layers, LocateFixed, MapPin, RotateCw } from 'lucide-react';
 import type { Animal, Geofence, Telemetry } from './types';
 import { age, date } from './api';
@@ -61,7 +61,7 @@ function Fit({ points, requestedPoints, request, drawing }: { points: Point[]; r
 function Drawing({ onPoint }: { onPoint?: (point: Point) => void }) {
   useMapEvents({ click: event => {
     const target = event.originalEvent.target;
-    if (target instanceof Element && target.closest('.leaflet-control, .map-controls, .leaflet-popup')) return;
+    if (target instanceof Element && target.closest('.leaflet-control, .map-controls, .leaflet-popup, .leaflet-marker-icon')) return;
     onPoint?.([event.latlng.lat, event.latlng.lng]);
   } });
   return null;
@@ -70,10 +70,19 @@ function Recenter({ points }: { points: Point[] }) {
   const map = useMap();
   return <button type="button" className="map-button" title="Encuadrar geometrías y posiciones" aria-label="Encuadrar geometrías y posiciones" disabled={!points.length} onClick={() => { map.invalidateSize({ pan: false }); map.fitBounds(L.latLngBounds(points), { padding: [35, 35], maxZoom: 17 }); }}><LocateFixed size={18} /></button>;
 }
-export function CattleMap({ animals = [], geofences = [], gateways = [], history = [], collars = [], onAnimal, drawPoints = [], drawHoles = [], onPoint, height = 'main', externalTiles = true, focusPoints = [], fitRequest = 0 }: {
+function VertexMarker({ vertex, selected, onSelect, onMove, onDragStart }: { vertex: { id: string; point: Point; label: number }; selected: boolean; onSelect?: (id: string) => void; onMove?: (id: string, point: Point) => void; onDragStart?: () => void }) {
+  const ref=useRef<L.Marker>(null);
+  const icon=useMemo(() => L.divIcon({ className:'vertex-marker',html:`<span>${vertex.label}</span>`,iconSize:[30,30],iconAnchor:[15,15] }),[vertex.label]);
+  useEffect(() => { const element=ref.current?.getElement();if(element){element.classList.toggle('selected',selected);element.title=`Punto ${vertex.label}`;element.setAttribute('aria-label',`Punto ${vertex.label}`);} },[vertex.label,icon,selected]);
+  return <Marker ref={ref} position={vertex.point} draggable={!!onMove} bubblingMouseEvents={false} icon={icon} title={`Punto ${vertex.label}`} eventHandlers={{ click:event=>{L.DomEvent.stopPropagation(event.originalEvent);onSelect?.(vertex.id);},dragstart:()=>{onSelect?.(vertex.id);onDragStart?.();},drag:event=>{const p=(event.target as L.Marker).getLatLng();onMove?.(vertex.id,[p.lat,p.lng]);} }}><Tooltip>Punto {vertex.label} · arrastra para mover</Tooltip></Marker>;
+}
+
+export function CattleMap({ animals = [], geofences = [], gateways = [], history = [], collars = [], onAnimal, drawPoints = [], drawHoles = [], onPoint, height = 'main', externalTiles = true, focusPoints = [], fitRequest = 0, drawVertices = [], selectedVertex, onVertexSelect, onVertexMove, onVertexDragStart }: {
   collars?: CollarLocation[]; animals?: Animal[]; geofences?: Geofence[]; gateways?: Gateway[]; history?: Telemetry[]; onAnimal?: (animal: Animal) => void;
   drawPoints?: Point[]; drawHoles?: Point[][]; onPoint?: (point: Point) => void; height?: 'main' | 'small' | 'editor'; externalTiles?: boolean;
   focusPoints?: Point[]; fitRequest?: number;
+  drawVertices?: { id: string; point: Point; label: number }[]; selectedVertex?: string | null;
+  onVertexSelect?: (id: string) => void; onVertexMove?: (id: string, point: Point) => void; onVertexDragStart?: () => void;
 }) {
   const [external, setExternal] = useState(() => savedBase(externalTiles));
   const [tileError, setTileError] = useState(false); const [tileBusy, setTileBusy] = useState(false); const [tileAttempt, setTileAttempt] = useState(0);
@@ -112,11 +121,12 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
       <OfflineGrid />
       {external && <TileLayer key={tileAttempt} url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" zIndex={1} maxNativeZoom={19} maxZoom={20} referrerPolicy="strict-origin-when-cross-origin" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' eventHandlers={{ loading: () => setTileBusy(true), load: () => setTileBusy(false), tileerror: () => setTileError(true) }} />}
       <MapSize /><Fit points={initialPoints} requestedPoints={requestedPoints} request={fitRequest} drawing={!!onPoint} /><Drawing onPoint={onPoint} />
+      {drawVertices.map(v => <VertexMarker key={v.id} vertex={v} selected={selectedVertex===v.id} onSelect={onVertexSelect} onMove={onVertexMove} onDragStart={onVertexDragStart} />)}
       {geofences.map(fence => <MapPolygon key={`${fence.id}-${fence.version}`} positions={fence.geometry.coordinates.map(r => r.map(c => [c[1], c[0]] as Point))} pathOptions={{ color: fence.active ? '#55937a' : '#8e9e92', weight: 2, fillColor: '#9dc4a0', fillOpacity: fence.active ? .16 : .07, dashArray: fence.active ? undefined : '6 4' }}><Tooltip sticky>{fence.name} · v{fence.version}{!fence.active && ' · histórica'}</Tooltip></MapPolygon>)}
       {gateways.filter(g => g.latitude != null && g.longitude != null).map(g => <CircleMarker key={`gateway-${g.id}`} center={[g.latitude!, g.longitude!]} radius={10} pathOptions={{ color: '#fff', weight: 2, fillColor: '#406aaa', fillOpacity: .95 }}><Tooltip>Gateway · {g.name}</Tooltip><Popup><div className="map-popup"><strong>Gateway · {g.name}</strong><span>{g.gateway_eui}</span><span>{g.status ?? 'Sin estado'}</span></div></Popup></CircleMarker>)}
       {tracks.map((track, i) => <Polyline key={i} positions={track} pathOptions={{ color: '#276e68', weight: 3, opacity: .85 }} />)}
       {fixes.length > 0 && <><CircleMarker center={[fixes[0].latitude, fixes[0].longitude]} radius={5} pathOptions={{ color: '#fff', fillColor: '#276e68', fillOpacity: 1 }}><Tooltip>Inicio · {date(fixes[0].observed_at)}</Tooltip></CircleMarker><CircleMarker center={[fixes[fixes.length - 1].latitude, fixes[fixes.length - 1].longitude]} radius={5} pathOptions={{ color: '#fff', fillColor: '#c68a3c', fillOpacity: 1 }}><Tooltip>Fin · {date(fixes[fixes.length - 1].observed_at)}</Tooltip></CircleMarker></>}
-      {collars.map(c => <CircleMarker key={`collar-${c.hardware_id}`} center={[c.latitude, c.longitude]} radius={9} pathOptions={{ color: '#fff', weight: 3, fillColor: c.stale ? '#77887c' : '#276e68', fillOpacity: .9, dashArray: c.stale ? '3 2' : undefined }}><Tooltip>{c.hardware_id} · {c.stale ? 'Última posición histórica' : 'Posición reciente'}</Tooltip><Popup><div className="map-popup"><strong>Collar {c.hardware_id}</strong><span>{date(c.observed_at)}</span><span>{c.latitude.toFixed(6)}, {c.longitude.toFixed(6)}</span><span>{c.stale ? 'Posición histórica; no indica ubicación actual.' : 'Última posición válida recibida.'}</span></div></Popup></CircleMarker>)}
+      {collars.map(c => <Marker key={`collar-${c.hardware_id}`} position={[c.latitude, c.longitude]} title={`Collar ${c.hardware_id} · ${c.stale ? 'Última posición histórica' : 'Posición reciente'}`} icon={L.divIcon({className:`collar-location-marker ${c.stale ? 'historical' : 'recent'}`,html:'<span aria-hidden="true">●</span>',iconSize:[26,26],iconAnchor:[13,13]})}><Tooltip>{c.hardware_id} · {c.stale ? 'Última posición histórica' : 'Posición reciente'}</Tooltip><Popup><div className="map-popup"><strong>Collar {c.hardware_id}</strong><span>{date(c.observed_at)}</span><span>{c.latitude.toFixed(6)}, {c.longitude.toFixed(6)}</span><span>{c.stale ? 'Posición histórica; no indica ubicación actual.' : 'Última posición válida recibida.'}</span></div></Popup></Marker>)}
       {positioned.map(animal => {
         const t = animal.last_position!; const stale = animal.position_status !== 'fresh';
         return <CircleMarker key={animal.id} center={[t.latitude!, t.longitude!]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: stale ? '#77887c' : statusColors[animal.status], fillOpacity: stale ? .65 : 1, dashArray: stale ? '3 2' : undefined }}>
@@ -126,7 +136,7 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
       })}
       {drawPoints.length >= 3 && <MapPolygon positions={[drawPoints, ...drawHoles]} pathOptions={{ color: '#236b52', fillColor: '#68b28e', fillOpacity: .25, weight: 2, dashArray: '5 4' }} />}
       {drawPoints.length === 2 && <Polyline positions={drawPoints} pathOptions={{ color: '#236b52', weight: 2, dashArray: '5 4' }} />}
-      {drawPoints.map((p, i) => <CircleMarker key={i} center={p} radius={5} pathOptions={{ color: '#fff', fillColor: '#236b52', fillOpacity: 1, weight: 2 }}><Tooltip permanent direction="top">{i + 1}</Tooltip></CircleMarker>)}
+      {!drawVertices.length && drawPoints.map((p, i) => <CircleMarker key={i} center={p} radius={5} pathOptions={{ color: '#fff', fillColor: '#236b52', fillOpacity: 1, weight: 2 }}><Tooltip permanent direction="top">{i + 1}</Tooltip></CircleMarker>)}
       <div className="map-controls leaflet-control"><Recenter points={drawPoints.length ? drawPoints : initialPoints} /></div>
     </MapContainer>
     <div className="map-caption"><span><span className={`connection-dot ${external && !tileError ? 'green' : ''}`} />{external ? 'OpenStreetMap · requiere Internet' : 'Cuadrícula local · disponible sin Internet'}</span><button type="button" onClick={() => setLegendOpen(!legendOpen)} className="text-button">{legendOpen ? 'Ocultar leyenda' : 'Leyenda'}</button></div>

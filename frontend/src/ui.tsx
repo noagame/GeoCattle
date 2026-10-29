@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useId, type ReactNode } from 'react';
 import { AlertCircle, Check, ChevronRight, LoaderCircle, X } from 'lucide-react';
 import type { AnimalStatus } from './types';
 
@@ -22,11 +22,11 @@ export function Panel({ children, className = '' }: { children: ReactNode; class
 export function PageTitle({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description?: string; actions?: ReactNode }) { return <div className="page-title"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1>{description && <p>{description}</p>}</div>{actions && <div className="page-actions">{actions}</div>}</div>; }
 export function PanelTitle({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) { return <div className="panel-heading"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>{action}</div>; }
 export function Modal({ title, children, onClose, wide = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean }) {
-  const ref = useRef<HTMLDialogElement>(null);
+  const ref = useRef<HTMLDialogElement>(null); const titleId = useId();
   useEffect(() => { const dialog = ref.current; dialog?.showModal(); return () => dialog?.close(); }, []);
-  return <dialog className={`modal ${wide ? 'modal-wide' : ''}`} ref={ref} onCancel={onClose} aria-labelledby="modal-title" onClick={event => { if (event.target === event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose(); } }}><div className="modal-heading"><h2 id="modal-title">{title}</h2><button className="icon-button" aria-label="Cerrar" onClick={onClose}><X size={20} /></button></div>{children}</dialog>;
+  return <dialog className={`modal ${wide ? 'modal-wide' : ''}`} ref={ref} onCancel={event => { event.preventDefault(); onClose(); }} aria-labelledby={titleId} onClick={event => { if (event.target === event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose(); } }}><div className="modal-heading"><h2 id={titleId}>{title}</h2><button className="icon-button" aria-label="Cerrar" onClick={onClose}><X size={20} /></button></div>{children}</dialog>;
 }
-export function Submit({ busy, children = 'Guardar cambios' }: { busy: boolean; children?: ReactNode }) { return <button type="submit" className="button primary" disabled={busy}>{busy ? <LoaderCircle size={17} className="spin" /> : <Check size={17} />}{busy ? 'Guardando…' : children}</button>; }
+export function Submit({ busy, disabled = false, children = 'Guardar cambios' }: { busy: boolean; disabled?: boolean; children?: ReactNode }) { return <button type="submit" className="button primary" disabled={busy || disabled}>{busy ? <LoaderCircle size={17} className="spin" /> : <Check size={17} />}{busy ? 'Guardando…' : children}</button>; }
 export function Detail({ label, value }: { label: string; value: ReactNode }) { return <div className="detail"><dt>{label}</dt><dd>{value}</dd></div>; }
 export function Forward({ children, onClick }: { children: ReactNode; onClick: () => void }) { return <button className="text-button" onClick={onClick}>{children}<ChevronRight size={16} /></button>; }
 export function pretty(value: unknown): string { return typeof value === 'string' ? value : JSON.stringify(value, null, 2) ?? '—'; }

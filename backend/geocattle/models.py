@@ -149,6 +149,7 @@ class Assignment(Base, IdMixin):
     reason: Mapped[str | None] = mapped_column(Text)
 class Geofence(Base, IdMixin):
     __tablename__ = "geofences"
+    geofence_key: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4)
     farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
     sector_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sectors.id"))
     name: Mapped[str] = mapped_column(Text)
@@ -158,6 +159,12 @@ class Geofence(Base, IdMixin):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+class GeofenceSector(Base):
+    __tablename__ = "geofence_sectors"
+    geofence_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("geofences.id"), primary_key=True)
+    sector_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sectors.id"), primary_key=True)
+    farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
+
 class PastureAssignment(Base, IdMixin):
     __tablename__ = "pasture_assignments"
     farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
@@ -197,6 +204,7 @@ class AnimalState(Base):
     geofence_status: Mapped[str] = mapped_column(String, default="unknown")
 class Event(Base, IdMixin):
     __tablename__ = "events"
+    last_position_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("telemetry.id"))
     farm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("farms.id"))
     animal_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("animals.id"))
     device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))

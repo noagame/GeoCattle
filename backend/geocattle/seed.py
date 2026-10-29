@@ -32,7 +32,7 @@ def main():
             sector=Sector(id=uuid4(),farm_id=farm.id,name=name);db.add(sector);db.flush()
             geometry={"type":"Polygon","coordinates":[[[west,south],[west+.010,south],[west+.010,south+.010],[west,south+.010],[west,south]]]}
             fence=Geofence(id=uuid4(),farm_id=farm.id,sector_id=sector.id,name=name+" · Simulación",version=1,geometry=func.ST_SetSRID(func.ST_GeomFromGeoJSON(json.dumps(geometry)),4326),active=True,created_at=since)
-            db.add(fence);db.flush();sectors.append(sector);fences.append((fence,west,south))
+            db.add(fence);db.flush();db.add(GeofenceSector(geofence_id=fence.id,sector_id=sector.id,farm_id=farm.id));sectors.append(sector);fences.append((fence,west,south))
         animals=[]
         for i in range(70):
             ix=i%3;fence,west,south=fences[ix]

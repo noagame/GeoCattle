@@ -1,0 +1,32 @@
+# GeoCattle: revision compartida entre los dos colaboradores.
+# Estos responsables de revision no restringen permisos de edicion.
+# El responsable principal de cada area se describe en docs/DESARROLLO_COLABORATIVO.md.
+# Ambos figuran para que el otro integrante pueda revisar el PR de su autor.
+* @BorBP @noagame
+
+# Aplicacion: frontend, API y reglas de negocio.
+/frontend/ @noagame @BorBP
+/backend/ @noagame @BorBP
+
+# Captura fisica, protocolos y seleccion del receptor.
+/adapters/ @BorBP @noagame
+/scripts/start_capture.py @BorBP @noagame
+/scripts/export_usb_day.py @BorBP @noagame
+/Iniciar-Captura*.cmd @BorBP @noagame
+/Iniciar-Captura*.ps1 @BorBP @noagame
+/Pausar-Captura*.ps1 @BorBP @noagame
+
+# Contratos, persistencia, despliegue y pruebas: coordinacion entre ambos.
+/backend/geocattle/schemas.py @BorBP @noagame
+/backend/geocattle/main.py @BorBP @noagame
+/backend/geocattle/hardware_api.py @BorBP @noagame
+/frontend/src/HardwarePage.tsx @BorBP @noagame
+/frontend/src/TelemetryView.tsx @BorBP @noagame
+/database/ @BorBP @noagame
+/infrastructure/ @BorBP @noagame
+/scripts/ @BorBP @noagame
+/compose*.yaml @BorBP @noagame
+/qa/ @BorBP @noagame
+/docs/ @BorBP @noagame
+/.github/ @BorBP @noagame
+/CONTRIBUTING.md @BorBP @noagame

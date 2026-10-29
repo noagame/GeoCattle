@@ -6,6 +6,7 @@ import type { Animal, Geofence, Telemetry } from './types';
 import { age, date } from './api';
 import { Badge } from './ui';
 import type { Gateway } from './v3types';
+import { gatewayStatus, hasGatewayPosition } from './gatewayCoordinates';
 
 export type CollarLocation = { hardware_id: string; latitude: number; longitude: number; observed_at: string; stale: boolean };
 export type Point = [number, number]; // Leaflet [latitude, longitude]; GeoJSON uses the reverse order.
@@ -77,7 +78,19 @@ function VertexMarker({ vertex, selected, onSelect, onMove, onDragStart }: { ver
   return <Marker ref={ref} position={vertex.point} draggable={!!onMove} bubblingMouseEvents={false} icon={icon} title={`Punto ${vertex.label}`} eventHandlers={{ click:event=>{L.DomEvent.stopPropagation(event.originalEvent);onSelect?.(vertex.id);},dragstart:()=>{onSelect?.(vertex.id);onDragStart?.();},drag:event=>{const p=(event.target as L.Marker).getLatLng();onMove?.(vertex.id,[p.lat,p.lng]);} }}><Tooltip>Punto {vertex.label} · arrastra para mover</Tooltip></Marker>;
 }
 
-export function CattleMap({ animals = [], geofences = [], gateways = [], history = [], collars = [], onAnimal, drawPoints = [], drawHoles = [], onPoint, height = 'main', externalTiles = true, focusPoints = [], fitRequest = 0, drawVertices = [], selectedVertex, onVertexSelect, onVertexMove, onVertexDragStart }: {
+function GatewayMarker({ gateway, onMove, onDetail, selected=false, draft=false }: { gateway: Gateway; onMove?: (point: Point) => void; onDetail?: (gateway: Gateway) => void; selected?: boolean; draft?: boolean }) {
+  const ref=useRef<L.Marker>(null);
+  const icon=useMemo(()=>L.divIcon({className:`gateway-map-marker ${gateway.archived_at?'archived':''}`,html:'<span aria-hidden="true">G</span>',iconSize:[30,30],iconAnchor:[15,15]}),[gateway.archived_at]);
+  const title=draft?'Ubicación del gateway en edición':`Gateway ${gateway.name} · ${gateway.gateway_eui}`;
+  useEffect(()=>{const el=ref.current?.getElement();if(el){el.title=title;el.setAttribute('aria-label',title);el.classList.toggle('selected',selected||draft);}},[icon,title,selected,draft]);
+  return <Marker ref={ref} position={[gateway.latitude!,gateway.longitude!]} icon={icon} title={title} draggable={!!onMove} bubblingMouseEvents={false} eventHandlers={{drag:event=>{const p=(event.target as L.Marker).getLatLng();onMove?.([p.lat,p.lng]);},click:event=>L.DomEvent.stopPropagation(event.originalEvent)}}>
+    <Tooltip permanent direction="top">{gateway.gateway_eui||'Nuevo gateway'}{gateway.archived_at?' · Archivado':''}</Tooltip>
+    {!draft&&<Popup><div className="map-popup"><strong>Gateway · {gateway.name}</strong><span>EUI {gateway.gateway_eui}</span><span>{gateway.latitude!.toFixed(6)}, {gateway.longitude!.toFixed(6)}</span><span>{gateway.archived_at?'Archivado · ':''}{gatewayStatus[gateway.status]??gateway.status}</span><span>Última recepción: {date(gateway.last_seen_at)}</span>{onDetail&&<button type="button" onClick={()=>onDetail(gateway)}>Ver detalle e historial</button>}</div></Popup>}
+  </Marker>;
+}
+
+export function CattleMap({ animals = [], geofences = [], gateways = [], history = [], collars = [], onAnimal, drawPoints = [], drawHoles = [], onPoint, height = 'main', externalTiles = true, focusPoints = [], fitRequest = 0, drawVertices = [], selectedVertex, onVertexSelect, onVertexMove, onVertexDragStart, gatewayDraft, onGatewayMove, onGateway, selectedGatewayId }: {
+  gatewayDraft?: Gateway; onGatewayMove?: (point: Point) => void; onGateway?: (gateway: Gateway) => void; selectedGatewayId?: string | null;
   collars?: CollarLocation[]; animals?: Animal[]; geofences?: Geofence[]; gateways?: Gateway[]; history?: Telemetry[]; onAnimal?: (animal: Animal) => void;
   drawPoints?: Point[]; drawHoles?: Point[][]; onPoint?: (point: Point) => void; height?: 'main' | 'small' | 'editor'; externalTiles?: boolean;
   focusPoints?: Point[]; fitRequest?: number;
@@ -96,11 +109,12 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
     const points: Point[] = [];
     geofences.forEach(f => f.geometry.coordinates.forEach(r => r.forEach(c => points.push([c[1], c[0]]))));
     positioned.forEach(a => { if (validPosition(a.last_position)) points.push([a.last_position.latitude, a.last_position.longitude]); });
-    gateways.filter(g => g.latitude != null && g.longitude != null).forEach(g => points.push([g.latitude!, g.longitude!]));
+    gateways.filter(hasGatewayPosition).forEach(g => points.push([g.latitude!, g.longitude!]));
+    if (gatewayDraft && hasGatewayPosition(gatewayDraft)) points.push([gatewayDraft.latitude!,gatewayDraft.longitude!]);
     collars.forEach(c => points.push([c.latitude, c.longitude]));
     history.filter(validPosition).forEach(t => points.push([t.latitude, t.longitude]));
     return points;
-  }, [geofences, animals, gateways, history, collars]);
+  }, [geofences, animals, gateways, history, collars, gatewayDraft]);
   const orderedHistory = useMemo(() => [...history].sort((a, b) => Date.parse(a.observed_at) - Date.parse(b.observed_at)), [history]);
   const fixes = orderedHistory.filter(validPosition);
   const tracks = useMemo(() => {
@@ -123,7 +137,9 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
       <MapSize /><Fit points={initialPoints} requestedPoints={requestedPoints} request={fitRequest} drawing={!!onPoint} /><Drawing onPoint={onPoint} />
       {drawVertices.map(v => <VertexMarker key={v.id} vertex={v} selected={selectedVertex===v.id} onSelect={onVertexSelect} onMove={onVertexMove} onDragStart={onVertexDragStart} />)}
       {geofences.map(fence => <MapPolygon key={`${fence.id}-${fence.version}`} positions={fence.geometry.coordinates.map(r => r.map(c => [c[1], c[0]] as Point))} pathOptions={{ color: fence.active ? '#55937a' : '#8e9e92', weight: 2, fillColor: '#9dc4a0', fillOpacity: fence.active ? .16 : .07, dashArray: fence.active ? undefined : '6 4' }}><Tooltip sticky>{fence.name} · v{fence.version}{!fence.active && ' · histórica'}</Tooltip></MapPolygon>)}
-      {gateways.filter(g => g.latitude != null && g.longitude != null).map(g => <CircleMarker key={`gateway-${g.id}`} center={[g.latitude!, g.longitude!]} radius={10} pathOptions={{ color: '#fff', weight: 2, fillColor: '#406aaa', fillOpacity: .95 }}><Tooltip>Gateway · {g.name}</Tooltip><Popup><div className="map-popup"><strong>Gateway · {g.name}</strong><span>{g.gateway_eui}</span><span>{g.status ?? 'Sin estado'}</span></div></Popup></CircleMarker>)}
+      {gateways.filter(hasGatewayPosition).map(g => <GatewayMarker key={g.id} gateway={g} onDetail={onGateway} selected={selectedGatewayId===g.id} />)}
+      {gatewayDraft && hasGatewayPosition(gatewayDraft) && <GatewayMarker gateway={gatewayDraft} onMove={onGatewayMove} draft />}
+
       {tracks.map((track, i) => <Polyline key={i} positions={track} pathOptions={{ color: '#276e68', weight: 3, opacity: .85 }} />)}
       {fixes.length > 0 && <><CircleMarker center={[fixes[0].latitude, fixes[0].longitude]} radius={5} pathOptions={{ color: '#fff', fillColor: '#276e68', fillOpacity: 1 }}><Tooltip>Inicio · {date(fixes[0].observed_at)}</Tooltip></CircleMarker><CircleMarker center={[fixes[fixes.length - 1].latitude, fixes[fixes.length - 1].longitude]} radius={5} pathOptions={{ color: '#fff', fillColor: '#c68a3c', fillOpacity: 1 }}><Tooltip>Fin · {date(fixes[fixes.length - 1].observed_at)}</Tooltip></CircleMarker></>}
       {collars.map(c => <Marker key={`collar-${c.hardware_id}`} position={[c.latitude, c.longitude]} title={`Collar ${c.hardware_id} · ${c.stale ? 'Última posición histórica' : 'Posición reciente'}`} icon={L.divIcon({className:`collar-location-marker ${c.stale ? 'historical' : 'recent'}`,html:'<span aria-hidden="true">●</span>',iconSize:[26,26],iconAnchor:[13,13]})}><Tooltip>{c.hardware_id} · {c.stale ? 'Última posición histórica' : 'Posición reciente'}</Tooltip><Popup><div className="map-popup"><strong>Collar {c.hardware_id}</strong><span>{date(c.observed_at)}</span><span>{c.latitude.toFixed(6)}, {c.longitude.toFixed(6)}</span><span>{c.stale ? 'Posición histórica; no indica ubicación actual.' : 'Última posición válida recibida.'}</span></div></Popup></Marker>)}

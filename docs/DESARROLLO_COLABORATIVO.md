@@ -90,6 +90,7 @@ Los nombres estables de los checks son:
 - `geocattle-frontend`
 - `geocattle-captura-contratos`
 - `geocattle-reglas-dominio`
+- `geocattle-backend-postgis`
 
 Los archivos del repositorio definen CODEOWNERS, la plantilla y el workflow. **Las restricciones obligatorias de merge se activan por separado en la configuracion de reglas/proteccion de GitHub** y requieren permisos suficientes; no se deben dar por activadas solo por existir estos archivos. CODEOWNERS debe estar en la rama destino para que GitHub lo use en su revision.
 
@@ -99,14 +100,15 @@ Referencias: [CODEOWNERS](https://docs.github.com/en/repositories/managing-your-
 
 ## Verificaciones y limites
 
-El workflow se ejecuta en PR y en las ramas de desarrollo e integracion indicadas, sin filtrar por carpeta. Un cambio pequeno de interfaz tambien puede afectar al contrato, por lo que se conservan los tres checks.
+El workflow se ejecuta en PR y en las ramas de desarrollo e integracion indicadas, sin filtrar por carpeta. Un cambio pequeno de interfaz tambien puede afectar al contrato, por lo que se ejecutan los cuatro checks.
 
 - Frontend: `npm ci`, pruebas de geocercas declaradas en `npm test` y compilacion de React/TypeScript.
 - Captura y contrato: suites de formatos, cola, identidad USB, configuracion de arranque y portabilidad, con fixtures y servicios HTTP temporales.
 - Extensiones de captura: si la rama incluye pruebas nuevas de lotes, perfiles o alternancia, se ejecutan tambien; un borrador que falla debe corregirse antes de integrarlo.
 - Dominio: `backend/tests/test_rules.py`, con reglas, validaciones y cola temporal; no requiere PostgreSQL real.
+- Backend y PostGIS: servicio temporal PostgreSQL 16/PostGIS 3.4 por ejecucion, migracion desde cero, segunda ejecucion de migraciones y toda la suite `backend/tests`. Incluye CRUD de gateways, permisos, aislamiento entre predios, archivo e historial. Usa exclusivamente credenciales descartables de CI, sin secretos ni base operativa.
 
-La CI basica no abre puertos COM ni usa la base operativa. Tampoco valida cobertura LoRa, autonomia, carga real, nuevas modalidades de receptor que sigan en borrador ni todas las funciones que requieren PostGIS. Los cambios de esquema, permisos y endpoints deben anadir sus pruebas de integracion en una base PostgreSQL/PostGIS aislada y consignar el resultado en el PR.
+La CI no abre puertos COM ni usa la base operativa. Tampoco valida cobertura LoRa, autonomia, carga real ni nuevas modalidades de receptor que sigan en borrador. Los cambios de esquema, permisos y endpoints deben ampliar las pruebas de integracion en la base PostgreSQL/PostGIS temporal y consignar el resultado en el PR. Las nuevas restricciones de merge, incluido exigir `geocattle-backend-postgis`, deben configurarse por separado en GitHub; declarar el job no activa una proteccion obligatoria.
 
 Separar ramas evita mezclar cambios sin revision, pero no garantiza por si mismo el rendimiento. Si se modifica el volumen de lecturas, consultas o renderizado de mapas, el PR debe indicar la comprobacion pertinente y sus limites.
 

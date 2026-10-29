@@ -83,5 +83,9 @@ los checks de software no sustituyen pruebas con placas reales.
   Se verificó el historial conservado y la exclusión del mapa general.
 
 Los respaldos, cuentas QA, registros de ejecución y capturas quedan fuera de Git.
+El workflow ejecuta también `geocattle-backend-postgis` en cada subida y PR:
+migra una base PostGIS temporal desde cero, repite las migraciones y ejecuta
+`python -m pytest backend/tests -q`. Así, las pruebas de gateways y permisos
+forman parte de la CI además de la verificación local.
 La integración del PR y la promoción `develop` → `main` requieren revisión y
 aprobación explícita.

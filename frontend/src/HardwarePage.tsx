@@ -11,7 +11,7 @@ type Samples = { items: Sample[]; total: number; timezone: string; devices: { ha
 type Snapshot = { hardware_id: string; name: string; enabled: boolean; latest: Sample | null; last_position: Sample | null; age_seconds: number | null; position_age_seconds: number | null; freshness_seconds: number; communication_status: 'unknown' | 'recent' | 'stale' };
 type Overview = { items: Snapshot[]; server_time: string };
 type Daily = { items: { day: string; hardware_id: string; samples: number; positions: number; temperatures: number; moving_samples: number; rest_samples: number; temperature_min: number | null; temperature_max: number | null; first_at: string; last_at: string }[] };
-type Receiver = { available: boolean; connected: boolean; port?: string; error?: string; captured?: number; pending?: number; delivered?: number; last_capture?: string; updated_at?: string };
+type Receiver = { available: boolean; connected: boolean; port?: string; error?: string; captured?: number; pending?: number; delivered?: number; last_capture?: string; updated_at?: string; receiver_mode?: 'direct' | 'gateways'; bus_version?: number };
 
 function today() {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
@@ -54,6 +54,7 @@ export function HardwarePage({ farmId }: { farmId: string }) {
   const daily = useData<Daily>(`/hardware/daily?hardware_id=${encodeURIComponent(collar)}&days=30`, 15000, farmId);
   const overview = useData<Overview>('/hardware/overview', 5000, farmId);
   const receiver = useData<Receiver>('/hardware/receiver', 5000, farmId);
+  const receiverMode = receiver.data?.receiver_mode === 'gateways' ? 'Por gateways' : receiver.data?.receiver_mode === 'direct' ? 'Directo' : 'Sin informar';
   const rows = samples.data?.items ?? [];
   const devices = overview.data?.items.filter(d => !collar || d.hardware_id === collar) ?? [];
   const positions: CollarLocation[] = devices.flatMap(d => {
@@ -67,7 +68,7 @@ export function HardwarePage({ farmId }: { farmId: string }) {
     <PageTitle eyebrow="TELEMETRÍA DEL PROTOTIPO" title="Recepción de collares" description="Sensores, posición y batería recibidos por LoRa y guardados en GeoCattle. Actualización cada cinco segundos." actions={<button className="button secondary" onClick={refresh}><RefreshCw size={16} />Actualizar</button>} />
     <Panel><PanelTitle title="Receptor USB" subtitle={receiver.data?.available ? `${receiver.data.port ?? 'USB'} · ${receiver.data.connected ? 'Puerto abierto' : 'Desconectado'}` : 'Sin estado reciente del receptor'} action={<Badge status={receiver.data?.available && receiver.data.connected ? 'normal' : 'unknown'}>{receiver.data?.available && receiver.data.connected ? 'Captura activa' : 'Captura sin confirmar'}</Badge>} />
       <ErrorNotice error={receiver.error} retry={receiver.reload} />
-      <div className="hardware-receiver"><span><Radio size={18} />Capturadas <strong>{receiver.data?.captured ?? '—'}</strong></span><span>Guardadas <strong>{receiver.data?.delivered ?? '—'}</strong></span><span>Pendientes <strong>{receiver.data?.pending ?? '—'}</strong></span><span>Última captura <strong>{date(receiver.data?.last_capture)}</strong></span></div>
+      <div className="hardware-receiver"><span>Método seleccionado <strong>{receiver.data?.available ? receiverMode : 'Sin confirmar'}</strong></span>{receiver.data?.available && receiver.data.receiver_mode === 'gateways' && receiver.data.bus_version === 1 && <span>Lotes USB <strong>V1</strong></span>}<span><Radio size={18} />Capturadas <strong>{receiver.data?.captured ?? '—'}</strong></span><span>Guardadas <strong>{receiver.data?.delivered ?? '—'}</strong></span><span>Pendientes <strong>{receiver.data?.pending ?? '—'}</strong></span><span>Última captura <strong>{date(receiver.data?.last_capture)}</strong></span></div>
       {receiver.data?.error && <p className="sensor-caption" role="status">{receiver.data.error}</p>}
       {!receiver.data?.available && <p className="sensor-caption">El último estado del puente está vencido. Los registros de abajo siguen disponibles, pero no confirman recepción actual.</p>}
     </Panel>

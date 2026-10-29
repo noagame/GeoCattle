@@ -60,9 +60,25 @@ def api_ready(base='http://127.0.0.1:8084', expected='development'):
         return False
 
 
+def ask_receiver_mode():
+    print('Selecciona el metodo ANTES de buscar el puerto USB:', flush=True)
+    print('  1. Directo: T3 original / collar -> T3', flush=True)
+    print('  2. Gateways: T3 base / collar -> XIAO -> T3', flush=True)
+    while True:
+        try:
+            option = input('Opcion [1 o 2]: ').strip()
+        except EOFError:
+            raise SystemExit('No se eligio metodo. Usa --receiver-mode direct o --receiver-mode gateways.')
+        if option in ('1', '2'):
+            return 'direct' if option == '1' else 'gateways'
+        print('Escribe 1 o 2.', flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', default='auto')
+    parser.add_argument('--receiver-mode', choices=('direct', 'gateways'))
+    parser.add_argument('--select-mode', action='store_true', help='Elegir el metodo antes de enumerar o abrir USB')
     parser.add_argument('--backend', choices=('auto', 'native', 'docker'), default='auto')
     parser.add_argument('--env-file', type=Path)
     parser.add_argument('--directory', type=Path)
@@ -70,11 +86,20 @@ def main():
     args = parser.parse_args()
     os.chdir(ROOT)
     context = capture_context(args)
-    print('GEOCATTLE - CAPTURA POR IDENTIDAD USB', flush=True)
+    print('GEOCATTLE - CAPTURA POR METODO E IDENTIDAD USB', flush=True)
+    if args.select_mode and args.receiver_mode:
+        parser.error('Utiliza --select-mode o --receiver-mode, no ambos.')
+    selected_mode = ask_receiver_mode() if args.select_mode else args.receiver_mode
     current = recent_status(context['directory'])
     paused = current and str(current.get('error') or '').startswith(('Captura pausada', 'Captura detenida'))
     if current and current.get('capture_version') != 2 and not paused:
         raise SystemExit('El lector anterior sigue activo con COM fijo. Pausalo antes de abrir el nuevo iniciador.')
+    active = current and current.get('state') != 'stopped' and not paused
+    if selected_mode and active and current.get('receiver_profiles_version') != 1:
+        raise SystemExit('El capturador anterior no admite cambiar de metodo. Pausa solo la captura y abre de nuevo este iniciador; los datos se conservan.')
+    from adapters.receiver_profiles import preferred_mode, select_mode
+    mode = select_mode(context['directory'], selected_mode) if selected_mode else preferred_mode(context['directory'])
+    print('Metodo elegido: ' + ('Directo' if mode == 'direct' else 'Gateways') + '. El puerto se buscara por identidad USB.', flush=True)
     if not api_ready(context['base_url'], context['environment']):
         print('Iniciando servicios locales; datos conservados...', flush=True)
         if context['backend'] == 'native':
@@ -89,10 +114,14 @@ def main():
         else:
             raise SystemExit('La API no responde; las capturas existentes se conservan.')
     if current and current.get('capture_version') == 2 and current.get('state') != 'stopped' and not paused and args.port.lower() == 'auto':
-        print('La captura ya esta iniciada. Esperara la misma receptora si se desconecta.', flush=True)
+        if selected_mode:
+            print('Cambio solicitado al unico capturador activo: cerrara el receptor anterior y buscara la placa del metodo elegido.', flush=True)
+        else:
+            print('La captura ya esta iniciada. Esperara la misma receptora si se desconecta.', flush=True)
         return 0
     print('Cierra Monitor Serie y Plotter. Deja abierta esta ventana.', flush=True)
-    print('Primer inicio: conecta solo la receptora por USB de datos y enciende el emisor.', flush=True)
+    print('Conecta la T3 del metodo elegido por USB de datos y enciende el collar.', flush=True)
+    print('Si falta esa T3 se esperara su identidad, sin usar la otra ni los XIAO.', flush=True)
     print('Se recordara al recibir LoRa con RSSI/SNR, aunque despues cambie su puerto.', flush=True)
     print('Ctrl+C detiene la captura sin borrar datos. GeoCattle: ' + context['base_url'], flush=True)
     return subprocess.call([sys.executable, '-u', '-m', 'adapters.lora_usb', '--port', args.port,

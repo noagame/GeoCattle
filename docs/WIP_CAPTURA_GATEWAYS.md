@@ -16,3 +16,9 @@ Las 75 pruebas confirmadas durante el trabajo del 28 de octubre cubrían regresi
 ## Datos locales
 
 Los archivos `.runtime`, bases, colas, capturas, credenciales y respaldos se conservan fuera de Git. La separación de ramas no aplica migraciones a la base, no reprograma placas y no inicia servicios.
+
+## Resultado al separar las ramas el 29 de octubre
+
+La base comun incluye los cambios de Fabian y los controles de colaboracion. La interfaz de esta rama tambien compilo. Al ejecutar 103 pruebas de contrato, captura, portabilidad, perfiles y lotes, pasaron 97 y fallaron seis pruebas de `qa/test_lora_bus.py`, cuyas expectativas siguen siendo las anteriores a los perfiles por modalidad. Esta rama permanece en desarrollo y no debe integrarse como entrega terminada mientras esos controles no pasen.
+
+La reorganizacion no modifico los cuerpos de los adaptadores, iniciadores ni pruebas pendientes para ocultar esos resultados. Las correcciones de la integracion de hardware deben continuar en esta rama; `main`, `develop` y `dev/software` conservan la base estable sin ese trabajo pendiente.

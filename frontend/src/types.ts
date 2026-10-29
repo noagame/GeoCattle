@@ -26,13 +26,14 @@ export type Device = {
 };
 export type Sector = { id: string; name: string; land_use?: 'grazing' | 'available' | 'cropped' | 'restricted' | 'other'; description?: string | null; active?: boolean };
 export type Polygon = { type: 'Polygon'; coordinates: number[][][] };
-export type Geofence = { id: string; sector_id: string; name: string; version: number; active: boolean; geometry: Polygon; created_at: string };
+export type Geofence = { id: string; geofence_key: string; sector_ids: string[]; sector_id: string; name: string; version: number; active: boolean; geometry: Polygon; created_at: string };
 export type EventAction = { id?: string; action: string; note: string; at?: string; actor_id?: string; created_at?: string; performed_at?: string; username?: string; actor?: string; user_id?: string };
 export type CattleEvent = {
   id: string; animal_id: string; animal_name: string; diio: string; device_id: string;
   type: string; severity: string; condition: 'active' | 'resolved';
   attention: 'pending' | 'acknowledged' | 'in_review' | 'concluded';
   opened_at: string; resolved_at: string | null; detail: string | Record<string, unknown>; actions: EventAction[];
+  last_known_position?: { telemetry: Telemetry; age_at_detection_seconds: number; hardware_id: string } | null;
   telemetry?: Telemetry | null; evidence?: Telemetry | null; device_name?: string; geofence_name?: string; geofence_version?: number | null;
 };
 export type Dashboard = {

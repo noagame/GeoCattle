@@ -45,6 +45,15 @@ def condition(db,device,animal_id,event_type,active,severity="warning",telemetry
     if active is None: return current
     if active and current is None:
         current=Event(id=uuid4(),farm_id=device.farm_id,animal_id=animal_id,device_id=device.id,telemetry_id=telemetry.id if telemetry else None,geofence_id=geofence.id if geofence else None,type=event_type,severity=severity,condition="active",attention="pending",opened_at=at or utcnow(),detail=detail or {})
+        if event_type=="communication_timeout":
+            assignment=db.scalar(select(Assignment).where(Assignment.device_id==device.id,Assignment.animal_id==animal_id,at_time(Assignment,current.opened_at)))
+            if assignment:
+                current.last_position_id=db.scalar(select(Telemetry.id).where(
+                    Telemetry.farm_id==device.farm_id,Telemetry.device_id==device.id,
+                    Telemetry.animal_id==animal_id,Telemetry.assignment_id==assignment.id,
+                    Telemetry.gnss_valid.is_(True),Telemetry.latitude.is_not(None),Telemetry.longitude.is_not(None),
+                    Telemetry.observed_at>=assignment.valid_from,Telemetry.observed_at<=current.opened_at,
+                    Telemetry.received_at<=current.opened_at).order_by(Telemetry.observed_at.desc(),Telemetry.received_at.desc(),Telemetry.id.desc()).limit(1))
         db.add(current); db.flush()
         db.add(Notification(event_id=current.id,status="pending",channel="webhook"))
         append_audit(db,device.farm_id,None,"event",current.id,"opened",after={"type":event_type,"condition":"active"})

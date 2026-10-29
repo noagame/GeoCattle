@@ -1,5 +1,12 @@
 # GeoCattle
 
+## Correcciones locales — 29 de octubre de 2026
+
+Editor de geocercas con vértices seleccionables y arrastrables, edición sincronizada por coordenadas, deshacer y confirmaciones de borrado. Varias geocercas independientes por sector y varios sectores por geocerca, con versiones e historial conservados. Las alertas de desconexión muestran la última ubicación válida conocida al detectar el evento, sin sustituirla al reconectarse el collar. Se aclara el funcionamiento de la regla térmica y se mantiene la validación de campo como requisito de activación real.
+
+Detalles, contrato y límites: [correcciones de geocercas y alertas](docs/CORRECCIONES_GEOCERCAS_ALERTAS_2026-10-29.md). La migración `004_geofence_identity_event_position.sql` se aplica con el arranque habitual, después de respaldar la base.
+
+
 Aplicación de supervisión bovina con mapas, geocercas, telemetría de collares y gestión sanitaria por predio. Frontend **React/TypeScript/Leaflet**, backend **FastAPI** y base **PostgreSQL/PostGIS**.
 
 ## Actualización del 25 de octubre de 2026
@@ -7,6 +14,19 @@ Aplicación de supervisión bovina con mapas, geocercas, telemetría de collares
 Esta versión incorpora la recepción física USB/LoRa por identidad USB, la visualización de sensores, mejoras de mapas y asociaciones históricas, el registro de colaboradores mediante el dueño y la configuración de alertas por predio. Incluye además el arranque Docker para Windows/Linux y su verificación aislada.
 
 Consulta [resumen.md](resumen.md) para ver los cambios, las verificaciones y los límites de esta entrega.
+
+## Desarrollo separado por áreas
+
+El trabajo de los dos colaboradores se organiza en el mismo repositorio, conservando las carpetas y funcionalidades actuales:
+
+- `main`: versión estable publicada.
+- `develop`: integración y revisión de cambios compatibles.
+- `dev/software`: interfaz, API, mapas, geocercas, alertas y gestión; referencia de Fabián Del Villar (`noagame`).
+- `dev/hardware-captura`: recepción de collares, gateways y protocolos; referencia de Boris (`BorBP`).
+
+**Ambos pueden modificar software y otras áreas.** Las ramas separan tareas, no restringen la edición de archivos. Los contratos compartidos se revisan entre ambos antes de integrar por PR hacia `develop`; las entregas revisadas pasan después a `main`.
+
+Ver [CONTRIBUTING.md](CONTRIBUTING.md) y [Desarrollo colaborativo](docs/DESARROLLO_COLABORATIVO.md) para sincronizar sin reemplazar el trabajo del otro, conocer los controles automáticos y configurar las protecciones de GitHub. El trabajo de receptores que sigue pendiente queda identificado como desarrollo en curso en su rama; no se publica automáticamente como estable.
 
 ## Funcionalidades
 

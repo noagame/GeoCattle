@@ -98,3 +98,9 @@ Ver [revisión Docker y portabilidad](docs/REVISION_DOCKER_PORTABILIDAD.md) y [e
 - En la comprobación física posterior se recuperaron dos líneas rechazadas conservando su hora de recepción; se respaldó la cola SQLite antes del rescate y se verificó la deduplicación. La captura reanudada recibió nuevas lecturas y confirmó su persistencia mediante la API.
 - Los registros serie, datos recuperados, respaldos y credenciales permanecen privados en `.runtime/`; no se añaden al repositorio. Este cambio no modifica firmware ni requiere reiniciar la API.
 - Se incluye `Abrir-GeoCattle.cmd` para abrir la aplicación nativa preparada sin iniciar la captura USB.
+
+## Organización del desarrollo — 29 de octubre de 2026
+
+Se separan las áreas de trabajo mediante `dev/software`, `dev/hardware-captura` y `develop`, conservando `main` como versión estable y las carpetas existentes. Fabián (`noagame`) y Boris (`BorBP`) pueden modificar software y cualquier módulo necesario; los contratos compartidos se revisan entre ambos. La documentación y CODEOWNERS distinguen coordinación de área de permisos de edición.
+
+Se añaden guía de colaboración, plantilla de PR y tres controles de CI: frontend, captura/contratos y reglas de dominio. El trabajo de lotes y selección de receptores que estaba pendiente se conserva en la rama de hardware como desarrollo en curso, separado de la versión estable. No se modifica la base operativa ni se programan placas. Las restricciones obligatorias en GitHub necesitan activación con permisos de administración; los archivos de CI y CODEOWNERS no las habilitan por sí solos.

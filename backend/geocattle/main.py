@@ -67,7 +67,10 @@ def telemetry_json(t):
     return {k:getattr(t,k) for k in keys}
 def event_json(db,e):
     animal=db.get(Animal,e.animal_id) if e.animal_id else None
-    return {"id":e.id,"animal_id":e.animal_id,"animal_name":animal.name if animal else None,"diio":animal.diio if animal else None,"device_id":e.device_id,"device_name":db.get(Device,e.device_id).name,"telemetry_id":e.telemetry_id,"geofence_id":e.geofence_id,"telemetry":telemetry_json(db.get(Telemetry,e.telemetry_id)) if e.telemetry_id else None,"evidence":telemetry_json(db.get(Telemetry,e.telemetry_id)) if e.telemetry_id else None,"geofence_name":db.get(Geofence,e.geofence_id).name if e.geofence_id else None,"geofence_version":db.get(Geofence,e.geofence_id).version if e.geofence_id else None,"type":e.type,"severity":e.severity,"condition":e.condition,"attention":e.attention,"opened_at":e.opened_at,"resolved_at":e.resolved_at,"detail":e.detail,"actions":[{"id":a.id,"actor_id":a.actor_id,"action":a.action,"at":a.at,"note":a.note} for a in db.scalars(select(EventAction).where(EventAction.event_id==e.id).order_by(EventAction.at)).all()]}
+    position=db.get(Telemetry,e.last_position_id) if e.last_position_id else None
+    # Persisted reference: never replace historical evidence with today's state.
+    location={"telemetry":telemetry_json(position),"age_at_detection_seconds":max(0,(e.opened_at-position.observed_at).total_seconds()),"hardware_id":db.get(Device,e.device_id).hardware_id} if position and position.farm_id==e.farm_id and position.device_id==e.device_id and position.animal_id==e.animal_id and position.gnss_valid else None
+    return {"last_known_position":location,"id":e.id,"animal_id":e.animal_id,"animal_name":animal.name if animal else None,"diio":animal.diio if animal else None,"device_id":e.device_id,"device_name":db.get(Device,e.device_id).name,"telemetry_id":e.telemetry_id,"geofence_id":e.geofence_id,"telemetry":telemetry_json(db.get(Telemetry,e.telemetry_id)) if e.telemetry_id else None,"evidence":telemetry_json(db.get(Telemetry,e.telemetry_id)) if e.telemetry_id else None,"geofence_name":db.get(Geofence,e.geofence_id).name if e.geofence_id else None,"geofence_version":db.get(Geofence,e.geofence_id).version if e.geofence_id else None,"type":e.type,"severity":e.severity,"condition":e.condition,"attention":e.attention,"opened_at":e.opened_at,"resolved_at":e.resolved_at,"detail":e.detail,"actions":[{"id":a.id,"actor_id":a.actor_id,"action":a.action,"at":a.at,"note":a.note} for a in db.scalars(select(EventAction).where(EventAction.event_id==e.id).order_by(EventAction.at)).all()]}
 def device_json(db,d):
     assignment=db.scalar(select(Assignment).where(Assignment.device_id==d.id,at_time(Assignment,utcnow())))
     pending=db.scalar(select(DeviceConfig).where(DeviceConfig.device_id==d.id,DeviceConfig.status.in_(["requested","sent"])).order_by(DeviceConfig.version.desc()))
@@ -85,9 +88,12 @@ def animal_json(db,a):
     if device is None or not device.enabled or not a.enabled: communication="unknown"
     status="critical" if any(e.severity=="critical" for e in events) else "warning" if events else "unknown" if position!="fresh" or communication!="recent" or not t or not t.gnss_valid or not state or state.geofence_status=="unknown" else "normal"
     return {"id":a.id,"diio":a.diio,"name":a.name,"orientation":a.orientation,"version":a.version,"vital_status":a.status,"breed":a.breed,"color":a.color,"sex":a.sex,"birth_date":a.birth_date,"enabled":a.enabled,"sector_id":a.sector_id,"sector_name":sector.name if sector else None,"device_id":device.id if device else None,"device_name":device.name if device else None,"status":status,"position_status":position,"communication_status":communication,"geofence_status":state.geofence_status if state else "unknown","last_telemetry":telemetry_json(t),"last_position":telemetry_json(p),"position_age_seconds":max(0,(now-p.observed_at).total_seconds()) if p else None,"active_events":len(events)}
+def fence_sector_ids(db,g):
+    return sorted(set(db.scalars(select(GeofenceSector.sector_id).where(GeofenceSector.geofence_id==g.id)).all()) | {g.sector_id},key=str)
+
 def fence_json(db,g):
     geometry=db.scalar(select(func.ST_AsGeoJSON(Geofence.geometry)).where(Geofence.id==g.id))
-    return {"id":g.id,"sector_id":g.sector_id,"name":g.name,"version":g.version,"active":g.active,"geometry":json.loads(geometry),"created_at":g.created_at}
+    return {"id":g.id,"geofence_key":g.geofence_key,"sector_ids":fence_sector_ids(db,g),"sector_id":g.sector_id,"name":g.name,"version":g.version,"active":g.active,"geometry":json.loads(geometry),"created_at":g.created_at}
 def settings_json(r):return {k:getattr(r,k) for k in ["version","battery_low_mv","temperature_high_c","activity_low_threshold","activity_window_minutes","proximity_meters","temperature_enabled","activity_enabled","proximity_enabled"]}
 
 def valid_effective(t):
@@ -271,25 +277,39 @@ def fences(user=Depends(current_user),db=Depends(get_db, scope="function")):
     return {"items":[fence_json(db,g) for g in items],"total":len(items)}
 @api.post("/geofences",status_code=201)
 def create_fence(body:GeofenceIn,user=Depends(owner),db=Depends(get_db, scope="function")):
-    sector=accessible(db,Sector,body.sector_id,user,True)
-    if not sector.active:raise HTTPException(409,"Seleccione un sector activo")
+    ids=body.sector_ids or [body.sector_id]
+    selected={sid:accessible(db,Sector,sid,user,True) for sid in sorted(ids,key=str)}
+    if any(not sector.active for sector in selected.values()):raise HTTPException(409,"Seleccione sectores activos")
     if not body.confirm_impact:raise HTTPException(422,"Debe confirmar el impacto en asignaciones vigentes")
-    old=db.scalar(select(Geofence).where(Geofence.sector_id==body.sector_id,Geofence.active).with_for_update())
+    old=None
+    if body.geofence_key:
+        old=db.scalar(select(Geofence).where(Geofence.geofence_key==body.geofence_key,Geofence.active).with_for_update())
+        if old is None:raise HTTPException(409,"Geocerca inexistente o sin versión activa")
+        accessible(db,Geofence,old.id,user)
+    elif body.expected_version:
+        # Compatibility with old clients is safe only with an unambiguous fence.
+        candidates=db.scalars(select(Geofence).where(Geofence.sector_id==ids[0],Geofence.farm_id==user.farm_id,Geofence.active).with_for_update()).all()
+        if len(candidates)!=1:raise HTTPException(409,"Seleccione la identidad de la geocerca que desea editar")
+        old=candidates[0]
     if (old.version if old else 0)!=body.expected_version:raise HTTPException(409,"Versión obsoleta; recargue la geocerca")
+    primary=body.sector_id or (old.sector_id if old and old.sector_id in ids else ids[0])
+    zones=db.scalars(select(PastureAssignment).where(PastureAssignment.geofence_id==old.id,PastureAssignment.valid_to.is_(None)).with_for_update()).all() if old else []
+    if zones and primary!=old.sector_id:raise HTTPException(409,"Transfiera las asignaciones de pastoreo antes de cambiar el sector principal")
     encoded=json.dumps(body.geometry)
     if not db.scalar(select(func.ST_IsValid(func.ST_SetSRID(func.ST_GeomFromGeoJSON(encoded),4326)))):raise HTTPException(422,"Polígono inválido: intersección o anillo inválido")
     now=utcnow()
     if old:old.active=False;old.valid_to=now;db.flush()
-    g=Geofence(id=uuid4(),farm_id=user.farm_id,sector_id=body.sector_id,name=body.name,version=body.expected_version+1,geometry=func.ST_SetSRID(func.ST_GeomFromGeoJSON(encoded),4326),active=True,created_at=now,created_by=user.id)
+    g=Geofence(id=uuid4(),geofence_key=old.geofence_key if old else uuid4(),farm_id=user.farm_id,sector_id=primary,name=body.name,version=body.expected_version+1,geometry=func.ST_SetSRID(func.ST_GeomFromGeoJSON(encoded),4326),active=True,created_at=now,created_by=user.id)
     db.add(g);db.flush()
-    if old:
-        for zone in db.scalars(select(PastureAssignment).where(PastureAssignment.geofence_id==old.id,PastureAssignment.valid_to.is_(None)).with_for_update()).all():
-            zone.valid_to=now;db.flush()
-            db.add(PastureAssignment(farm_id=user.farm_id,animal_id=zone.animal_id,animal_holding_id=zone.animal_holding_id,assigned_by=user.id,geofence_id=g.id,valid_from=now))
-            state=db.get(AnimalState,zone.animal_id)
-            if state:state.outside_count=0;state.geofence_status="unknown"
-    append_audit(db,user.farm_id,user.id,"geofence",g.id,"version_create",after={"version":g.version,"geometry":body.geometry,"previous_id":str(old.id) if old else None})
+    db.add_all([GeofenceSector(geofence_id=g.id,sector_id=sid,farm_id=user.farm_id) for sid in ids]);db.flush()
+    for zone in zones:
+        zone.valid_to=now;db.flush()
+        db.add(PastureAssignment(farm_id=user.farm_id,animal_id=zone.animal_id,animal_holding_id=zone.animal_holding_id,assigned_by=user.id,geofence_id=g.id,valid_from=now))
+        state=db.get(AnimalState,zone.animal_id)
+        if state:state.outside_count=0;state.geofence_status="unknown"
+    append_audit(db,user.farm_id,user.id,"geofence",g.id,"version_create",after={"geofence_key":str(g.geofence_key),"sector_ids":[str(sid) for sid in ids],"version":g.version,"geometry":body.geometry,"previous_id":str(old.id) if old else None})
     return fence_json(db,g)
+
 @api.post("/pasture-assignments",status_code=201)
 def assign_pasture(body:PastureIn,user=Depends(owner),db=Depends(get_db, scope="function")):
     a=accessible(db,Animal,body.animal_id,user,True);g=accessible(db,Geofence,body.geofence_id,user)

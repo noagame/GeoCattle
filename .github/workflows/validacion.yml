@@ -1,0 +1,123 @@
+name: Validacion GeoCattle
+
+"on":
+  pull_request:
+  push:
+    branches:
+      - main
+      - develop
+      - 'dev/**'
+      - 'feature/**'
+      - 'fix/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: geocattle-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: geocattle-frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Instalar dependencias del frontend
+        working-directory: frontend
+        run: npm ci
+      - name: Comprobar geocercas
+        working-directory: frontend
+        run: npm test
+      - name: Compilar frontend
+        working-directory: frontend
+        run: npm run build
+
+  captura_contratos:
+    name: geocattle-captura-contratos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: backend
+      APP_ENV: development
+      SIMULATION_ENABLED: 'false'
+      TEST_DATABASE_URL: ''
+      DATABASE_URL: postgresql+psycopg://ci:ci@127.0.0.1:1/geocattle_ci_not_used
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.lock
+            adapters/requirements.txt
+      - name: Instalar dependencias del contrato
+        run: |
+          python -m pip install -r backend/requirements.lock
+          python -m pip install -r adapters/requirements.txt
+      - name: Probar captura y compatibilidad del contrato
+        run: >-
+          python -m unittest
+          qa.test_capture_startup
+          qa.test_serial_receiver
+          qa.test_capture_runtime
+          qa.test_capture_portability
+          qa.test_lora_json
+          qa.test_lora_usb
+          qa.test_esp32_contract
+          qa.test_academic_bridge
+
+      - name: Probar extensiones de captura presentes en esta rama
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+          modules = [name for name in (
+              'qa.test_lora_bus',
+              'qa.test_receiver_profiles',
+              'qa.test_receiver_switching',
+          ) if Path(name.replace('.', '/') + '.py').is_file()]
+          if modules:
+              subprocess.run([sys.executable, '-m', 'unittest', *modules], check=True)
+          else:
+              print('Esta rama no incorpora extensiones nuevas de captura.')
+          PY
+
+  reglas_dominio:
+    name: geocattle-reglas-dominio
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: backend
+      APP_ENV: development
+      SIMULATION_ENABLED: 'false'
+      TEST_DATABASE_URL: ''
+      DATABASE_URL: postgresql+psycopg://ci:ci@127.0.0.1:1/geocattle_ci_not_used
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+      - name: Instalar dependencias de dominio
+        run: |
+          python -m pip install -r backend/requirements.lock
+          python -m pip install 'pytest>=8,<10'
+      - name: Probar reglas sin base operativa
+        run: python -m pytest backend/tests/test_rules.py -q

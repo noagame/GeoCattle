@@ -15,6 +15,19 @@ Esta versión incorpora la recepción física USB/LoRa por identidad USB, la vis
 
 Consulta [resumen.md](resumen.md) para ver los cambios, las verificaciones y los límites de esta entrega.
 
+## Desarrollo separado por áreas
+
+El trabajo de los dos colaboradores se organiza en el mismo repositorio, conservando las carpetas y funcionalidades actuales:
+
+- `main`: versión estable publicada.
+- `develop`: integración y revisión de cambios compatibles.
+- `dev/software`: interfaz, API, mapas, geocercas, alertas y gestión; referencia de Fabián Del Villar (`noagame`).
+- `dev/hardware-captura`: recepción de collares, gateways y protocolos; referencia de Boris (`BorBP`).
+
+**Ambos pueden modificar software y otras áreas.** Las ramas separan tareas, no restringen la edición de archivos. Los contratos compartidos se revisan entre ambos antes de integrar por PR hacia `develop`; las entregas revisadas pasan después a `main`.
+
+Ver [CONTRIBUTING.md](CONTRIBUTING.md) y [Desarrollo colaborativo](docs/DESARROLLO_COLABORATIVO.md) para sincronizar sin reemplazar el trabajo del otro, conocer los controles automáticos y configurar las protecciones de GitHub. El trabajo de receptores que sigue pendiente queda identificado como desarrollo en curso en su rama; no se publica automáticamente como estable.
+
 ## Funcionalidades
 
 - Sesiones HttpOnly, CSRF, permisos por predio y roles de administrador, dueño, trabajador y veterinario. MFA TOTP para administración y operaciones sensibles.

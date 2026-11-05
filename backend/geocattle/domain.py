@@ -1,4 +1,4 @@
-"""Transactional telemetry ingestion and independently scheduled rules."""
+"""Módulo de Ingesta de Telemetría Transaccional y Evaluación de Reglas."""
 from datetime import timedelta
 from uuid import uuid4
 from fastapi import HTTPException
@@ -9,14 +9,45 @@ from .schemas import TelemetryIn
 from .v3_receptions import persist_receptions
 
 def append_audit(db,farm_id,actor,kind,obj,action,before=None,after=None):
+    """ 
+    Registra una traza de auditoría transaccional para trazabilidad del sistema.
+    Args:
+        db: Sesión activa de SQLAlchemy.
+        farm_id: Identificador de predio.
+        actor: Identificador de usuario.
+        kind: tipo de entidad afectada.
+        obj: Identificador o instancia del objeto auditado.
+        action: Acción realizada ('opened', 'resolved', 'applied').
+        before: Estado previo de la entidad,
+        after: Estado posterior de la entidad.
+    """
     db.add(Audit(farm_id=farm_id,actor_id=actor,object_type=kind,object_id=str(obj),action=action,before=before,after=after))
 
 def rule_position(outside_count, valid, inside):
-    """Invalid GNSS breaks consecutivity and supplies no resolution evidence."""
-    if not valid: return 0,"unknown",None
-    if inside: return 0,"inside",False
-    count=outside_count+1
+    """
+    Evalúa la máquina de estados georreferenciados para la regla de escape de animales.
+
+    Implementa la política de validación de doble posición consecutiva fuera del perímetro
+
+    Args:
+        outside_count: Conteo actual de lecturas continuas fuera del geocercado.
+        valid: Indicador de validez de la señal GNSS
+        inside: Booleano que indica si el punto se encuentra dentro de la geocerca.
+    Returns:
+        Tuple contenido:
+            - Nuevo conteo acumulado de posiciones exteriores.
+            - Estado de la posición ('unknown', 'inside', 'pending', 'outside').
+            - Evidencia de regla cumplida (True/False o None si no aplica).
+    """
+    if not valid: 
+        return 0,"unknown",None
+    if inside: 
+        return 0,"inside",False
+        
+    count = outside_count+1
     return count,"outside" if count>=2 else "pending",True if count>=2 else None
+
+
 
 def freshness(observed_at,received_at,interval,now):
     position="unknown" if observed_at is None else ("fresh" if (now-observed_at).total_seconds()<=2*interval+30 else "stale")
@@ -65,26 +96,57 @@ def condition(db,device,animal_id,event_type,active,severity="warning",telemetry
 def at_time(model,when): return and_(model.valid_from<=when,or_(model.valid_to.is_(None),model.valid_to>when))
 
 def ingest(db,payload:TelemetryIn,received_at=None):
-    now=received_at or utcnow()
-    if payload.observed_at>now+timedelta(minutes=5): raise HTTPException(422,"Hora de captura futura fuera de tolerancia")
-    device=db.scalar(select(Device).where(Device.hardware_id==payload.hardware_id).with_for_update())
-    if not device or not device.enabled: raise HTTPException(422,"Dispositivo desconocido o deshabilitado")
-    farm=db.get(Farm,device.farm_id)
-    if settings().app_env=="simulation" and payload.source!="sim":raise HTTPException(403,"Simulación no admite mediciones de hardware real")
-    if payload.source=="sim":
-        if settings().app_env!="simulation" or not settings().simulation_enabled or farm.environment!="simulation": raise HTTPException(403,"Simulación aislada requerida")
-    elif payload.source!=device.transport: raise HTTPException(422,"Fuente incompatible con transporte registrado")
+    """ 
+    Procesa la ingesta transaccional de un paquete de telemetría de dispositivos IoT.
+    Args:
+        db: Sesión activa de SQLAlchemy.
+        payload: Esquema de validación con los datos de telemtría entrantes.
+        recived_at: Timestamp opcional de recepción en servidor.
+
+    Returns:
+        Diccionario con metadatos del procesamiento ('id', 'duplicate', 'animal_id', 'state_update').
+        
+    Raises:
+        HTTPException(422): Si la marca de tiempo es futura o el dispositivo es desconocido es desconocido/incompatible.
+        HTTPException(403): Si hay violaciones de entorno de simulación o aislamiento de predio.
+    """
+    now = received_at or utcnow()
+    
+    if payload.observed_at > now + timedelta(minutes = 5):
+        raise HTTPException(422,"Hora de captura futura fuera de tolerancia")
+    
+    device = db.scalar(select(Device).where(Device.hardware_id == payload.hardware_id).with_for_update())
+    
+    if not device or not device.enabled: 
+        raise HTTPException(422,"Dispositivo desconocido o deshabilitado")
+    
+    farm = db.get(Farm,device.farm_id)
+    
+    if settings().app_env == "simulation" and payload.source != "sim" :
+        raise HTTPException(403,"Simulación no admite mediciones de hardware real")
+    if payload.source == "sim":
+        if settings().app_env != "simulation" or not settings().simulation_enabled or farm.environment != "simulation":
+            raise HTTPException(403,"Simulación aislada requerida")
+    elif payload.source != device.transport: 
+        raise HTTPException(422,"Fuente incompatible con transporte registrado")
+    
     if farm.environment!=settings().app_env: raise HTTPException(403,"Predio de otro entorno")
+    
     existing=db.scalar(select(Telemetry).where(Telemetry.device_id==device.id,Telemetry.session_id==payload.session_id,Telemetry.seq==payload.seq))
     if existing:
         persist_receptions(db,existing,payload.receptions,now)
         return {"id":str(existing.id),"duplicate":True,"animal_id":str(existing.animal_id) if existing.animal_id else None}
-    assignment=db.scalar(select(Assignment).where(Assignment.device_id==device.id,at_time(Assignment,payload.observed_at)))
-    values=payload.model_dump(exclude={"hardware_id","schema_version","receptions"})
-    row=Telemetry(id=uuid4(),farm_id=device.farm_id,device_id=device.id,animal_id=assignment.animal_id if assignment else None,assignment_id=assignment.id if assignment else None,received_at=now,**values)
+    
+    assignment = db.scalar(select(Assignment).where(Assignment.device_id == device.id, at_time(Assignment, payload.observed_at)))
+    values = payload.model_dump(exclude = {"hardware_id", "schema_version", "receptions"})
+    row = Telemetry(id = uuid4(), farm_id = device.farm_id, device_id = device.id, animal_id = assignment.animal_id if assignment else None, assignment_id = assignment.id if assignment else None, received_at = now, **values)
+    
     if row.gnss_valid:
-        row.point=func.ST_SetSRID(func.ST_MakePoint(row.longitude,row.latitude),4326)
-    db.add(row); db.flush()
+        row.point = func.ST_SetSRID(func.ST_MakePoint(row.longitude, row.latitude), 4326)
+    
+    db.add(row); 
+    db.flush()
+    
     persist_receptions(db,row,payload.receptions,now)
     newer=device.last_observed_at is None or row.observed_at>device.last_observed_at
     recent=(now-row.observed_at).total_seconds()<=2*device.interval_seconds+30

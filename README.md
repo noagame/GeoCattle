@@ -1,6 +1,10 @@
 # GeoCattle
 
-## Correcciones locales — 29 de octubre de 2026
+Guía de levantamiento revisada el **9 de noviembre de 2026**. Consulta primero [los entornos y pasos de arranque](#levantamiento-completo-elegir-el-entorno).
+
+Estado remoto comprobado: `main` en `37c3d87`, `develop` en `dda2ba7`, `dev/software` en `d7f29b7` y `dev/hardware-captura` en `3574754`. Main incluye gestión de gateways (migración 005) y documentación de dominio; hardware mantiene trabajo de captura pendiente. Estos identificadores describen la revisión, no fijan futuras versiones.
+
+## Cambios funcionales y versión de referencia
 
 Editor de geocercas con vértices seleccionables y arrastrables, edición sincronizada por coordenadas, deshacer y confirmaciones de borrado. Varias geocercas independientes por sector y varios sectores por geocerca, con versiones e historial conservados. Las alertas de desconexión muestran la última ubicación válida conocida al detectar el evento, sin sustituirla al reconectarse el collar. Se aclara el funcionamiento de la regla térmica y se mantiene la validación de campo como requisito de activación real.
 
@@ -9,7 +13,7 @@ Detalles, contrato y límites: [correcciones de geocercas y alertas](docs/CORREC
 
 Aplicación de supervisión bovina con mapas, geocercas, telemetría de collares y gestión sanitaria por predio. Frontend **React/TypeScript/Leaflet**, backend **FastAPI** y base **PostgreSQL/PostGIS**.
 
-## Actualización del 25 de octubre de 2026
+## Base funcional incorporada el 25 de octubre de 2026
 
 Esta versión incorpora la recepción física USB/LoRa por identidad USB, la visualización de sensores, mejoras de mapas y asociaciones históricas, el registro de colaboradores mediante el dueño y la configuración de alertas por predio. Incluye además el arranque Docker para Windows/Linux y su verificación aislada.
 
@@ -42,38 +46,161 @@ Ver [CONTRIBUTING.md](CONTRIBUTING.md) y [Desarrollo colaborativo](docs/DESARROL
 - Condición técnica de las alertas separada de su atención humana; supervisión de ausencia de comunicación y vigencia GPS.
 - Gateways, KPI, mantenimiento, auditoría, avisos externos en cola y simulación identificada y separada del hardware real.
 
-## Docker en Windows y Linux
+## Levantamiento completo: elegir el entorno
 
-El arranque común utiliza Python 3.11+ y Docker con contenedores Linux y Compose 2+. No exige Bash, Node ni PostgreSQL instalados en el anfitrión. Docker Desktop incluye Compose; en Linux también puede utilizarse Docker Engine con el plugin Compose. Ver [instalación oficial](https://docs.docker.com/compose/install/).
+Revisión de instrucciones: **9 de noviembre de 2026**. Los comandos siguientes se ejecutan en la raíz del repositorio.
 
-Desde la raíz del repositorio, en Windows:
+| Uso | Configuración | Web por defecto | PostgreSQL anfitrión | Captura USB |
+|---|---|---|---|---|
+| Demostración sintética Docker | `.env`, simulation | 8080 | 55432 | No enviar datos físicos |
+| Hardware real con Docker | `.env.docker`, development | 8086 | 55436 | Proceso separado en el anfitrión |
+| Prototipo nativo Windows ya preparado | `.env.academic` | 8084 | 55434 | Proceso Windows |
+
+Los puertos pueden cambiar en la configuración privada. Cada entorno conserva sus datos; arrancar Docker no importa la base del prototipo nativo. Para una instalación nueva se recomienda Docker sobre `main`. La rama `dev/hardware-captura` incorpora selección Directo/Gateways todavía en desarrollo.
+
+### 1. Requisitos y copia del código
+
+- Git para clonar; Python 3.11 o superior.
+- Docker con motor **Linux** activo y Docker Compose 2 o posterior compatible.
+- En Windows, Docker Desktop con su backend WSL2/virtualización preparado. En Linux, Docker Engine y Compose accesibles por el usuario.
+- Acceso a Internet para la primera descarga de imágenes y dependencias; puertos disponibles y espacio para imágenes, volúmenes y respaldos.
+
+No hace falta instalar Node ni PostgreSQL en el anfitrión para la aplicación Docker. La captura USB sí necesita Python y sus dependencias en el equipo que conecta la receptora.
+
+En una carpeta nueva:
+
+```text
+git clone --branch main https://github.com/noagame/GeoCattle.git
+cd GeoCattle
+docker version
+docker compose version
+```
+
+`docker version` debe mostrar también la versión del **servidor**. Que Compose esté instalado no significa que el motor esté funcionando. Para una copia existente, revisar `git status` y `git branch --show-current` antes de actualizar; seguir [la guía de colaboración](docs/DESARROLLO_COLABORATIVO.md) para conservar cambios propios.
+
+### 2. Arranque de simulación (sin placas)
+
+Windows PowerShell:
 
 ```powershell
 py -3 scripts/docker_project.py start
 ```
 
-En Linux:
+Linux:
 
 ```bash
 python3 scripts/docker_project.py start
 ```
 
-La simulación abre `http://localhost:8080`, utiliza `.env` y prepara una demo sintética. La cuenta inicial es `demo@geocattle.local`; la contraseña aleatoria se consulta localmente en `DEMO_PASSWORD`. Los 70 bovinos de la demo no son una prueba de capacidad radio.
+El iniciador genera `.env` si falta, conserva configuraciones existentes, construye imágenes, inicia servicios y carga la demo sintética. Abrir `http://localhost:8080`. Usuario inicial: `demo@geocattle.local`; consultar **localmente** `DEMO_PASSWORD` en el archivo privado. No publicar ese archivo ni sus valores.
 
-Para una instalación Docker separada que reciba datos físicos, usar `start --environment development`, opcionalmente con `--owner-email CORREO --farm "Nombre del predio"` para crear su primer dueño. Utiliza `.env.docker`, web `8086`, PostgreSQL `55436` y archivo `.runtime/docker-capture/`; no importa ni modifica la instancia nativa `8084` y `.env.academic`.
+La demo de 70 bovinos sirve para recorrer la aplicación; no demuestra una red física de 70 collares.
 
-```text
-python scripts/docker_project.py status
-python scripts/docker_project.py logs
-python scripts/docker_project.py backup
-python scripts/docker_project.py stop
+### 3. Arranque para datos físicos con Docker
+
+Windows:
+
+```powershell
+py -3 scripts/docker_project.py start --environment development --owner-email propietario@example.com --farm "Mi predio"
 ```
 
-En Linux, utilizar `python3`; para desarrollo, añadir `--environment development` a cada acción. `stop` conserva los volúmenes. Los archivos de configuración existentes no se sobrescriben y los respaldos se generan en `backups/` sin imprimir credenciales.
+Linux:
 
-La captura USB se ejecuta en el anfitrión con `scripts/start_capture.py --backend docker`, usando un Python con `adapters/requirements.txt`. La receptora se identifica por USB y su puerto puede cambiar: no se presupone un COM fijo ni un USB directamente accesible dentro del contenedor. Registrar los dispositivos y asociaciones en la instalación elegida antes de atribuir las lecturas.
+```bash
+python3 scripts/docker_project.py start --environment development --owner-email propietario@example.com --farm "Mi predio"
+```
 
-La revisión aprobó **90 pruebas Windows**, **113 pruebas backend y 94 de adaptadores/hardware en Linux**, **126 comprobaciones HTTP** y la persistencia de **589 lecturas QA** tras reiniciar Docker. También se comprobaron MQTT, el worker de alertas y el esquema de ChirpStack. Linux se ejecutó en contenedores x86_64 sobre Docker Desktop; otro PC físico, ARM y el USB real hacia Docker siguen pendientes. Consulta [revisión Docker y portabilidad](docs/REVISION_DOCKER_PORTABILIDAD.md) y [evidencia QA](docs/evidencias/docker_portabilidad_2026-10-25.json).
+Sustituir correo y predio por los que se utilizarán. Se prepara `.env.docker`, se levanta la aplicación y se crea el dueño si no existe. Su contraseña inicial procede de `ADMIN_PASSWORD` de ese archivo privado; las credenciales de una cuenta existente no se sustituyen. Abrir `http://localhost:8086`. Si se omiten correo/predio, arrancan los servicios pero no se crea una cuenta nueva.
+
+Antes de atribuir lecturas, registrar en esta instalación el collar con su identidad y transporte compatibles, el bovino y su asociación vigente. Una base Docker nueva no contiene las asociaciones de la instalación nativa. Las lecturas sin asociación no deben atribuirse retroactivamente por suposición.
+
+### 4. Iniciar la captura USB en el anfitrión
+
+Conectar la **receptora T3** por cable USB de datos y alimentar el collar. Cerrar Monitor Serie/Plotter y cualquier lector del mismo puerto. No es necesario conectar el collar por USB al computador.
+
+Windows, primera preparación:
+
+```powershell
+py -3 -m venv .venv-capture
+.\.venv-capture\Scripts\python.exe -m pip install -r adapters/requirements.txt
+.\.venv-capture\Scripts\python.exe scripts/start_capture.py --backend docker
+```
+
+Linux:
+
+```bash
+python3 -m venv .venv-capture
+.venv-capture/bin/python -m pip install -r adapters/requirements.txt
+.venv-capture/bin/python scripts/start_capture.py --backend docker
+```
+
+En Linux se necesita permiso sobre el dispositivo serial, normalmente mediante el grupo de dispositivos de la distribución (por ejemplo, `dialout`) y una nueva sesión tras cambiar la pertenencia. No usar permisos universales como solución permanente.
+
+El iniciador usa `.env.docker`, exige development sin simulación y reconoce la receptora por identidad USB; no presupone COM5. En el primer enlace conectar solo la receptora que se desea recordar y esperar un paquete válido con información radio. Se conserva la cola en `.runtime/docker-capture/`. El contenedor API lee su estado mediante `compose.usb.yaml`; el puerto USB se abre en el anfitrión.
+
+Dejar la ventana de captura abierta. `Ctrl+C` detiene el lector conservando datos. Evitar arrancar un segundo lector sobre el mismo archivo de captura. Para un archivo de configuración alternativo utilizar el mismo `--env-file RUTA` tanto al levantar Docker como al iniciar captura.
+
+**Solo rama de hardware:** `--select-mode` permite elegir antes de detectar USB, y `--receiver-mode direct` o `--receiver-mode gateways` fija el método. Existen `Iniciar-Captura-Directa.cmd` y `Iniciar-Captura-Gateways.cmd`. Esas opciones no pertenecen al capturador estable de main; el trabajo de lotes y alternancia conserva verificaciones pendientes. El CRUD de gateways de main es gestión de inventario, no certificación de la red de repetidores.
+
+### 5. Qué levanta cada opción
+
+La aplicación principal inicia **PostgreSQL/PostGIS → migración → API/worker → web** según dependencias de Compose. `start` construye y espera servicios; en simulación ejecuta además el seed. `migrate` es un servicio de una ejecución: terminar correctamente no significa fallo. Los volúmenes conservan la base.
+
+- Web: interfaz y proxy al backend.
+- API: sesiones, permisos, ingestión y consultas.
+- Worker: evaluación periódica y avisos.
+- Captura USB: proceso aparte, necesario para la T3 física.
+- Perfil `iot`: broker MQTT e ingestor.
+- Perfil `lorawan`: infraestructura ChirpStack/Redis/base asociada; el iniciador añade `iot` automáticamente.
+
+Para activar servicios opcionales en desarrollo (en Windows usar `py -3`):
+
+```bash
+python3 scripts/docker_project.py start --environment development --profile iot
+# O infraestructura LoRaWAN, que incluye iot:
+python3 scripts/docker_project.py start --environment development --profile lorawan
+```
+
+La ruta directa T3 → USB → API no requiere MQTT/ChirpStack. Activar servicios LoRaWAN requiere después aprovisionar gateway, dispositivos, claves y codec; no transforma la radio P2P en LoRaWAN. TLS/proveedores externos requieren configuración adicional; el arranque local HTTP no es un despliegue público listo para producción.
+
+### 6. Verificar, respaldar y detener
+
+Windows:
+
+```powershell
+py -3 scripts/docker_project.py status --environment development
+py -3 scripts/docker_project.py logs --environment development
+Invoke-RestMethod http://localhost:8086/api/v1/health
+py -3 scripts/docker_project.py backup --environment development
+# Detener primero la captura con Ctrl+C:
+py -3 scripts/docker_project.py stop --environment development
+```
+
+En Linux sustituir `py -3` por `python3`; para salud usar `curl http://localhost:8086/api/v1/health`. En simulación omitir `--environment development` y usar puerto 8080. Con perfiles opcionales, repetir los mismos `--profile` al consultar/detener para abarcar sus servicios.
+
+La salud debe indicar `status: ok` y el entorno elegido. Comprobar después inicio de sesión, predio, collar y una lectura nueva persistida con su fecha/secuencia. API saludable por sí sola no prueba recepción radio. Confirmar datos en Recepción de collares e historial; una línea capturada no demuestra todavía entrega final a PostgreSQL.
+
+`backup` genera un dump en `backups/`; verificar restauración por separado. `stop` conserva volúmenes. No usar `down -v` ni borrar `.runtime` como procedimiento de reinicio. En una actualización con base existente: respaldar primero y validar migraciones en una copia antes de arrancar el código nuevo.
+
+### 7. Diagnóstico rápido
+
+| Síntoma | Revisión |
+|---|---|
+| No existe dockerDesktopLinuxEngine / servidor no responde | Abrir Docker Desktop, comprobar backend Linux/WSL y repetir docker version |
+| Puerto ocupado | Identificar el servicio o configurar otro puerto; no cerrar procesos desconocidos |
+| No puede abrir serial | Cerrar otros lectores, revisar identidad USB y permisos; el número COM puede cambiar |
+| Recibe pero no persiste | Revisar logs, URL/API, entorno, registro del dispositivo y cola pendiente |
+| No aparece posición | Revisar fix/calidad GPS y asociación, sin inventar coordenadas |
+| Captura de un entorno frente a web de otro | Hacer coincidir backend, env-file, URL y directorio de captura |
+| Error de migración | Conservar error y respaldo; no borrar volúmenes ni marcar migraciones como aplicadas manualmente |
+
+### Evidencia y límites de la revisión
+
+El 9 de noviembre de 2026 pasaron **40 pruebas** de contratos de arranque/configuración y portabilidad de captura. Las ayudas CLI fueron verificadas; Compose validó con `config --quiet` simulación y desarrollo, incluidos iot/lorawan, usando configuración QA independiente. Estos controles no abrieron puertos seriales ni modificaron bases operativas.
+
+En esa revisión el motor Linux de Docker no respondió y no había aplicaciones escuchando en 8080/8084/8086. **No se confirmó un levantamiento real completo en esta ejecución.** Las pruebas de comandos usan Docker simulado y config no necesita un motor activo.
+
+Existe evidencia anterior de Docker Linux x86_64 sobre Windows: 113 pruebas backend, 94 adaptadores/hardware, 126 comprobaciones HTTP y 589 lecturas QA conservadas tras reinicio, además de 90 pruebas Windows. Son resultados históricos, no una prueba nueva ni una certificación de otro PC, ARM o USB real hacia Docker. Ver [revisión Docker](docs/REVISION_DOCKER_PORTABILIDAD.md) y [evidencia](docs/evidencias/docker_portabilidad_2026-10-25.json).
 
 ## Prototipo físico en Windows
 
@@ -104,6 +231,15 @@ Cerrar Monitor Serie y Plotter antes de capturar; solo un proceso puede abrir el
 Las capturas diarias y la cola SQLite son un archivo intermedio local; **PostgreSQL/PostGIS sigue siendo la base de la aplicación**. No se necesita Arduino IDE para ejecutar el software. El firmware y las herramientas de programación de placas no forman parte de esta actualización.
 
 ## Usuarios y alertas
+
+El arranque no crea un administrador global automáticamente. Para provisionarlo en Docker development, definir `V3_ADMIN_PASSWORD` en `.env.docker` (archivo privado) y ejecutar:
+
+```text
+docker compose --env-file .env.docker -f compose.yaml -f compose.usb.yaml --profile tools run --rm --no-deps seed python -m geocattle.seed_v3 --admin-email administrador@example.com
+```
+
+Sustituir el correo y configurar TOTP. Para simulación usar `.env` y solo `compose.yaml`. Ejecutar después de las migraciones y conservar el segundo factor en una aplicación de autenticación.
+
 
 El administrador crea las cuentas de dueños/clientes. **El dueño invita a trabajadores y veterinarios** desde Equipo y permisos; cada persona activa su cuenta mediante un enlace con vencimiento y uso único. El administrador conserva la gestión de colaboradores ya incorporados, pero no crea nuevas invitaciones en nombre del dueño. Los enlaces se entregan manualmente: no hay correo externo configurado.
 

@@ -1,19 +1,24 @@
 # GeoCattle
 
-## Correcciones locales — 29 de octubre de 2026
+GeoCattle es una aplicación de supervisión bovina con mapas, geocercas, telemetría de collares y gestión sanitaria por predio. Usa **React, TypeScript y Leaflet** en la interfaz, **FastAPI** en el servidor y **PostgreSQL/PostGIS** para guardar datos y evaluar geometrías.
 
-Editor de geocercas con vértices seleccionables y arrastrables, edición sincronizada por coordenadas, deshacer y confirmaciones de borrado. Varias geocercas independientes por sector y varios sectores por geocerca, con versiones e historial conservados. Las alertas de desconexión muestran la última ubicación válida conocida al detectar el evento, sin sustituirla al reconectarse el collar. Se aclara el funcionamiento de la regla térmica y se mantiene la validación de campo como requisito de activación real.
+## Estado del sistema
 
-Detalles, contrato y límites: [correcciones de geocercas y alertas](docs/CORRECCIONES_GEOCERCAS_ALERTAS_2026-10-29.md). La migración `004_geofence_identity_event_position.sql` se aplica con el arranque habitual, después de respaldar la base.
+Revisión del **16 de noviembre de 2026**.
 
+| Área | Estado |
+|---|---|
+| Aplicación en `main` | Gestión de predios, usuarios, animales, fichas sanitarias, alertas y telemetría. El acceso de administrador requiere TOTP. |
+| Geocercas en `main` | Editor de vértices, geocercas versionadas y ubicación histórica en alertas por pérdida de comunicación. La migración `004` conserva las referencias previas. [Detalle](docs/CORRECCIONES_GEOCERCAS_ALERTAS_2026-10-29.md). |
+| Inventario de gateways en `main` | El dueño y el administrador pueden registrar, ubicar, editar y archivar equipos por predio y consultar sus recepciones. La migración `005` conserva el historial. El estado del inventario es administrativo. [Detalle](docs/CRUD_GATEWAYS.md). |
+| Captura en `main` | LoRa directo entre un collar y una T3, con USB serial al anfitrión. Admite CSV V4 y JSON V5, incluidos envíos de 45 segundos. |
+| Captura por repetidores | En `dev/hardware-captura` existen el selector Directo/Gateways, perfiles USB separados y recepción por lotes. Hay pruebas pendientes antes de integrar. [Estado de la rama](https://github.com/noagame/GeoCattle/blob/dev/hardware-captura/docs/WIP_CAPTURA_GATEWAYS.md). |
+| Acceso de administrador en el prototipo local | El inicio de sesión en el PC de desarrollo quedó temporalmente con solo usuario y contraseña. Consulta [la configuración local](#acceso-de-administrador-en-el-prototipo-local). |
+| Docker y LoRaWAN | Docker permite arrancar la aplicación y añadir MQTT/ChirpStack mediante perfiles opcionales. La validación física de la red LoRaWAN sigue pendiente. |
 
-Aplicación de supervisión bovina con mapas, geocercas, telemetría de collares y gestión sanitaria por predio. Frontend **React/TypeScript/Leaflet**, backend **FastAPI** y base **PostgreSQL/PostGIS**.
+La [validación de GitHub de la versión base `37c3d87`](https://github.com/noagame/GeoCattle/actions/runs/42116618131) pasó los controles de frontend, contratos de captura, reglas de dominio y API con PostGIS temporal. Las [pruebas de la rama de captura](https://github.com/noagame/GeoCattle/actions/runs/42661603348) todavía muestran fallos. El ensayo de recepción de lotes del 10 de noviembre corresponde al prototipo local de esa rama.
 
-## Actualización del 25 de octubre de 2026
-
-Esta versión incorpora la recepción física USB/LoRa por identidad USB, la visualización de sensores, mejoras de mapas y asociaciones históricas, el registro de colaboradores mediante el dueño y la configuración de alertas por predio. Incluye además el arranque Docker para Windows/Linux y su verificación aislada.
-
-Consulta [resumen.md](resumen.md) para ver los cambios, las verificaciones y los límites de esta entrega.
+Consulta [resumen.md](resumen.md) para ver la evolución y la evidencia de verificaciones anteriores.
 
 ## Desarrollo separado por áreas
 
@@ -42,66 +47,65 @@ Ver [CONTRIBUTING.md](CONTRIBUTING.md) y [Desarrollo colaborativo](docs/DESARROL
 - Condición técnica de las alertas separada de su atención humana; supervisión de ausencia de comunicación y vigencia GPS.
 - Gateways, KPI, mantenimiento, auditoría, avisos externos en cola y simulación identificada y separada del hardware real.
 
-## Docker en Windows y Linux
+## Cómo levantar GeoCattle
 
-El arranque común utiliza Python 3.11+ y Docker con contenedores Linux y Compose 2+. No exige Bash, Node ni PostgreSQL instalados en el anfitrión. Docker Desktop incluye Compose; en Linux también puede utilizarse Docker Engine con el plugin Compose. Ver [instalación oficial](https://docs.docker.com/compose/install/).
+Usa la raíz del repositorio como directorio de trabajo. Para una instalación nueva, clona `main` con `git clone --branch main https://github.com/noagame/GeoCattle.git` y entra en `GeoCattle`.
 
-Desde la raíz del repositorio, en Windows:
+| Entorno | Archivo privado | Web por defecto | Puerto PostgreSQL |
+|---|---|---|---|
+| Docker con datos de demostración | `.env` | `8080` | `55432` |
+| Docker con hardware físico | `.env.docker` | `8086` | `55436` |
+| Prototipo nativo de Windows ya preparado | `.env.academic` | `8084` | `55434` |
+
+### Docker en Windows y Linux
+
+Se requiere Python 3.11 o posterior, Docker con motor Linux activo y Docker Compose 2 o posterior. Ejecuta `docker version` y comprueba que aparezca la sección del servidor. El primer arranque descarga y construye imágenes. [Instalación oficial de Compose](https://docs.docker.com/compose/install/).
+
+**Demostración**, desde PowerShell:
 
 ```powershell
 py -3 scripts/docker_project.py start
 ```
 
-En Linux:
+En Linux, usa `python3` en lugar de `py -3`. El iniciador crea la configuración si falta, levanta PostgreSQL/PostGIS, aplica las migraciones, inicia API, proceso de alertas y web, y carga la demo. Abre [GeoCattle en el puerto 8080](http://localhost:8080/). El usuario inicial es `demo@geocattle.local` y su contraseña se consulta localmente en `DEMO_PASSWORD` de `.env`. Los 70 bovinos de la demo son sintéticos.
 
-```bash
-python3 scripts/docker_project.py start
-```
-
-La simulación abre `http://localhost:8080`, utiliza `.env` y prepara una demo sintética. La cuenta inicial es `demo@geocattle.local`; la contraseña aleatoria se consulta localmente en `DEMO_PASSWORD`. Los 70 bovinos de la demo no son una prueba de capacidad radio.
-
-Para una instalación Docker separada que reciba datos físicos, usar `start --environment development`, opcionalmente con `--owner-email CORREO --farm "Nombre del predio"` para crear su primer dueño. Utiliza `.env.docker`, web `8086`, PostgreSQL `55436` y archivo `.runtime/docker-capture/`; no importa ni modifica la instancia nativa `8084` y `.env.academic`.
-
-```text
-python scripts/docker_project.py status
-python scripts/docker_project.py logs
-python scripts/docker_project.py backup
-python scripts/docker_project.py stop
-```
-
-En Linux, utilizar `python3`; para desarrollo, añadir `--environment development` a cada acción. `stop` conserva los volúmenes. Los archivos de configuración existentes no se sobrescriben y los respaldos se generan en `backups/` sin imprimir credenciales.
-
-La captura USB se ejecuta en el anfitrión con `scripts/start_capture.py --backend docker`, usando un Python con `adapters/requirements.txt`. La receptora se identifica por USB y su puerto puede cambiar: no se presupone un COM fijo ni un USB directamente accesible dentro del contenedor. Registrar los dispositivos y asociaciones en la instalación elegida antes de atribuir las lecturas.
-
-La revisión aprobó **90 pruebas Windows**, **113 pruebas backend y 94 de adaptadores/hardware en Linux**, **126 comprobaciones HTTP** y la persistencia de **589 lecturas QA** tras reiniciar Docker. También se comprobaron MQTT, el worker de alertas y el esquema de ChirpStack. Linux se ejecutó en contenedores x86_64 sobre Docker Desktop; otro PC físico, ARM y el USB real hacia Docker siguen pendientes. Consulta [revisión Docker y portabilidad](docs/REVISION_DOCKER_PORTABILIDAD.md) y [evidencia QA](docs/evidencias/docker_portabilidad_2026-10-25.json).
-
-## Prototipo físico en Windows
-
-La instancia local preparada sirve [Recepción de collares](http://localhost:8084/#hardware), con PostgreSQL/PostGIS en el puerto 55434. La T3 se reconoce por su identidad USB y recibe por LoRa al emisor T-Beam; no hace falta conectar ambos por USB de datos simultáneamente.
-
-**Una clonación nueva no incluye la base física, los binarios locales ni las credenciales del PC.** Los scripts siguientes requieren esa preparación local, `.env.academic`, un entorno Python con las dependencias de backend y adaptadores, y el frontend compilado. Consulta [Desarrollo local](docs/DESARROLLO_LOCAL.md) y [USB COM5](docs/USB_COM5.md). No ejecutar el seed de simulación sobre la base física.
-
-Para abrir la aplicación nativa en Windows sin iniciar la captura USB, utiliza **Abrir-GeoCattle.cmd**. Conserva los datos y requiere la preparación local indicada arriba.
-
-Para capturar con un solo paso, abre **Iniciar-Captura.cmd**. La receptora se reconoce por su identidad USB y puede cambiar de COM. El primer enlace se confirma con un paquete LoRa; consulta [Desarrollo local](docs/DESARROLLO_LOCAL.md#captura-con-doble-clic-e-identidad-usb).
-
-El protocolo físico JSON V5 admite `p` entre `30000` y `45000` ms, incluido el emisor de 45 segundos y los anteriores de 30–40 segundos. El período anunciado se conserva en `quality.period_ms`; no confirma una configuración remota. Después de actualizar el adaptador, detén el lector con Ctrl+C y vuelve a abrir **Iniciar-Captura.cmd** para cargar el código nuevo; no hace falta reiniciar la API por este cambio.
-
-Desde PowerShell en la raíz del proyecto:
+**Captura física con Docker**, desde PowerShell:
 
 ```powershell
-.\Iniciar-Prototipo.ps1
-# Reiniciar solo la API después de actualizar Python:
-.\Actualizar-Visualizacion.ps1
-# Liberar COM5 para usar Arduino IDE:
-.\Pausar-Captura-COM5.ps1
-# Cerrar servicios conservando los datos:
-.\Detener-Prototipo.ps1
+py -3 scripts/docker_project.py start --environment development --owner-email propietario@example.com --farm "Mi predio"
+py -3 -m venv .venv-capture
+.\.venv-capture\Scripts\python.exe -m pip install -r adapters/requirements.txt
+.\.venv-capture\Scripts\python.exe scripts/start_capture.py --backend docker
 ```
 
-Cerrar Monitor Serie y Plotter antes de capturar; solo un proceso puede abrir el puerto. `Iniciar-Captura-COM5.ps1` permite capturar en primer plano y `Reiniciar-Prototipo.ps1` reinicia el prototipo completo.
+En Linux usa `python3` y `.venv-capture/bin/python`. Sustituye el correo y el nombre del predio. Para una cuenta nueva, consulta `ADMIN_PASSWORD` en `.env.docker`. Abre [GeoCattle en el puerto 8086](http://localhost:8086/) y registra el collar con su identidad y transporte. Crea la asociación vigente con el bovino para atribuir sus lecturas.
 
-Las capturas diarias y la cola SQLite son un archivo intermedio local; **PostgreSQL/PostGIS sigue siendo la base de la aplicación**. No se necesita Arduino IDE para ejecutar el software. El firmware y las herramientas de programación de placas no forman parte de esta actualización.
+Conecta la T3 receptora al anfitrión por USB de datos, enciende el collar y cierra Monitor Serie y Plotter. El capturador detecta la receptora por identidad USB y utiliza `.runtime/docker-capture/`. En Linux el usuario necesita permisos sobre el dispositivo serial. En la primera vinculación, deja conectada una sola receptora y espera un paquete LoRa válido.
+
+Para MQTT, añade `--profile iot` al arranque. `--profile lorawan` añade ChirpStack y activa también `iot`. La recepción directa por USB entrega por HTTP a la API.
+
+Comprueba la [salud de la API de Docker](http://localhost:8086/api/v1/health) o el mismo endpoint en `8080` para simulación. Consulta `status` y `logs` con `scripts/docker_project.py`. Usa `backup` para generar un respaldo y `stop` para detener contenedores conservando los volúmenes. Repite `--environment development` y los perfiles que hayas activado al administrar ese entorno. El arranque en Linux x86_64 se comprobó en Docker Desktop sobre Windows. [Evidencia de portabilidad](docs/REVISION_DOCKER_PORTABILIDAD.md).
+
+### Prototipo nativo en Windows
+
+La instalación ya preparada necesita `.env.academic`, PostgreSQL/PostGIS local, `.venv` y el frontend compilado. Sus datos y credenciales se configuran en cada PC. Para una instalación nueva, utiliza los pasos de Docker o consulta la [guía de desarrollo local](docs/DESARROLLO_LOCAL.md).
+
+1. Abre [`Abrir-GeoCattle.cmd`](Abrir-GeoCattle.cmd) para levantar la base, la API y el proceso de alertas. La web abre en [localhost:8084](http://localhost:8084/).
+2. Conecta la receptora T3 con un cable USB de datos, enciende el collar y cierra Monitor Serie y Plotter.
+3. Abre [`Iniciar-Captura.cmd`](Iniciar-Captura.cmd). En `main` inicia la captura directa con identificación USB. En el prototipo local de la rama de hardware, el mismo archivo permite elegir **Directo** o **Gateways**.
+4. Deja abierta la consola de captura. Comprueba una lectura nueva en [Recepción de collares](http://localhost:8084/#hardware) y confirma la persistencia en PostgreSQL antes de dar por verificada la integración.
+
+Ctrl+C detiene la captura en primer plano. `Pausar-Captura-COM5.ps1` libera el puerto de una captura en segundo plano. `Detener-Prototipo.ps1` detiene los servicios locales. El archivo diario y la cola SQLite están en `.runtime/capture/`. La aplicación persiste las lecturas en PostgreSQL/PostGIS.
+
+En `main`, el arranque aplica hasta `005_gateway_management.sql`. Respalda la base antes de actualizar una instalación existente y valida primero la migración en una copia.
+
+### Acceso de administrador en el prototipo local
+
+En el PC donde se preparó el prototipo, se desactivó temporalmente el código de doble verificación **al entrar al panel de administración**. Abre `Abrir-GeoCattle.cmd`, entra en [GeoCattle local](http://localhost:8084/) e inicia sesión con el usuario y la contraseña de administrador que ya tienes. Las operaciones sensibles conservan su verificación adicional.
+
+Esta opción corresponde al backend modificado de esa instalación nativa de Windows, en `development` y con acceso desde el mismo equipo. Su configuración privada en `.env.academic` usa `LOCAL_ADMIN_PASSWORD_ONLY=true`. Para volver a pedir el código al iniciar sesión, cambia el valor a `false` y reinicia la API local. Puedes reiniciar con `Detener-Prototipo.ps1` y volver a abrir `Abrir-GeoCattle.cmd` y, si corresponde, `Iniciar-Captura.cmd`.
+
+Una instalación nueva desde `main` conserva el requisito de TOTP. La opción temporal requiere el cambio de backend del prototipo y está documentada aquí como parte del estado de ese equipo.
 
 ## Usuarios y alertas
 
@@ -123,6 +127,7 @@ python -m unittest qa.test_capture_startup qa.test_serial_receiver qa.test_captu
 # Interfaz
 cd frontend
 npm ci
+npm test
 npm run build
 ```
 
@@ -149,6 +154,7 @@ docs/                   Arquitectura, operación, informes y evidencias
 - [Revisión Docker y portabilidad Windows/Linux](docs/REVISION_DOCKER_PORTABILIDAD.md).
 
 - [Resumen de cambios](resumen.md).
+- [Gestión e historial de gateways](docs/CRUD_GATEWAYS.md).
 - [Desarrollo local](docs/DESARROLLO_LOCAL.md) y [visualización de telemetría](docs/VISUALIZACION_TELEMETRIA.md).
 - [Contrato API y radio JSON V5](docs/CONTRATO_API.md#captura-radio-json-v5).
 - [Mapas, asociaciones y perfiles](docs/REVISION_MAPAS_ASOCIACIONES_PERFILES.md).

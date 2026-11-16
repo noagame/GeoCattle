@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     simulation_enabled: bool = False
     session_secret: str = Field(default="development-change-this-secret-before-use", repr=False)
     mfa_encryption_key: str | None = Field(default=None, repr=False)
+    admin_login_mfa: bool = False
     ingest_key: str = Field(default="development-change-this-ingest-key", repr=False)
     cookie_secure: bool = False
     allowed_origins: str = "http://localhost:5173,http://localhost:8080"
@@ -36,6 +37,10 @@ class Settings(BaseSettings):
     config_codec_validated: bool = False
     chirpstack_application_id: str | None = None
     config_fport: int = 10
+
+    @property
+    def admin_login_requires_mfa(self) -> bool:
+        return self.app_env == "production" or self.admin_login_mfa
 
     @model_validator(mode="after")
     def isolation(self):

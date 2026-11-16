@@ -5,8 +5,6 @@ name: Validacion GeoCattle
   push:
     branches:
       - main
-      - develop
-      - 'dev/**'
       - 'feature/**'
       - 'fix/**'
   workflow_dispatch:

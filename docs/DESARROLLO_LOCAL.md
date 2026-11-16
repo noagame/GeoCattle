@@ -3,62 +3,24 @@
 Estado de referencia: 23 de octubre de 2026. Esta carpeta queda dedicada al
 software, la recepción de telemetría, sus pruebas y la documentación del proyecto.
 
-## Captura con doble clic e identidad USB
-
-Abre **Iniciar-Captura.cmd** desde la raiz del proyecto. No necesitas conocer el numero COM. El iniciador reutiliza GeoCattle y PostgreSQL si responden, o inicia los servicios locales preparados.
-
-En el primer inicio deja solamente la T3 receptora por USB de datos, cierra Monitor Serie/Plotter y enciende el emisor. La placa se recuerda en `.runtime/capture/receiver.json` solo despues de recibir un paquete valido con RSSI/SNR. Esto evita vincular como receptora un emisor que solo imprime sus sensores. La identidad usa VID/PID y numero de serie USB; el COM guardado es solo informativo.
-
-Mantener abierta la ventana. Si desconectas la receptora, el capturador espera esa misma placa y la recupera aunque Windows cambie el COM. No salta a otra T-Beam con el mismo chip. Si hay varias candidatas sin vinculo previo, pide una seleccion explicita en lugar de adivinar. Sin numero de serie USB se usa la ubicacion fisica, y cambiar de conector requerira seleccion manual.
-
-El bloqueo exclusivo impide dos capturadores para el mismo archivo, incluso con la placa desconectada. Ctrl+C conserva los datos; `Pausar-Captura-COM5.ps1` sigue permitiendo liberar el puerto. Los antiguos comandos de captura COM5 ahora pasan al iniciador nuevo.
-
-### Migrar una captura anterior
-
-Si queda ejecutandose la version fijada a COM5, ejecuta **una sola vez** `Pausar-Captura-COM5.ps1` desde PowerShell normal. Despues abre `Iniciar-Captura.cmd`. El nuevo iniciador detecta esa version vieja y pide pausarla antes de abrir otro lector; no cierra aplicaciones ajenas.
-
-Para seleccionar voluntariamente otra receptora, detiene primero la captura y ejecuta `python scripts/start_capture.py --port COMx` desde la raiz, sustituyendo COMx por el puerto de esa placa. El vinculo se actualiza solo al verificar un mensaje de receptor con radio. Las siguientes aperturas vuelven a identificarla automaticamente.
-
-El estado local separa `last_line_at` (cualquier linea de diagnostico), `last_packet_at` (paquete valido durante esta ejecucion) y `last_capture` (ultima lectura unica archivada). Los contadores historicos no prueban recepcion actual.
-
-Verificacion de software: 55 pruebas correctas de identidad USB, reconexion, instancia unica, inicializacion, contratos y archivo durable. La prueba de lectura fisica requiere abrir el iniciador con el usuario Windows, fuera del entorno restringido. Registro local: `.runtime/review/capture-identity-tests-2026-10-24.txt`.
-
 ## Ejecutar y detener
 
-Abrir PowerShell en la raíz del proyecto y ejecutar:
+Desde la raíz del proyecto, abre con doble clic:
 
-```powershell
-.\Iniciar-Prototipo.ps1
-```
+1. [`Abrir-GeoCattle.cmd`](../Abrir-GeoCattle.cmd) para levantar PostgreSQL, la API y el proceso de alertas. La aplicación abre en http://localhost:8084/ y PostgreSQL usa el puerto 55434.
+2. [`Iniciar-Captura.cmd`](../Iniciar-Captura.cmd) para recibir lecturas. Elige **Directo** para la T3 que recibe del collar o **Gateways** para la T3 base de los repetidores. El iniciador levanta los servicios preparados si la API está detenida.
 
-La instancia física usa http://localhost:8084/#hardware y PostgreSQL/PostGIS
-local en el puerto 55434. La configuración privada está en `.env.academic` y
-el acceso del prototipo en `.runtime/acceso_prototipo.json`. No incorporarlos a Git.
+La configuración local está en `.env.academic` y el acceso del prototipo en `.runtime/acceso_prototipo.json`. Conserva ambos archivos fuera de Git. Para un reinicio completo ejecuta `Detener-Prototipo.ps1` en PowerShell y vuelve a abrir los iniciadores que necesites.
 
-La T3 receptora utiliza COM5. Cerrar Monitor Serie/Plotter antes de abrir la
-captura. Los datos del emisor llegan por LoRa; no es necesario conectar la
-T-Beam al puerto de datos del PC.
+## Captura con doble clic e identidad USB
 
-```powershell
-# Solo si la captura no está ya activa, para verla en primer plano:
-.\Iniciar-Captura-COM5.ps1
+Cierra el Monitor Serie y el Plotter de Arduino. Conecta la T3 receptora por USB de datos y enciende el emisor. En el primer enlace, el perfil del modo se guarda al recibir un mensaje válido con información de radio. Usa VID/PID y número de serie USB cuando está disponible. Si Windows cambia el COM, el capturador busca la misma identidad.
 
-# Liberar COM5 sin apagar la aplicación:
-.\Pausar-Captura-COM5.ps1
+Deja abierta la ventana de captura. Ctrl+C detiene el lector en primer plano. Para pausar uno en segundo plano, usa `Pausar-Captura-COM5.ps1` desde PowerShell. Al abrir `Iniciar-Captura.cmd` de nuevo puedes elegir un modo para el mismo capturador compatible. La cola local usa un bloqueo exclusivo para evitar lectores duplicados.
 
-# Reiniciar API y comprobar captura después de actualizar software:
-.\Actualizar-Visualizacion.ps1
+Desde una consola, el mismo iniciador acepta `--receiver-mode direct` o `--receiver-mode gateways` para omitir el menú. Si necesitas restringir la búsqueda a un puerto concreto, puedes añadir `--port COMx`. La identidad ya guardada se sigue comprobando.
 
-# Reiniciar todos los servicios del prototipo:
-.\Reiniciar-Prototipo.ps1
-
-# Cerrar conservando base y capturas:
-.\Detener-Prototipo.ps1
-```
-
-La instancia Docker de simulación documentada en el README es otro entorno.
-No ejecutar su seed sobre la base física ni reemplazar `.env.academic` por
-credenciales de simulación.
+El estado local registra `last_line_at` para cualquier línea serial, `last_packet_at` para el último paquete válido de la ejecución y `last_capture` para la última lectura única archivada. Estos campos ayudan a distinguir actividad USB, recepción y persistencia.
 
 ## Dónde agregar funcionalidades
 
@@ -100,7 +62,7 @@ Set-Location ..
 Si Node/npm no están en PATH, usar la instalación disponible en el equipo.
 No se necesita reinstalar ni compilar firmware para ejecutar estas pruebas.
 Después de compilar la interfaz, recargar el navegador con Ctrl+F5. Después de
-cambiar Python de la API, ejecutar `Actualizar-Visualizacion.ps1`.
+cambiar Python de la API, detener el prototipo con `Detener-Prototipo.ps1` y volver a abrir `Abrir-GeoCattle.cmd`. Si necesitas captura, abre también `Iniciar-Captura.cmd`.
 
 Las pruebas de `qa/test_hardware_api.py` se omiten por defecto: necesitan una
 base PostgreSQL explícita y `GEOCATTLE_TEST_DATABASE=1`. Sus fixtures se revierten;

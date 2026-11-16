@@ -128,7 +128,7 @@ def login(body:LoginIn,request:Request,response:Response,db=Depends(get_db, scop
     if user.farm_id and db.get(Farm,user.farm_id).environment!=settings().app_env:raise HTTPException(403,"Cuenta de otro entorno")
     from .v3_security import one,create_challenge
     from .v3_auth import issue_session
-    if user.role=='admin':
+    if user.role == 'admin' and settings().admin_login_requires_mfa:
         factor=one(db,'SELECT id FROM mfa_factors WHERE user_id=:u AND verified_at IS NOT NULL AND revoked_at IS NULL',u=user.id)
         return create_challenge(db,user,'login' if factor else 'mfa_setup',setup=not bool(factor))
     attempts.clear()

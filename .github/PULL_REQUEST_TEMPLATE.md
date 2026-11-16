@@ -5,7 +5,7 @@ Describe el problema concreto y el comportamiento que queda al aplicar este camb
 ## Area y destino
 
 - Area: software / captura de hardware / contrato compartido / infraestructura / documentacion.
-- Rama de destino: normalmente `develop`; `main` se actualiza desde una integracion revisada.
+- Rama de destino: `main`.
 - Archivos compartidos o dependencias de otro PR:
 
 ## Compatibilidad

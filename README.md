@@ -8,39 +8,24 @@ Revisión del **16 de noviembre de 2026**.
 
 | Área | Estado |
 |---|---|
-| Aplicación en `main` | Gestión de predios, usuarios, animales, fichas sanitarias, alertas y telemetría. El acceso de administrador requiere TOTP. |
-| Geocercas en `main` | Editor de vértices, geocercas versionadas y ubicación histórica en alertas por pérdida de comunicación. La migración `004` conserva las referencias previas. [Detalle](docs/CORRECCIONES_GEOCERCAS_ALERTAS_2026-10-29.md). |
-| Inventario de gateways en `main` | El dueño y el administrador pueden registrar, ubicar, editar y archivar equipos por predio y consultar sus recepciones. La migración `005` conserva el historial. El estado del inventario es administrativo. [Detalle](docs/CRUD_GATEWAYS.md). |
-| Captura en `main` | LoRa directo entre un collar y una T3, con USB serial al anfitrión. Admite CSV V4 y JSON V5, incluidos envíos de 45 segundos. |
-| Captura por repetidores | En `dev/hardware-captura` existen el selector Directo/Gateways, perfiles USB separados y recepción por lotes. Hay pruebas pendientes antes de integrar. [Estado de la rama](https://github.com/noagame/GeoCattle/blob/dev/hardware-captura/docs/WIP_CAPTURA_GATEWAYS.md). |
-| Acceso de administrador en el prototipo local | El inicio de sesión en el PC de desarrollo quedó temporalmente con solo usuario y contraseña. Consulta [la configuración local](#acceso-de-administrador-en-el-prototipo-local). |
-| Docker y LoRaWAN | Docker permite arrancar la aplicación y añadir MQTT/ChirpStack mediante perfiles opcionales. La validación física de la red LoRaWAN sigue pendiente. |
+| Aplicación | Gestión de predios, usuarios, bovinos, fichas sanitarias, alertas y telemetría. |
+| Geocercas | Editor de vértices, versiones y última ubicación válida en alertas de desconexión. [Detalle](docs/CORRECCIONES_GEOCERCAS_ALERTAS_2026-10-29.md). |
+| Inventario de gateways | Registro, ubicación, edición, archivado e historial de recepciones, con migración `005`. [Detalle](docs/CRUD_GATEWAYS.md). |
+| Captura USB | Selector **Directo** o **Gateways**, detección por identidad USB, lotes JSON, almacenamiento local y reintento hacia PostgreSQL. [Operación](docs/DESARROLLO_LOCAL.md). |
+| Acceso de administrador | Usuario y contraseña en desarrollo y simulación. El TOTP es configurable para ese inicio de sesión. [Configuración](#acceso-de-administrador). |
+| Hardware | Código Arduino del collar, las dos receptoras y los dos repetidores. [Firmware](firmware/README.md). |
+| Docker y LoRaWAN | Docker levanta la aplicación y admite perfiles MQTT/ChirpStack. La validación física de LoRaWAN está pendiente. |
 
-La [validación de GitHub de la versión base `37c3d87`](https://github.com/noagame/GeoCattle/actions/runs/42116618131) pasó los controles de frontend, contratos de captura, reglas de dominio y API con PostGIS temporal. Las [pruebas de la rama de captura](https://github.com/noagame/GeoCattle/actions/runs/42661603348) todavía muestran fallos. El ensayo de recepción de lotes del 10 de noviembre corresponde al prototipo local de esa rama.
-
-Consulta [resumen.md](resumen.md) para ver la evolución y la evidencia de verificaciones anteriores.
-
-## Desarrollo separado por áreas
-
-El trabajo de los dos colaboradores se organiza en el mismo repositorio, conservando las carpetas y funcionalidades actuales:
-
-- `main`: versión estable publicada.
-- `develop`: integración y revisión de cambios compatibles.
-- `dev/software`: interfaz, API, mapas, geocercas, alertas y gestión; referencia de Fabián Del Villar (`noagame`).
-- `dev/hardware-captura`: recepción de collares, gateways y protocolos; referencia de Boris (`BorBP`).
-
-**Ambos pueden modificar software y otras áreas.** Las ramas separan tareas, no restringen la edición de archivos. Los contratos compartidos se revisan entre ambos antes de integrar por PR hacia `develop`; las entregas revisadas pasan después a `main`.
-
-Ver [CONTRIBUTING.md](CONTRIBUTING.md) y [Desarrollo colaborativo](docs/DESARROLLO_COLABORATIVO.md) para sincronizar sin reemplazar el trabajo del otro, conocer los controles automáticos y configurar las protecciones de GitHub. El trabajo de receptores que sigue pendiente queda identificado como desarrollo en curso en su rama; no se publica automáticamente como estable.
+El código de la aplicación y de la captura se mantiene en `main`. Para contribuir consulta [CONTRIBUTING.md](CONTRIBUTING.md). Las comprobaciones de GitHub cubren compilación del frontend, contratos de captura, reglas de dominio y API con PostGIS temporal. El ensayo físico por repetidores del 10 de noviembre verificó recepción y persistencia de lotes en el prototipo local.
 
 ## Funcionalidades
 
-- Sesiones HttpOnly, CSRF, permisos por predio y roles de administrador, dueño, trabajador y veterinario. MFA TOTP para administración y operaciones sensibles.
+- Sesiones HttpOnly, CSRF, permisos por predio y roles de administrador, dueño, trabajador y veterinario. TOTP configurable para el inicio de sesión de administrador y verificación adicional para operaciones sensibles.
 - Contexto multipredio, gestión de clientes, invitaciones, membresías, confianza por acción y aprobación de propuestas del trabajador.
 - Bovinos con DIIO, ficha técnica y sanitaria, historial, tratamientos y agenda con autoría.
 - Mapa Leaflet con OpenStreetMap opcional y cuadrícula local, recentrado y dibujo de geocercas versionadas.
 - Asociaciones históricas entre collar y animal, sector y geocerca, con vigencias y sin reatribuir lecturas anteriores.
-- Recepción académica LoRa punto a punto mediante una T3 USB: CSV V4 y JSON V5, cola durable, deduplicación y reintentos hacia la API.
+- Recepción académica LoRa directo mediante una T3 USB con CSV V4 y JSON V5, y captura de lotes JSON mediante una T3 base. La cola local deduplica y reintenta la entrega a la API.
 - Visualización de GPS, satélites usados, HDOP, temperatura superficial, aceleración, actividad, movimiento, batería, USB y calidad radio según los campos recibidos.
 - Historial paginado, gráficas y trayectoria por collar, registro diario y exportación JSONL de la página consultada.
 - **Alertas y atención → Configurar alertas**: batería, temperatura, actividad y cercanía al límite de geocerca. Solo dueño y administrador pueden guardar parámetros; cada cambio conserva versión y auditoría.
@@ -75,7 +60,7 @@ En Linux, usa `python3` en lugar de `py -3`. El iniciador crea la configuración
 py -3 scripts/docker_project.py start --environment development --owner-email propietario@example.com --farm "Mi predio"
 py -3 -m venv .venv-capture
 .\.venv-capture\Scripts\python.exe -m pip install -r adapters/requirements.txt
-.\.venv-capture\Scripts\python.exe scripts/start_capture.py --backend docker
+.\.venv-capture\Scripts\python.exe scripts/start_capture.py --backend docker --select-mode
 ```
 
 En Linux usa `python3` y `.venv-capture/bin/python`. Sustituye el correo y el nombre del predio. Para una cuenta nueva, consulta `ADMIN_PASSWORD` en `.env.docker`. Abre [GeoCattle en el puerto 8086](http://localhost:8086/) y registra el collar con su identidad y transporte. Crea la asociación vigente con el bovino para atribuir sus lecturas.
@@ -92,26 +77,30 @@ La instalación ya preparada necesita `.env.academic`, PostgreSQL/PostGIS local,
 
 1. Abre [`Abrir-GeoCattle.cmd`](Abrir-GeoCattle.cmd) para levantar la base, la API y el proceso de alertas. La web abre en [localhost:8084](http://localhost:8084/).
 2. Conecta la receptora T3 con un cable USB de datos, enciende el collar y cierra Monitor Serie y Plotter.
-3. Abre [`Iniciar-Captura.cmd`](Iniciar-Captura.cmd). En `main` inicia la captura directa con identificación USB. En el prototipo local de la rama de hardware, el mismo archivo permite elegir **Directo** o **Gateways**.
+3. Abre [`Iniciar-Captura.cmd`](Iniciar-Captura.cmd). Elige **Directo** para la T3 que recibe del collar o **Gateways** para la T3 base de los repetidores. Se detectará el USB del modo seleccionado.
 4. Deja abierta la consola de captura. Comprueba una lectura nueva en [Recepción de collares](http://localhost:8084/#hardware) y confirma la persistencia en PostgreSQL antes de dar por verificada la integración.
 
 Ctrl+C detiene la captura en primer plano. `Pausar-Captura-COM5.ps1` libera el puerto de una captura en segundo plano. `Detener-Prototipo.ps1` detiene los servicios locales. El archivo diario y la cola SQLite están en `.runtime/capture/`. La aplicación persiste las lecturas en PostgreSQL/PostGIS.
 
 En `main`, el arranque aplica hasta `005_gateway_management.sql`. Respalda la base antes de actualizar una instalación existente y valida primero la migración en una copia.
 
-### Acceso de administrador en el prototipo local
+### Acceso de administrador
 
-En el PC donde se preparó el prototipo, se desactivó temporalmente el código de doble verificación **al entrar al panel de administración**. Abre `Abrir-GeoCattle.cmd`, entra en [GeoCattle local](http://localhost:8084/) e inicia sesión con el usuario y la contraseña de administrador que ya tienes. Las operaciones sensibles conservan su verificación adicional.
+En desarrollo y simulación, el administrador entra con **correo y contraseña**. Usa las credenciales de administrador de tu instalación. En el prototipo existente, abre [GeoCattle local](http://localhost:8084/) tras ejecutar `Abrir-GeoCattle.cmd`.
 
-Esta opción corresponde al backend modificado de esa instalación nativa de Windows, en `development` y con acceso desde el mismo equipo. Su configuración privada en `.env.academic` usa `LOCAL_ADMIN_PASSWORD_ONLY=true`. Para volver a pedir el código al iniciar sesión, cambia el valor a `false` y reinicia la API local. Puedes reiniciar con `Detener-Prototipo.ps1` y volver a abrir `Abrir-GeoCattle.cmd` y, si corresponde, `Iniciar-Captura.cmd`.
+En una instancia Docker nueva, levanta primero los servicios. Define `V3_ADMIN_PASSWORD` en `.env.docker` y crea el administrador con este comando:
 
-Una instalación nueva desde `main` conserva el requisito de TOTP. La opción temporal requiere el cambio de backend del prototipo y está documentada aquí como parte del estado de ese equipo.
+```text
+docker compose --env-file .env.docker -f compose.yaml -f compose.usb.yaml --profile tools run --rm --no-deps seed python -m geocattle.seed_v3 --admin-email administrador@example.com
+```
 
-## Usuarios y alertas
+Usa una contraseña de al menos doce caracteres y el correo elegido. Para simulación usa `.env` y solo `-f compose.yaml`. Las credenciales y los factores existentes se administran localmente.
 
-El administrador crea las cuentas de dueños/clientes. **El dueño invita a trabajadores y veterinarios** desde Equipo y permisos; cada persona activa su cuenta mediante un enlace con vencimiento y uso único. El administrador conserva la gestión de colaboradores ya incorporados, pero no crea nuevas invitaciones en nombre del dueño. Los enlaces se entregan manualmente: no hay correo externo configurado.
+Para volver a pedir TOTP al iniciar sesión, define `ADMIN_LOGIN_MFA=true` en el archivo privado del entorno y reinicia la API. `APP_ENV=production` exige TOTP al administrador. La verificación adicional de operaciones sensibles sigue disponible.
 
-Las instalaciones nuevas crean su primer administrador de forma explícita con `python -m geocattle.seed_v3 --admin-email CORREO` y `V3_ADMIN_PASSWORD` (mínimo doce caracteres), usando el servicio tools/seed y la credencial de migración. Debe configurar TOTP para ingresar. No se publican contraseñas ni factores MFA de prueba.
+### Usuarios y alertas
+
+El administrador crea cuentas de dueños. El dueño invita a trabajadores y veterinarios desde Equipo y permisos. Cada invitado activa su cuenta con un enlace de uso único y vencimiento. Los enlaces se entregan manualmente.
 
 En **Alertas y atención**, solo dueño y administrador del predio seleccionado pueden configurar parámetros. Trabajador y veterinario mantienen consulta y atención. Temperatura y actividad permiten preparar umbrales, pero su activación fuera de simulación conserva la validación preventiva pendiente de terreno. Las reglas automáticas de comunicación y salida de geocerca mantienen su comportamiento.
 

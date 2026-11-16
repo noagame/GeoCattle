@@ -27,7 +27,8 @@ def current_user(request: Request,db=Depends(get_db, scope="function")):
     if not session or session.revoked_at is not None or session.expires_at<=utcnow() or (session.last_seen_at and utcnow()-session.last_seen_at>timedelta(minutes=30)): raise HTTPException(401,"Sesión requerida")
     user=db.get(User,session.user_id)
     if not user or not user.active: raise HTTPException(401,"Sesión requerida")
-    if user.role=='admin' and session.mfa_verified_at is None: raise HTTPException(401,"Se requiere MFA para administrador")
+    if user.role == 'admin' and settings().admin_login_requires_mfa and session.mfa_verified_at is None:
+        raise HTTPException(401, "Se requiere MFA para administrador")
     request.state.identity=user
     request.state.session=session
     session.last_seen_at=utcnow()

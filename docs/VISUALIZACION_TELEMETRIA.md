@@ -68,10 +68,6 @@ Satélites visibles y C/N₀ existen en el diagnóstico serie del emisor, pero e
 
 ## Inicio y actualización
 
-La versión nueva ya está activa. Si se necesita reiniciar solo la API después de un cambio de código, ejecutar en PowerShell normal la línea completa:
+Abre [`Abrir-GeoCattle.cmd`](../Abrir-GeoCattle.cmd) para iniciar la aplicación y [`Iniciar-Captura.cmd`](../Iniciar-Captura.cmd) para elegir el modo de recepción. Cierra el Monitor Serie y el Plotter antes de capturar. Mantén la T3 en el cable de datos y el collar alimentado.
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\ruta\GeoCattle\Actualizar-Visualizacion.ps1"
-```
-
-Para capturar en primer plano, usar `Iniciar-Captura-COM5.ps1`, con el Monitor Serie y Plotter cerrados. No abrir dos lectores del mismo puerto. Mantener la T3 en el cable de datos y la T-Beam alimentada con batería o el cable de alimentación disponible.
+Para reiniciar los servicios tras actualizar el backend, ejecuta `Detener-Prototipo.ps1` en PowerShell y vuelve a abrir los iniciadores que necesites. Los pasos completos están en [Desarrollo local](DESARROLLO_LOCAL.md).

@@ -10,6 +10,7 @@ from unittest.mock import patch
 import serial
 from adapters.lora_usb import Archive, capture, main
 from adapters.serial_receiver import CaptureLease, load_receiver, save_receiver
+from adapters.receiver_profiles import load_profile
 from qa.test_lora_json import SAMPLE
 
 
@@ -58,14 +59,14 @@ class CaptureRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             archive,status=self.exercise(folder,[Connection([json.dumps(SAMPLE).encode()+b'\n'])],[[usb()]])
             self.assertEqual(archive.stats()['captured'],0)
-            self.assertIsNone(load_receiver(Path(folder)/'receiver.json'))
+            self.assertIsNone(load_profile(Path(folder), 'direct'))
             self.assertIsNone(status['last_packet_at'])
 
     def test_receiver_envelope_binds_and_preserves_capture(self):
         with tempfile.TemporaryDirectory() as folder:
             archive,status=self.exercise(folder,[Connection([rx()])],[[usb()]])
             self.assertEqual(archive.stats()['captured'],1)
-            self.assertEqual(load_receiver(Path(folder)/'receiver.json')['serial_number'],'QA-RECEIVER')
+            self.assertEqual(load_profile(Path(folder), 'direct')['serial_number'],'QA-RECEIVER')
             self.assertIsNotNone(status['last_packet_at'])
             self.assertFalse(status['connected'])
 
@@ -76,7 +77,7 @@ class CaptureRuntimeTests(unittest.TestCase):
             archive, status = self.exercise(folder, [Connection([frame])], [[usb()]])
             self.assertEqual(archive.stats()['captured'], 1)
             self.assertIsNotNone(status['last_packet_at'])
-            self.assertEqual(load_receiver(Path(folder) / 'receiver.json')['serial_number'], 'QA-RECEIVER')
+            self.assertEqual(load_profile(Path(folder), 'direct')['serial_number'], 'QA-RECEIVER')
             with archive.connection() as db:
                 payload = json.loads(db.execute('SELECT payload FROM captures').fetchone()[0])
             self.assertEqual(payload['quality']['period_ms'], 45000)
@@ -95,7 +96,7 @@ class CaptureRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             archive,_=self.exercise(folder,[Connection([json.dumps(message).encode()+b'\n'])],[[usb()]])
             self.assertEqual(archive.stats()['captured'],0)
-            self.assertIsNone(load_receiver(Path(folder)/'receiver.json'))
+            self.assertIsNone(load_profile(Path(folder), 'direct'))
 
     def test_disconnect_reconnect_in_another_com_keeps_identity_and_two_samples(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -27,6 +27,7 @@ PASSWORD_HASH=hash_password(PASSWORD)
 
 @pytest.fixture
 def v3(monkeypatch):
+    monkeypatch.setattr(settings(), 'admin_login_mfa', True)
     engine=create_engine(os.environ['TEST_DATABASE_URL'])
     with engine.connect() as conn:
         outer=conn.begin()
@@ -83,6 +84,25 @@ def v3(monkeypatch):
             yield SimpleNamespace(db=db,users=users,farms=farms,members=members,animals=animals,client=client_for,clock=clock)
         app.dependency_overrides.clear();db.close();outer.rollback()
     engine.dispose()
+
+
+def test_admin_password_session_opens_panel_and_respects_mfa_policy(v3, monkeypatch):
+    config = settings()
+    monkeypatch.setattr(config, 'admin_login_mfa', False)
+    client = v3.client('admin', login=False)
+    username = v3.users['admin'].username
+    assert client.get('/api/v1/v3/admin/kpis').status_code == 401
+    assert client.post('/api/v1/auth/login', json={'username': username, 'password': 'incorrecta'}).status_code == 401
+    login = client.post('/api/v1/auth/login', json={'username': username, 'password': PASSWORD})
+    assert login.status_code == 200, login.text
+    assert 'mfa_required' not in login.json()
+    assert login.json()['user']['role'] == 'admin'
+    assert client.get('/api/v1/v3/admin/kpis').status_code == 200
+    monkeypatch.setattr(config, 'admin_login_mfa', True)
+    assert client.get('/api/v1/v3/admin/kpis').status_code == 401
+    challenge = client.post('/api/v1/auth/login', json={'username': username, 'password': PASSWORD})
+    assert challenge.status_code == 200, challenge.text
+    assert challenge.json()['mfa_required'] is True
 
 
 def body(v3,action,payload,version=None):

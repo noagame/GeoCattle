@@ -196,6 +196,53 @@ def test_worker_pending_health_does_not_mutate_until_owner_approval(v3):
     assert v3.db.execute(text('SELECT count(*) FROM health_events WHERE request_id=CAST(:r AS uuid)'),{'r':req}).scalar_one()==1
 
 
+def test_clinical_workflow_with_read_insert_only_history(v3):
+    if not v3.db.scalar(text('SELECT rolsuper FROM pg_roles WHERE rolname=current_user')):
+        pytest.skip('La base QA requiere un administrador para crear el rol temporal de la aplicación')
+    role=f'qa_clinical_{uuid4().hex}'
+    v3.db.execute(text(f'CREATE ROLE {role} NOLOGIN'))
+    v3.db.execute(text(f'GRANT USAGE ON SCHEMA public TO {role}'))
+    v3.db.execute(text(f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {role}'))
+    v3.db.execute(text('REVOKE UPDATE, DELETE ON change_requests, change_decisions, change_applications, '
+                        f'animal_measurements, health_events, health_schedules FROM {role}'))
+    v3.db.execute(text(f'SET LOCAL ROLE {role}'))
+    v3.db.commit()
+    assert not v3.db.scalar(text("SELECT has_table_privilege('change_requests', 'UPDATE')"))
+
+    vet=v3.client('vet')
+    profile={'breed':'Ankole-Watusi','color':'Cafe','sex':'female','birth_date':'2024-04-16',
+             'weight_kg':750,'height_cm':240}
+    change=body(v3,'animal_profile',profile)
+    saved=vet.post('/api/v1/v3/changes',json=change)
+    assert saved.status_code==201,saved.text
+    assert saved.json()['decision']=='direct'
+    repeated=vet.post('/api/v1/v3/changes',json=change)
+    assert repeated.status_code==201,repeated.text
+    assert repeated.json()=={'id':saved.json()['id'],'status':'applied'}
+
+    worker=v3.client('worker')
+    owner=v3.client('owner')
+    observation={'event_type':'observation','description':'Control de integración QA'}
+    pending=worker.post('/api/v1/v3/changes',json=body(v3,'health_record',observation))
+    assert pending.status_code==201 and pending.json()['status']=='pending',pending.text
+    decision=f"/api/v1/v3/changes/{pending.json()['id']}/decision"
+    approved=owner.post(decision,json={'decision':'approved'})
+    assert approved.status_code==200,approved.text
+    assert owner.post(decision,json={'decision':'approved'}).status_code==200
+
+    corrected=vet.post('/api/v1/v3/changes',json=body(v3,'health_record',{
+        **observation,'operation':'correct','target_event_id':approved.json()['entity_id']}))
+    assert corrected.status_code==201,corrected.text
+    record=vet.get(f"/api/v1/v3/animals/{v3.animals['owner'].id}/record")
+    assert record.status_code==200,record.text
+    result=record.json()
+    assert {key:result['animal'][key] for key in ('breed','color','sex','birth_date')} == {
+        key:profile[key] for key in ('breed','color','sex','birth_date')}
+    measured=result['measurements']
+    assert len(measured)==1 and measured[0]['weight_kg']==750 and measured[0]['height_cm']==240
+    assert len(result['health_events'])==2 and sum(event['effective'] for event in result['health_events'])==1
+
+
 def test_veterinarian_direct_health_and_correction_preserve_history(v3):
     vet=v3.client('vet')
     first=vet.post('/api/v1/v3/changes',json=body(v3,'health_record',{'event_type':'pathology','description':'Evaluación clínica','diagnosis':'Hallazgo de prueba'}))

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
-import { Clock, Fence, Link2, Pencil, Plus, Radio, Settings2, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Clock, Fence, Link2, Pencil, Plus, Radio, Settings2, ShieldCheck } from 'lucide-react';
 import type { Animal, Device, Geofence, List, Sector } from './types';
-import { date, useData, write } from './api';
+import { ApiError, date, useData, write } from './api';
 import { Badge, Empty, ErrorNotice, Loading, Modal, PageTitle, Panel, PanelTitle, Submit } from './ui';
 import { CattleMap, type CollarLocation } from './Map';
 import type { Notify } from './App';
@@ -33,15 +33,80 @@ function DeviceConfigForm({ device, onClose, onSaved }: { device: Device; onClos
   return <Modal title={`Configurar ${device.name}`} onClose={onClose}><form className="form-body" onSubmit={submit}><div className="notice"><Clock size={18} /><span>Intervalo aplicado: <strong>{device.interval_seconds} s · v{device.config_version}</strong>. El intervalo solicitado permanece pendiente hasta recibir la versión confirmada por el nodo.</span></div>{device.pending_config && <div className="notice notice-warning">Existe una solicitud pendiente de {device.pending_config.interval_seconds} s (v{device.pending_config.version}). El servidor comprobará si puede emitir una nueva versión.</div>}<label>Nuevo intervalo (segundos)<input type="number" min="30" max="86400" step="1" value={interval} onChange={e => setInterval(e.target.value)} required /></label><p className="form-intro">La pérdida de comunicación y la vigencia de posición siguen usando el intervalo aplicado. En clase A, el envío puede esperar una ventana de recepción.</p><ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" onClick={onClose} disabled={busy}>Cancelar</button><Submit busy={busy}>Solicitar configuración</Submit></div></form></Modal>;
 }
 type MapContext = { items: { hardware_id: string; last_position: { latitude: number | null; longitude: number | null; observed_at: string; gnss_valid: boolean } | null; position_age_seconds: number | null; freshness_seconds: number }[] };
+function PastureTransferForm({ devices, collars, selected, onSelect, animal, fences, sectors, watched, notify }: {
+  devices: ReturnType<typeof useData<List<Device>>>; collars: Device[]; selected?: Device; onSelect: (id: string) => void;
+  animal: ReturnType<typeof useData<Animal>>; fences: ReturnType<typeof useData<List<Geofence>>>;
+  sectors: ReturnType<typeof useData<List<Sector>>>; watched?: Animal['pasture_assignment']; notify: Notify;
+}) {
+  const [destinationId, setDestinationId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const eligible = fences.data?.items.filter(f => f.active && f.id !== watched?.geofence_id &&
+    sectors.data?.items.some(s => s.id === f.sector_id && s.active !== false)) ?? [];
+  const destination = eligible.find(f => f.id === destinationId) ?? (eligible.length === 1 ? eligible[0] : undefined);
+  const ready = !!(selected && animal.data?.enabled && destination && !animal.loading);
+
+  async function transfer(event: FormEvent) {
+    event.preventDefault();
+    if (!ready || busy || !destination || !animal.data || !selected) return;
+    setBusy(true); setError('');
+    try {
+      await write('/pasture-assignments', {
+        animal_id: animal.data.id, geofence_id: destination.id, expected_pasture_id: watched?.id ?? null, expected_device_id: selected.id,
+      });
+      setDestinationId(''); animal.reload();
+      notify(`Collar trasladado a ${destination.name}.`);
+    } catch (problem) {
+      if (problem instanceof ApiError && problem.status === 409) {
+        setDestinationId(''); devices.reload(); animal.reload(); fences.reload(); sectors.reload();
+      }
+      setError(problem instanceof Error ? problem.message : 'No se pudo trasladar el collar.');
+    } finally { setBusy(false); }
+  }
+
+  return <Panel className="pasture-transfer">
+    <PanelTitle title="Trasladar collar entre geocercas" subtitle="Cambia la zona vigilada del animal asociado y conserva el historial de ambos potreros." />
+    <div className="form-body">
+      <ErrorNotice error={devices.error || animal.error || error} retry={devices.error ? devices.reload : animal.error ? animal.reload : undefined} />
+      {!devices.data && devices.loading && <Loading label="Consultando collares…" />}
+      {devices.data && !collars.length && <p className="form-intro">Asocia un collar a un animal desde <a href="#devices">Collares y dispositivos</a> para elegir la geocerca que vigilará.</p>}
+      {collars.length > 1 && <label>Collar<select value={selected?.id ?? ''} onChange={e => { onSelect(e.target.value); setDestinationId(''); setError(''); }} disabled={busy}>
+        <option value="">Selecciona un collar</option>
+        {collars.map(collar => <option key={collar.id} value={collar.id}>{collar.hardware_id} · {collar.name}</option>)}
+      </select></label>}
+      {selected && <>
+        <p className="form-intro"><strong>{selected.hardware_id}</strong>{animal.data && <> · {animal.data.name} · DIIO {animal.data.diio}</>}</p>
+        {animal.loading && !animal.data ? <Loading label="Consultando zona vigente…" /> : animal.data && <>
+          <p className="form-intro">Zona vigilada <strong>{watched ? `${watched.geofence_name} · ${watched.sector_name}` : 'Sin asignación'}</strong></p>
+          {!animal.data.enabled ? <p className="form-intro">El animal debe estar habilitado para trasladarlo.</p> :
+            <form className="inline-assignment" onSubmit={transfer}>
+              <label>Geocerca de destino<select required value={destination?.id ?? ''} onChange={e => setDestinationId(e.target.value)} disabled={busy || animal.loading || !eligible.length}>
+                <option value="">{eligible.length ? 'Selecciona la nueva geocerca' : 'Sin otra geocerca activa disponible'}</option>
+                {eligible.map(f => <option key={f.id} value={f.id}>{f.name} · {sectors.data?.items.find(s => s.id === f.sector_id)?.name} · v{f.version}</option>)}
+              </select></label>
+              <button type="submit" className="button primary" disabled={!ready || busy}><ArrowRight size={16} />{busy ? 'Trasladando…' : watched ? 'Confirmar traslado' : 'Asignar geocerca'}</button>
+            </form>}
+        </>}
+      </>}
+    </div>
+  </Panel>;
+}
+
 export function GeofencesPage({ canWrite, notify }: { canWrite: boolean; notify: Notify }) {
   const fences = useData<List<Geofence>>('/geofences'); const sectors = useData<List<Sector>>('/sectors');
+  const devices = useData<List<Device>>(canWrite ? '/devices' : null);
+  const [collarId, setCollarId] = useState('');
+  const linked = devices.data?.items.filter(d => d.enabled && d.animal_id) ?? [];
+  const selected = linked.find(d => d.id === collarId) ?? (linked.length === 1 ? linked[0] : undefined);
+  const animal = useData<Animal>(selected?.animal_id ? `/animals/${selected.animal_id}` : null);
+  const watched = animal.data?.pasture_assignment;
   const context = useData<MapContext>('/hardware/overview', 15000);
   const collars: CollarLocation[] = context.data?.items.flatMap(d => { const p = d.last_position; return p?.gnss_valid && p.latitude != null && p.longitude != null ? [{ hardware_id: d.hardware_id, latitude: p.latitude, longitude: p.longitude, observed_at: p.observed_at, stale: (d.position_age_seconds ?? Infinity) > d.freshness_seconds }] : []; }) ?? [];
   const [sectorEditing, setSectorEditing] = useState<Sector | null>(null);
   const [showVersions, setShowVersions] = useState(false); const [sector, setSector] = useState('');
   const [creating, setCreating] = useState(false); const [editing, setEditing] = useState<Geofence | null>(null); const [addingSector, setAddingSector] = useState(false);
   const visible = fences.data?.items.filter(f => (showVersions || f.active) && (!sector || f.sector_ids.includes(sector))) ?? [];
-  return <><PageTitle eyebrow="LÍMITES Y PASTOREO" title="Sectores y geocercas" description="Delimita zonas del predio y conserva cada versión." actions={canWrite && <><button className="button secondary" onClick={() => setAddingSector(true)}><Plus size={17} />Crear sector</button><button className="button primary" disabled={!sectors.data?.items.some(s => s.active !== false)} title="Necesitas un sector activo para crear una geocerca" onClick={() => setCreating(true)}><Fence size={17} />Nueva geocerca</button></>} /><div className="geofence-grid"><Panel className="map-panel"><PanelTitle title="Zonas del predio" subtitle="Geocercas guardadas y últimas posiciones válidas de los collares del predio" action={<select className="compact-select" aria-label="Filtrar geocercas por sector" value={sector} onChange={e => setSector(e.target.value)}><option value="">Todos los sectores</option>{sectors.data?.items.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>} /><CattleMap key={sector} geofences={visible} collars={collars} /></Panel><Panel><PanelTitle title="Geocercas" subtitle={`${fences.data?.items.filter(f => f.active).length ?? 0} versiones activas`} /><label className="checkbox-field version-toggle"><input type="checkbox" checked={showVersions} onChange={e => setShowVersions(e.target.checked)} />Mostrar versiones anteriores</label><ErrorNotice error={fences.error || sectors.error} retry={() => { fences.reload(); sectors.reload(); }} />{fences.loading && <Loading />}{!fences.loading && (visible.length ? <div className="geofence-cards">{visible.map(f => <div className={`geofence-card ${!f.active ? 'inactive' : ''}`} key={f.id}><div className="geofence-card-top"><span className="animal-avatar"><Fence size={18} /></span><div><h3>{f.name}</h3><small>{sectors.data?.items.filter(s => f.sector_ids.includes(s.id)).map(s => s.name).join(' · ') || 'Sector'}</small></div>{canWrite && f.active && <button className="icon-button" aria-label={`Editar ${f.name}`} onClick={() => setEditing(f)}><Pencil size={16} /></button>}</div><div className="geofence-card-meta"><span>Versión {f.version}</span><Badge status={f.active ? 'normal' : 'unknown'}>{f.active ? 'Activa' : 'Histórica'}</Badge></div><p>{date(f.created_at)} · {f.geometry.coordinates[0].length - 1} vértices</p></div>)}</div> : <Empty title="Sin geocercas" description="Crea un sector y dibuja o importa su primera zona." />)}</Panel></div><Panel><PanelTitle title="Sectores del predio" subtitle="Define el uso del suelo y conserva sectores retirados." />{sectors.data?.items.length ? <div className="table-scroll"><table><thead><tr><th>Sector</th><th>Uso</th><th>Descripción</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{sectors.data.items.map(s => <tr key={s.id}><td>{s.name}</td><td>{landUseLabels[s.land_use ?? 'grazing']}</td><td className="wrap-cell">{s.description || 'Sin descripción'}</td><td>{s.active === false ? 'Inactivo' : 'Activo'}</td><td>{canWrite && <button className="button secondary small" onClick={() => setSectorEditing(s)}><Pencil size={14} />Editar sector</button>}</td></tr>)}</tbody></table></div> : <Empty title="Sin sectores" description="Crea un sector antes de delimitar geocercas." />}</Panel>{(creating || editing) && <GeofenceForm fence={editing ?? undefined} collars={collars} sectors={sectors.data?.items.filter(s => s.active !== false) ?? []} existing={fences.data?.items.filter(f => f.active) ?? []} onClose={() => { setCreating(false); setEditing(null); }} onSaved={() => { setCreating(false); setEditing(null); fences.reload(); notify('Geocerca guardada. Versión anterior conservada.'); }} />}{sectorEditing && <SectorForm sector={sectorEditing} onClose={() => setSectorEditing(null)} onSaved={() => { setSectorEditing(null); sectors.reload(); notify('Sector actualizado.'); }} />}{addingSector && <SectorForm onClose={() => setAddingSector(false)} onSaved={() => { setAddingSector(false); sectors.reload(); notify('Sector creado.'); }} />}</>;
+  return <><PageTitle eyebrow="LÍMITES Y PASTOREO" title="Sectores y geocercas" description="Delimita zonas del predio y conserva cada versión." actions={canWrite && <><button className="button secondary" onClick={() => setAddingSector(true)}><Plus size={17} />Crear sector</button><button className="button primary" disabled={!sectors.data?.items.some(s => s.active !== false)} title="Necesitas un sector activo para crear una geocerca" onClick={() => setCreating(true)}><Fence size={17} />Nueva geocerca</button></>} />{canWrite && <PastureTransferForm devices={devices} collars={linked} selected={selected} onSelect={setCollarId} animal={animal} fences={fences} sectors={sectors} watched={watched} notify={notify} />}<div className="geofence-grid"><Panel className="map-panel"><PanelTitle title="Zonas del predio" subtitle="Geocercas guardadas y últimas posiciones válidas de los collares del predio" action={<select className="compact-select" aria-label="Filtrar geocercas por sector" value={sector} onChange={e => setSector(e.target.value)}><option value="">Todos los sectores</option>{sectors.data?.items.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>} /><CattleMap key={sector} geofences={visible} collars={collars} watchedFenceId={watched?.geofence_id} /></Panel><Panel><PanelTitle title="Geocercas" subtitle={`${fences.data?.items.filter(f => f.active).length ?? 0} versiones activas`} /><label className="checkbox-field version-toggle"><input type="checkbox" checked={showVersions} onChange={e => setShowVersions(e.target.checked)} />Mostrar versiones anteriores</label><ErrorNotice error={fences.error || sectors.error} retry={() => { fences.reload(); sectors.reload(); }} />{fences.loading && <Loading />}{!fences.loading && (visible.length ? <div className="geofence-cards">{visible.map(f => <div className={`geofence-card ${!f.active ? 'inactive' : ''}`} key={f.id}><div className="geofence-card-top"><span className="animal-avatar"><Fence size={18} /></span><div><h3>{f.name}</h3><small>{sectors.data?.items.filter(s => f.sector_ids.includes(s.id)).map(s => s.name).join(' · ') || 'Sector'}</small></div>{canWrite && f.active && <button className="icon-button" aria-label={`Editar ${f.name}`} onClick={() => setEditing(f)}><Pencil size={16} /></button>}</div><div className="geofence-card-meta"><span>Versión {f.version}</span><Badge status={f.active ? 'normal' : 'unknown'}>{f.id === watched?.geofence_id ? 'Zona vigilada' : f.active ? 'Activa' : 'Histórica'}</Badge></div><p>{date(f.created_at)} · {f.geometry.coordinates[0].length - 1} vértices</p></div>)}</div> : <Empty title="Sin geocercas" description="Crea un sector y dibuja o importa su primera zona." />)}</Panel></div><Panel><PanelTitle title="Sectores del predio" subtitle="Define el uso del suelo y conserva sectores retirados." />{sectors.data?.items.length ? <div className="table-scroll"><table><thead><tr><th>Sector</th><th>Uso</th><th>Descripción</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{sectors.data.items.map(s => <tr key={s.id}><td>{s.name}</td><td>{landUseLabels[s.land_use ?? 'grazing']}</td><td className="wrap-cell">{s.description || 'Sin descripción'}</td><td>{s.active === false ? 'Inactivo' : 'Activo'}</td><td>{canWrite && <button className="button secondary small" onClick={() => setSectorEditing(s)}><Pencil size={14} />Editar sector</button>}</td></tr>)}</tbody></table></div> : <Empty title="Sin sectores" description="Crea un sector antes de delimitar geocercas." />}</Panel>{(creating || editing) && <GeofenceForm fence={editing ?? undefined} collars={collars} sectors={sectors.data?.items.filter(s => s.active !== false) ?? []} existing={fences.data?.items.filter(f => f.active) ?? []} onClose={() => { setCreating(false); setEditing(null); }} onSaved={() => { setCreating(false); setEditing(null); fences.reload(); animal.reload(); notify('Geocerca guardada. Versión anterior conservada.'); }} />}{sectorEditing && <SectorForm sector={sectorEditing} onClose={() => setSectorEditing(null)} onSaved={() => { setSectorEditing(null); sectors.reload(); notify('Sector actualizado.'); }} />}{addingSector && <SectorForm onClose={() => setAddingSector(false)} onSaved={() => { setAddingSector(false); sectors.reload(); notify('Sector creado.'); }} />}</>;
 }
 const landUseLabels: Record<string, string> = { grazing: 'Pastoreo', available: 'Disponible / libre', cropped: 'Ocupado por siembra', restricted: 'Restringido', other: 'Otro' };
 function SectorForm({ sector, onClose, onSaved }: { sector?: Sector; onClose: () => void; onSaved: () => void }) {

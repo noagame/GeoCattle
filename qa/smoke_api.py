@@ -177,12 +177,19 @@ class Smoke:
         fence_body = {"sector_id": sector["id"], "name": "Zona QA " + self.run_id,
                       "geometry": polygon, "expected_version": 0, "confirm_impact": True}
         fence = self.request("POST", "/geofences", fence_body, 201)
-        self.request("POST", "/geofences", fence_body, 409)
+        other_polygon = {"type": "Polygon", "coordinates": [[[-72.63,-38.75],[-72.62,-38.75],
+                         [-72.62,-38.74],[-72.63,-38.74],[-72.63,-38.75]]]}
+        other_fence = self.request("POST", "/geofences", dict(fence_body, name="Segunda zona QA " + self.run_id,
+                                                              geometry=other_polygon), 201)
+        self.check("Dos geocercas activas en el mismo sector", other_fence["geofence_key"] != fence["geofence_key"]
+                   and fence["active"] and other_fence["active"])
+        self.request("POST", "/geofences", dict(fence_body, expected_version=1), 409)
+        revision = dict(fence_body, geofence_key=fence["geofence_key"], expected_version=1)
         invalid = {"type": "Polygon", "coordinates": [[[-72.65,-38.75],[-72.64,-38.74],
                    [-72.64,-38.75],[-72.65,-38.74],[-72.65,-38.75]]]}
-        self.request("POST", "/geofences", dict(fence_body, geometry=invalid, expected_version=1), 422)
-        self.request("POST", "/geofences", dict(fence_body, expected_version=1, confirm_impact=False), 422)
-        current = [g for g in self.request("GET", "/geofences")["items"] if g["sector_id"] == sector["id"]]
+        self.request("POST", "/geofences", dict(revision, geometry=invalid), 422)
+        self.request("POST", "/geofences", dict(revision, confirm_impact=False), 422)
+        current = [g for g in self.request("GET", "/geofences")["items"] if g["geofence_key"] == fence["geofence_key"]]
         self.check("Errores conservan versión activa", len(current) == 1 and current[0]["active"] and current[0]["version"] == 1)
         self.request("POST", "/pasture-assignments", {"animal_id": animal["id"], "geofence_id": fence["id"]}, 201)
 
@@ -249,9 +256,12 @@ class Smoke:
         applied = self.device(device_id)
         self.check("Nodo confirma T aplicado", applied["interval_seconds"] == 180 and applied["config_version"] == config["version"] and applied["pending_config"] is None)
 
-        updated = self.request("POST", "/geofences", dict(fence_body, expected_version=1), 201)
-        versions = [g for g in self.request("GET", "/geofences")["items"] if g["sector_id"] == sector["id"]]
+        updated = self.request("POST", "/geofences", revision, 201)
+        self.request("POST", "/geofences", revision, 409)
+        sector_fences = [g for g in self.request("GET", "/geofences")["items"] if g["sector_id"] == sector["id"]]
+        versions = [g for g in sector_fences if g["geofence_key"] == fence["geofence_key"]]
         self.check("Geocerca conserva versión anterior", len(versions) == 2 and updated["version"] == 2 and sum(g["active"] for g in versions) == 1)
+        self.check("Editar una geocerca conserva la otra", any(g["id"] == other_fence["id"] and g["active"] for g in sector_fences))
         self.request("POST", "/pasture-assignments", {"animal_id": animal["id"], "geofence_id": fence["id"]}, 409)
         self.ingest()
         self.check("Nueva versión conserva asignación vigente", self.request("GET", "/animals/" + animal["id"])["geofence_status"] == "inside")

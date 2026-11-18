@@ -3,7 +3,7 @@ Each test uses an external rollback transaction; no persisted production writes.
 """
 import os
 from datetime import timedelta
-from uuid import uuid4, UUID
+from uuid import uuid4, UUID as PythonUUID
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine,func,select,text
@@ -68,6 +68,177 @@ def test_border_escape_invalid_consecutive_and_attention(data):
     assert e.condition=="active"
     ingest(db,packet(device,now+timedelta(seconds=6),6,lon=.5),now+timedelta(seconds=6))
     assert e.condition=="resolved" and e.attention=="concluded"
+
+def test_one_collar_moves_between_two_active_geofences(data):
+    db,client,farm,user,animal,device,first,assignment,now=data
+    second=Geofence(id=uuid4(),farm_id=farm.id,sector_id=first.sector_id,name="Segundo potrero QA",version=1,
+        geometry=func.ST_GeomFromText("POLYGON((2 0,3 0,3 1,2 1,2 0))",4326),active=True,created_at=now-timedelta(days=1))
+    holding=AnimalHolding(farm_id=farm.id,animal_id=animal.id,valid_from=now-timedelta(days=1),reason="QA de pastoreo")
+    db.add_all([second,holding]);db.flush()
+    previous=db.scalar(select(PastureAssignment).where(PastureAssignment.animal_id==animal.id))
+    beginning=now-timedelta(seconds=20)
+    for seq in (1,2):
+        observed=beginning+timedelta(seconds=seq)
+        ingest(db,packet(device,observed,seq,lon=2.5),observed)
+    old_event=db.scalar(select(Event).where(Event.device_id==device.id,Event.type=="escape"))
+    assert old_event and old_event.geofence_id==first.id and old_event.condition=="active"
+    old_evidence=old_event.telemetry_id
+    low_battery=Event(farm_id=farm.id,animal_id=animal.id,device_id=device.id,type="low_battery",severity="warning",detail={})
+    db.add(low_battery);db.flush()
+
+    login=client.post("/api/v1/auth/login",json={"username":user.username,"password":"test-only-strong-password"})
+    assert login.status_code==200,login.text
+    client.headers["X-CSRF-Token"]=login.json()["csrf_token"]
+    body={"animal_id":str(animal.id),"geofence_id":str(second.id),"expected_pasture_id":str(previous.id),"expected_device_id":str(device.id)}
+    transfer=client.post("/api/v1/pasture-assignments",json=body)
+    assert transfer.status_code==201,transfer.text
+    new_id=PythonUUID(transfer.json()["id"])
+    at=db.get(PastureAssignment,new_id).valid_from
+    assert previous.valid_to==at and assignment.valid_to is None
+    assert old_event.condition=="resolved" and old_event.telemetry_id==old_evidence
+    assert old_event.detail["resolution_reason"]=="pasture_changed" and old_event.attention=="pending"
+    assert low_battery.condition=="active"
+    state=db.get(AnimalState,animal.id)
+    assert state.geofence_status=="unknown" and state.outside_count==0
+
+    retry=client.post("/api/v1/pasture-assignments",json=body)
+    assert retry.status_code==201 and retry.json()["id"]==str(new_id)
+    stale=client.post("/api/v1/pasture-assignments",json={**body,"geofence_id":str(first.id)})
+    assert stale.status_code==409,stale.text
+    changed_collar=client.post("/api/v1/pasture-assignments",json={**body,"expected_device_id":str(uuid4())})
+    assert changed_collar.status_code==409,changed_collar.text
+
+    late=at-timedelta(milliseconds=1)
+    ingest(db,packet(device,late,3,lon=2.5),at+timedelta(seconds=1))
+    assert state.geofence_status=="unknown" and state.outside_count==0
+    for seq,seconds in ((4,2),(5,3),(6,4)):
+        observed=at+timedelta(seconds=seconds)
+        ingest(db,packet(device,observed,seq,lon=2.5 if seq==4 else .5),observed)
+        assert state.geofence_status=={4:"inside",5:"pending",6:"outside"}[seq]
+    events=db.scalars(select(Event).where(Event.device_id==device.id,Event.type=="escape",Event.condition=="active")).all()
+    assert len(events)==1 and events[0].geofence_id==second.id and events[0].id!=old_event.id
+    assert db.get(Telemetry,old_evidence).assignment_id==assignment.id
+
+    detail=client.get(f"/api/v1/animals/{animal.id}").json()
+    assert detail["pasture_assignment"]["geofence_id"]==str(second.id)
+    history=client.get(f"/api/v1/animals/{animal.id}/assignments").json()["items"]
+    assert sum(row["active"] for row in history if row["kind"]=="pasture")==1
+    assert len([row for row in history if row["kind"]=="pasture"])==2
+
+
+def test_two_animals_per_geofence_keep_independent_escape_alerts(data):
+    db,client,farm,user,first_animal,first_device,first_fence,first_assignment,now=data
+    since=now-timedelta(days=1)
+    second_fence=Geofence(farm_id=farm.id,sector_id=first_fence.sector_id,name="Segundo potrero QA",version=1,
+        geometry=func.ST_GeomFromText("POLYGON((2 0,3 0,3 1,2 1,2 0))",4326),active=True,created_at=since)
+    db.add_all([second_fence,AnimalHolding(farm_id=farm.id,animal_id=first_animal.id,valid_from=since,reason="QA")]);db.flush()
+    monitored=[(first_animal,first_device,first_fence,2.5)]
+    for fence,longitude in ((first_fence,.5),(second_fence,.5),(second_fence,2.5)):
+        animal=Animal(farm_id=farm.id,diio=f"QA-{uuid4()}",name="Bovino QA",orientation="meat",enabled=True,sector_id=fence.sector_id)
+        device=Device(farm_id=farm.id,hardware_id=f"qa-{uuid4()}",name="Collar QA",transport="academic",interval_seconds=300,enabled=True,installed_at=since)
+        db.add_all([animal,device]);db.flush()
+        db.add_all([Assignment(farm_id=farm.id,animal_id=animal.id,device_id=device.id,valid_from=since),
+                    PastureAssignment(farm_id=farm.id,animal_id=animal.id,geofence_id=fence.id,valid_from=since)])
+        monitored.append((animal,device,fence,longitude))
+    db.flush()
+
+    login=client.post("/api/v1/auth/login",json={"username":user.username,"password":"test-only-strong-password"})
+    assert login.status_code==200,login.text
+    client.headers["X-CSRF-Token"]=login.json()["csrf_token"]
+
+    def alert_list():
+        response=client.get("/api/v1/events?condition=active")
+        assert response.status_code==200,response.text
+        return {event["animal_id"]:event for event in response.json()["items"] if event["type"]=="escape"}
+
+    for seq in (1,2):
+        observed=now-timedelta(seconds=20-seq)
+        for animal,device,_,longitude in monitored:
+            result=ingest(db,packet(device,observed,seq,lon=longitude),observed)
+            assert not result["duplicate"] and result["animal_id"]==str(animal.id)
+        if seq==1:
+            assert not alert_list()
+            assert [db.get(AnimalState,a.id).outside_count for a,_,_,_ in monitored]==[1,0,1,0]
+
+    alerts=alert_list()
+    other_animal,other_device,_,_=monitored[2]
+    assert set(alerts)=={str(first_animal.id),str(other_animal.id)}
+    for animal,device,fence,_ in (monitored[0],monitored[2]):
+        event=alerts[str(animal.id)]
+        assert (event["device_id"],event["geofence_id"],event["telemetry"]["seq"])==(str(device.id),str(fence.id),2)
+    first_alert_id=alerts[str(first_animal.id)]["id"]
+    other_alert_id=alerts[str(other_animal.id)]["id"]
+
+    current=db.scalar(select(PastureAssignment).where(PastureAssignment.animal_id==first_animal.id))
+    transfer=client.post("/api/v1/pasture-assignments",json={"animal_id":str(first_animal.id),
+        "geofence_id":str(second_fence.id),"expected_pasture_id":str(current.id),"expected_device_id":str(first_device.id)})
+    assert transfer.status_code==201,transfer.text
+    assert db.get(Assignment,first_assignment.id).valid_to is None
+    assert db.get(Event,PythonUUID(first_alert_id)).condition=="resolved"
+    assert {a:e["id"] for a,e in alert_list().items()}=={str(other_animal.id):other_alert_id}
+    assert [db.get(AnimalState,a.id).geofence_status for a,_,_,_ in monitored]==["unknown","inside","outside","inside"]
+
+    observed=utcnow()+timedelta(seconds=1)
+    ingest(db,packet(first_device,observed,3,lon=2.5),observed)
+    assert db.get(AnimalState,first_animal.id).geofence_status=="inside"
+    assert str(other_animal.id) in alert_list()
+    ingest(db,packet(other_device,observed,3,lon=2.5),observed)
+    assert not alert_list()
+
+
+def test_sensor_rule_configuration_drives_alert_lifecycle(data,monkeypatch):
+    db,client,farm,user,animal,device,_,_,now=data
+    monkeypatch.setattr(settings(),"preventive_rules_validated",True)
+    device.interval_seconds=30;db.flush()
+    login=client.post("/api/v1/auth/login",json={"username":user.username,"password":"test-only-strong-password"})
+    assert login.status_code==200,login.text
+    client.headers["X-CSRF-Token"]=login.json()["csrf_token"]
+    current=client.get("/api/v1/settings").json()
+    settings_body={"expected_version":current["version"],"battery_low_mv":3300,"temperature_high_c":40,
+        "activity_low_threshold":.05,"activity_window_minutes":2,"proximity_meters":25,
+        "temperature_enabled":True,"activity_enabled":True,"proximity_enabled":False}
+    saved=client.put("/api/v1/settings",json=settings_body)
+    assert saved.status_code==200,saved.text
+    version=saved.json()["version"]
+
+    def reading(seq, seconds, temperature, activity):
+        observed=now+timedelta(seconds=seconds)
+        payload=packet(device,observed,seq).model_copy(update={"surface_temperature_c":temperature,"activity_index":activity})
+        return PythonUUID(ingest(db,payload,observed)["id"])
+
+    def active(kind):
+        return db.scalar(select(Event).where(Event.device_id==device.id,Event.type==kind,Event.condition=="active"))
+
+    high_id=reading(1,0,40,.01)
+    first_temperature=active("high_surface_temperature")
+    assert first_temperature and first_temperature.telemetry_id==high_id
+    assert first_temperature.detail["rule_version"]==version
+    assert active("low_activity") is None
+    reading(2,105,None,.01)
+    assert first_temperature.condition=="active" and active("low_activity") is None  # gap above tolerance
+    reading(3,135,39,None)
+    assert first_temperature.condition=="resolved"
+    for seq,seconds in ((4,165),(5,195),(6,225),(7,255)):
+        reading(seq,seconds,None,.01)
+        assert active("low_activity") is None  # missing reading still in window
+
+    evidence=reading(8,285,40,.01)
+    low=active("low_activity")
+    assert low and low.telemetry_id==evidence
+    assert low.detail["threshold_activity"]==.05 and low.detail["window_minutes"]==2
+    second_temperature=active("high_surface_temperature")
+    assert second_temperature and second_temperature.id!=first_temperature.id
+    reading(9,315,None,.30)
+    assert low.condition=="resolved" and second_temperature.condition=="active"
+
+    disabled=client.put("/api/v1/settings",json={**settings_body,"expected_version":version,"temperature_enabled":False,"temperature_high_c":41})
+    assert disabled.status_code==200,disabled.text
+    assert second_temperature.condition=="resolved" and second_temperature.detail["resolution_reason"]=="rule_disabled"
+    assert second_temperature.telemetry_id==evidence and second_temperature.attention=="pending"
+    assert disabled.json()["temperature_high_c"]==41 and disabled.json()["activity_enabled"] is True
+    reading(10,345,45,.30)
+    assert active("high_surface_temperature") is None
+
 
 def test_duplicate_and_late_do_not_rejuvenate(data):
     db,_,_,_,animal,device,_,assignment,now=data
@@ -134,6 +305,27 @@ def test_config_sent_only_after_real_sender_acceptance(data):
     dispatch_configs(db,sender=lambda *args:{"topic":"test","mqtt_mid":1,"meaning":"test PUBACK"},cfg=cfg)
     assert config.status=="sent" and config.sent_at is not None
     assert device.interval_seconds==300 and device.config_version==0
+
+def test_pending_config_expires_when_collar_has_no_assignment(data):
+    db, _, farm, _, _, _, _, _, now = data
+    collar = Device(farm_id=farm.id, hardware_id=f'qa-unassigned-{uuid4()}',
+                    name='QA sin asignación', interval_seconds=300, transport='academic', enabled=True)
+    db.add(collar)
+    db.flush()
+    requested_at = now - timedelta(seconds=settings().config_timeout_seconds + 1)
+    config = DeviceConfig(device_id=collar.id, version=1, interval_seconds=45,
+                          status='requested', requested_at=requested_at)
+    db.add(config)
+    db.flush()
+
+    check_timeouts(db, now)
+
+    assert config.status == 'failed'
+    assert collar.interval_seconds == 300
+    event = db.scalar(select(Event).where(Event.device_id == collar.id))
+    assert event.type == 'config_timeout'
+    assert event.animal_id is None
+
 
 def test_no_external_call_without_configured_channel(data,monkeypatch):
     db,_,_,_,_,device,_,_,now=data

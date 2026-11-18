@@ -51,3 +51,7 @@
 .gateway-row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .gateway-archive-toggle { padding: 0 24px 18px; }
 .gateway-row-actions .button { white-space: nowrap; }
+.pasture-transfer{margin-bottom:18px}
+.pasture-transfer .panel-heading{padding-bottom:0}
+.pasture-transfer .form-body{padding-block:12px;gap:8px}
+.pasture-transfer .inline-assignment{margin-bottom:0}

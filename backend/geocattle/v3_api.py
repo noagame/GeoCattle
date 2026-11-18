@@ -329,9 +329,23 @@ def audits(user=Depends(current_user),db=Depends(get_db,scope='function'),limit:
     audit(db,user,'read_audit','audit_log');return {'items':data,'total':total}
 
 @router.get('/invitations')
-def invitations(request:Request,user=Depends(owner),db=Depends(get_db,scope='function')):
+def invitations(request:Request,view:Literal['main','expired']|None=None,user=Depends(owner),db=Depends(get_db,scope='function')):
     require_step_up(request)
-    return listing(rows(db,'SELECT id,email,role_code,expires_at,accepted_at,revoked_at,created_at FROM invitations WHERE farm_id=:f ORDER BY created_at DESC LIMIT 100',f=farm_scope(user)))
+    return listing(rows(db,"""WITH farm_invitations AS (
+        SELECT id,email,role_code,expires_at,accepted_at,revoked_at,created_at,
+          CASE
+            WHEN accepted_at IS NOT NULL THEN 'accepted'
+            WHEN revoked_at IS NOT NULL THEN 'revoked'
+            WHEN expires_at <= now() THEN 'expired'
+            ELSE 'pending'
+          END AS status
+        FROM invitations WHERE farm_id=:farm_id
+      )
+      SELECT * FROM farm_invitations
+      WHERE CAST(:view AS text) IS NULL
+         OR (:view = 'main' AND status <> 'expired')
+         OR (:view = 'expired' AND status = 'expired')
+      ORDER BY created_at DESC,id DESC LIMIT 100""",farm_id=farm_scope(user),view=view))
 @router.post('/invitations',status_code=201)
 def invite(body:InviteIn,request:Request,user=Depends(owner),db=Depends(get_db,scope='function')):
     if user.role!='owner':raise HTTPException(403,'Solo el dueño del predio puede invitar colaboradores; soporte administra los ya incorporados')

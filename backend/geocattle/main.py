@@ -16,7 +16,7 @@ from .db import get_db
 from .models import *
 from .schemas import *
 from .security import current_user, owner, operator, service_auth, create_session, token_hash, verify_password, hash_password
-from .domain import ingest, append_audit, freshness, at_time, check_timeouts, clear_animal_monitoring, resolve_assignment_events
+from .domain import ingest, append_audit, freshness, at_time, check_timeouts, clear_animal_monitoring, resolve_assignment_events, reset_pasture_monitoring, temperature_alert, low_activity_alert
 from .settings import settings
 
 app=FastAPI(title="GeoCattle API",version="0.1.0",docs_url="/api/docs",openapi_url="/api/openapi.json",redoc_url=None)
@@ -55,8 +55,9 @@ async def security_headers(request,call_next):
         logging.getLogger('geocattle.metrics').warning('Métrica no persistida; revisar conexión/configuración de observabilidad')
     return response
 
-def accessible(db,model,ident,user,lock=False):
-    row=db.scalar(select(model).where(model.id==ident,model.farm_id==user.farm_id).with_for_update() if lock else select(model).where(model.id==ident,model.farm_id==user.farm_id))
+def accessible(db,model,ident,user,lock=False,*,no_key_update=False):
+    query=select(model).where(model.id==ident,model.farm_id==user.farm_id)
+    row=db.scalar(query.with_for_update(key_share=no_key_update) if lock else query)
     if not row: raise HTTPException(403,"Recurso no autorizado para este predio")
     return row
 
@@ -305,29 +306,36 @@ def create_fence(body:GeofenceIn,user=Depends(owner),db=Depends(get_db, scope="f
     for zone in zones:
         zone.valid_to=now;db.flush()
         db.add(PastureAssignment(farm_id=user.farm_id,animal_id=zone.animal_id,animal_holding_id=zone.animal_holding_id,assigned_by=user.id,geofence_id=g.id,valid_from=now))
-        state=db.get(AnimalState,zone.animal_id)
-        if state:state.outside_count=0;state.geofence_status="unknown"
+        reset_pasture_monitoring(db,zone.animal_id,user.farm_id,g.id,user.id,now)
     append_audit(db,user.farm_id,user.id,"geofence",g.id,"version_create",after={"geofence_key":str(g.geofence_key),"sector_ids":[str(sid) for sid in ids],"version":g.version,"geometry":body.geometry,"previous_id":str(old.id) if old else None})
     return fence_json(db,g)
 
 @api.post("/pasture-assignments",status_code=201)
 def assign_pasture(body:PastureIn,user=Depends(owner),db=Depends(get_db, scope="function")):
-    a=accessible(db,Animal,body.animal_id,user,True);g=accessible(db,Geofence,body.geofence_id,user)
+    a=accessible(db,Animal,body.animal_id,user,True,no_key_update=True)
+    g=accessible(db,Geofence,body.geofence_id,user,True)
     if not g.active:raise HTTPException(409,"Seleccione la versión activa de la geocerca")
     if not db.get(Sector,g.sector_id).active:raise HTTPException(409,"Seleccione un sector activo")
     if not a.enabled:raise HTTPException(409,"El animal debe estar habilitado para asignarle pastoreo")
     at=valid_effective(body.effective_at)
     if at<g.created_at:raise HTTPException(422,"Asignación precede a la versión de geocerca")
+    if body.expected_device_id is not None and not db.scalar(select(Assignment.id).where(
+        Assignment.animal_id==a.id,Assignment.device_id==body.expected_device_id,at_time(Assignment,utcnow()))):
+        raise HTTPException(409,"El collar ya no está asociado a ese animal. Revisa el traslado")
     old=db.scalar(select(PastureAssignment).where(PastureAssignment.animal_id==a.id,PastureAssignment.valid_to.is_(None)).with_for_update())
+    if old and old.geofence_id==g.id and body.effective_at is None:
+        return {"id":old.id,"animal_id":a.id,"geofence_id":g.id,"valid_from":old.valid_from,"valid_to":None}
+    if "expected_pasture_id" in body.model_fields_set and body.expected_pasture_id!=(old.id if old else None):
+        raise HTTPException(409,"La zona vigente cambió. Revisa el traslado y vuelve a confirmarlo")
     if old:
         if old.valid_from>=at:raise HTTPException(409,"Inicio debe ser posterior al previo")
         old.valid_to=at;db.flush()
+        append_audit(db,user.farm_id,user.id,"pasture_assignment",old.id,"close",after={"valid_to":at.isoformat()})
     from .v3_api import active_holding
     holding=active_holding(db,a.id,user.farm_id)
     row=PastureAssignment(id=uuid4(),farm_id=user.farm_id,animal_id=a.id,animal_holding_id=holding["id"],geofence_id=g.id,assigned_by=user.id,valid_from=at);db.add(row)
     a.sector_id=g.sector_id
-    state=db.get(AnimalState,a.id)
-    if state:state.outside_count=0;state.geofence_status="unknown"
+    reset_pasture_monitoring(db,a.id,user.farm_id,g.id,user.id,at)
     db.flush();append_audit(db,user.farm_id,user.id,"pasture_assignment",row.id,"create",after={"animal_id":str(a.id),"geofence_id":str(g.id),"valid_from":at.isoformat()})
     return {"id":row.id,"animal_id":a.id,"geofence_id":g.id,"valid_from":at,"valid_to":None}
 @api.get("/events")
@@ -368,6 +376,17 @@ def get_settings(user=Depends(current_user),db=Depends(get_db, scope="function")
     r=db.get(RuleSettings,user.farm_id)
     if not r:raise HTTPException(503,"Reglas no inicializadas")
     return settings_response(r,user)
+@api.post("/settings/preview")
+def preview_sensor_rules(body:SensorPreviewIn,user=Depends(owner)):
+    if not user.farm_id:raise HTTPException(409,"Selecciona un predio autorizado para probar las reglas")
+    temp=temperature_alert(body.surface_temperature_c,body.temperature_high_c)
+    activity=low_activity_alert(body.activity_average,body.activity_low_threshold)
+    return {
+        "temperature":"missing_data" if temp is None else "alert" if temp else "clear",
+        "activity":"missing_data" if activity is None else "incomplete_window" if not body.activity_window_complete else "alert" if activity else "clear",
+        "activity_window_minutes":body.activity_window_minutes,
+    }
+
 @api.put("/settings")
 def update_settings(body:SettingsIn,user=Depends(owner),db=Depends(get_db, scope="function")):
     if not user.farm_id:raise HTTPException(409,"Selecciona un predio autorizado para configurar las reglas")
@@ -377,7 +396,19 @@ def update_settings(body:SettingsIn,user=Depends(owner),db=Depends(get_db, scope
     if settings().app_env!="simulation" and not settings().preventive_rules_validated and (body.temperature_enabled or body.activity_enabled):raise HTTPException(422,"Sensores preventivos requieren validación de campo PREVENTIVE_RULES_VALIDATED")
     before=settings_json(r)
     for k,v in body.model_dump(exclude={"expected_version"}).items():setattr(r,k,v)
-    r.version+=1;db.flush();append_audit(db,user.farm_id,user.id,"rule_settings",user.farm_id,"update",before,settings_json(r))
+    r.version+=1
+    disabled_types=[kind for enabled,kind in ((r.temperature_enabled,"high_surface_temperature"),
+                                              (r.activity_enabled,"low_activity")) if not enabled]
+    if disabled_types:
+        now=utcnow()
+        active_events=db.scalars(select(Event).where(Event.farm_id==user.farm_id,Event.condition=="active",
+                                                     Event.type.in_(disabled_types)).with_for_update()).all()
+        for event in active_events:
+            event.condition="resolved";event.resolved_at=max(now,event.opened_at)
+            event.detail={**event.detail,"resolution_reason":"rule_disabled","resolution":"Regla desactivada en el predio",
+                          "resolved_by_rule_version":r.version}
+            append_audit(db,user.farm_id,user.id,"event",event.id,"resolved",after={"condition":"resolved","reason":"rule_disabled","rule_version":r.version})
+    db.flush();append_audit(db,user.farm_id,user.id,"rule_settings",user.farm_id,"update",before,settings_json(r))
     return settings_response(r,user)
 @api.get("/audit")
 def audit(limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0),user=Depends(owner),db=Depends(get_db, scope="function")):

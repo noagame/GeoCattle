@@ -134,7 +134,7 @@ export default function App() {
         {activePage === 'animals' && <AnimalsPage search={search} setSearch={setSearch} canWrite={owner} notify={setToast} />}
         {activePage === 'health' && <HealthPage worker={worker} actorId={session.user.id} notify={setToast} />}
         {activePage === 'changes' && <ChangesPage worker={worker} notify={setToast} />}
-        {activePage === 'team' && <TeamPage admin={admin} notify={setToast} />}
+        {activePage === 'team' && <TeamPage key={session.user.farm_id ?? ''} admin={admin} notify={setToast} />}
         {activePage === 'gateways' && <GatewaysPage notify={setToast} />}
         {activePage === 'hardware' && <HardwarePage farmId={session.user.farm_id ?? ''} />}{activePage === 'devices' && <DevicesPage canWrite={owner} notify={setToast} />}
         {activePage === 'geofences' && <GeofencesPage canWrite={owner} notify={setToast} />}

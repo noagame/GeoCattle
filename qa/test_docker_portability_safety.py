@@ -4,7 +4,7 @@ import os
 from unittest.mock import patch
 import tempfile
 import unittest
-from qa.docker_portability import Runner,PortabilityError,check_project,test_counts
+from qa.docker_portability import Runner,PortabilityError,check_project,parse_test_counts
 
 
 class DockerQaSafetyTests(unittest.TestCase):
@@ -14,13 +14,13 @@ class DockerQaSafetyTests(unittest.TestCase):
             with self.subTest(name=name),self.assertRaises(PortabilityError):check_project(name)
 
     def test_parser_requires_completed_backend_suite_without_skips(self):
-        self.assertEqual(test_counts('109 passed, 1 warning in 1s','pytest'),109)
+        self.assertEqual(parse_test_counts('109 passed, 1 warning in 1s','pytest'),109)
         for text in ('2 passed, 1 skipped','no tests ran','1 failed'):
-            with self.subTest(text=text),self.assertRaises(PortabilityError):test_counts(text,'pytest')
+            with self.subTest(text=text),self.assertRaises(PortabilityError):parse_test_counts(text,'pytest')
 
     def test_unittest_count_is_dynamic_but_requires_ok(self):
-        self.assertEqual(test_counts('Ran 82 tests in 1.0s\n\nOK\n','unittest'),82)
-        with self.assertRaises(PortabilityError):test_counts('Ran 82 tests in 1s\nFAILED','unittest')
+        self.assertEqual(parse_test_counts('Ran 82 tests in 1.0s\n\nOK\n','unittest'),82)
+        with self.assertRaises(PortabilityError):parse_test_counts('Ran 82 tests in 1s\nFAILED','unittest')
 
     def test_compose_uses_only_generated_qa_configuration_and_profiles(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -108,6 +108,31 @@ def test_validated_flag_exposes_capability_and_allows_preventive_rules(v3, monke
     assert response.json()['capabilities']['preventive_rules_allowed'] is True
 
 
+def test_sensor_preview_matches_thresholds_without_changing_farm_settings_or_events(v3):
+    client = v3.client('owner')
+    before = client.get('/api/v1/settings').json()
+    events_before = client.get('/api/v1/events').json()
+    sample = {'temperature_high_c': 40, 'surface_temperature_c': 40, 'activity_low_threshold': .05,
+              'activity_average': .01, 'activity_window_minutes': 12, 'activity_window_complete': True}
+    for inputs, expected in [
+        ({}, ('alert', 'alert')),
+        ({'surface_temperature_c': 39.9, 'activity_average': .05}, ('clear', 'clear')),
+        ({'surface_temperature_c': None, 'activity_window_complete': False}, ('missing_data', 'incomplete_window')),
+        ({'temperature_high_c': None, 'activity_average': None}, ('missing_data', 'missing_data')),
+    ]:
+        response = client.post('/api/v1/settings/preview', json={**sample, **inputs})
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert (result['temperature'], result['activity']) == expected and result['activity_window_minutes'] == 12
+    assert client.post('/api/v1/settings/preview', json={**sample, 'activity_window_minutes': 0}).status_code == 422
+    assert selected_admin(v3).post('/api/v1/settings/preview', json=sample).status_code == 200
+    assert v3.client('worker').post('/api/v1/settings/preview', json=sample).status_code == 403
+    assert v3.client('vet').post('/api/v1/settings/preview', json=sample).status_code == 403
+    assert client.get('/api/v1/settings').json() == before
+    assert client.get('/api/v1/events').json() == events_before
+    assert audit_updates(v3) == []
+
+
 def test_settings_stale_version_does_not_overwrite_current_rules(v3):
     client = v3.client('owner')
     before = client.get('/api/v1/settings').json()

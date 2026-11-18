@@ -55,7 +55,8 @@ services:
     volumes:
       - database-data:/var/lib/postgresql/data
     healthcheck:
-      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      # The temporary server used by initdb only accepts Unix socket connections.
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
       timeout: 5s
       retries: 20
@@ -184,7 +185,7 @@ services:
     volumes:
       - chirpstack-database-data:/var/lib/postgresql/data
     healthcheck:
-      test: [CMD-SHELL, 'pg_isready -U chirpstack -d chirpstack']
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U chirpstack -d chirpstack']
       interval: 5s
       timeout: 5s
       retries: 20

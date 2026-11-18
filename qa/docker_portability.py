@@ -10,6 +10,7 @@ import argparse
 from datetime import datetime, timezone
 from http.cookiejar import CookieJar
 import json
+from math import asinh, pi, radians, tan
 import os
 from pathlib import Path
 import queue
@@ -26,6 +27,7 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener
 PROJECT_PREFIX = 'geocattle-portability-qa-'
 UNIT_MODULES = ('qa.test_docker_portability_safety', 'qa.test_docker_project', 'qa.test_capture_portability', 'qa.test_capture_startup', 'qa.test_serial_receiver',
     'qa.test_capture_runtime', 'qa.test_lora_json', 'qa.test_lora_usb',
+    'qa.test_lora_bus', 'qa.test_receiver_profiles', 'qa.test_receiver_switching',
     'qa.test_esp32_contract', 'qa.test_academic_bridge', 'qa.test_hardware_api')
 PROTECTED_PORTS = {8080, 8082, 8084, 55432, 55433, 55434}
 
@@ -45,7 +47,7 @@ def check_project(project):
     if not re.fullmatch(re.escape(PROJECT_PREFIX) + r'[0-9a-f]{6}', project):
         raise PortabilityError('Guard: el proyecto no tiene el prefijo exclusivo de QA')
 
-def test_counts(output, kind):
+def parse_test_counts(output, kind):
     if kind == 'pytest':
         passed = re.search(r'(\d+) passed', output)
         skipped = re.search(r'(\d+) skipped', output)
@@ -194,6 +196,15 @@ class Runner:
         for asset in sorted(assets):
             body,asset_headers=get(asset)
             self.check('Asset real '+asset.split('/')[-1],bool(body) and 'text/html' not in asset_headers.get('Content-Type',''))
+        if (self.root/'frontend/public/mapa-local/satelite/manifest.json').is_file():
+            manifest=json.loads(get('/mapa-local/satelite/manifest.json')[0])
+            south,west,north,east=manifest['bounds']
+            zoom=manifest['minZoom']; tiles=1<<zoom
+            x=int(tiles*((west+east)/2+180)/360)
+            y=int(tiles*(1-asinh(tan(radians((south+north)/2)))/pi)/2)
+            tile,tile_headers=get(f'/mapa-local/satelite/{zoom}/{x}/{y}.webp')
+            self.check('Nginx sirve imagen satelital local',tile[:4]==b'RIFF' and tile[8:12]==b'WEBP'
+                       and 'image/webp' in tile_headers.get('Content-Type',''))
         csp=headers.get('Content-Security-Policy','')
         source=next((part.strip().split()[1:] for part in csp.split(';') if part.strip().startswith('img-src ')),[])
         self.check('CSP admite dominio exacto de teselas OSM','https://tile.openstreetmap.org' in source)
@@ -214,6 +225,15 @@ class Runner:
         samples=call('/hardware/overview');self.check('Vista hardware acepta datos simulados',bool(samples['items']) and any(x['latest'] and x['latest']['source']=='sim' for x in samples['items']))
         daily=call('/hardware/daily?days=2');self.check('Resumen diario responde con zona horaria',daily.get('timezone')=='America/Santiago' and bool(daily['items']))
         receiver=call('/hardware/receiver');self.check('Sin USB se declara no disponible',receiver.get('available') is False and receiver.get('connected') is False)
+        old_settings=call('/settings')
+        sample={'temperature_high_c':40,'surface_temperature_c':40,'activity_low_threshold':0.05,
+                'activity_average':0.01,'activity_window_minutes':2,'activity_window_complete':True}
+        request=Request(self.base+'/api/v1/settings/preview',data=json.dumps(sample).encode(),
+                        headers={'Content-Type':'application/json','X-CSRF-Token':session['csrf_token']})
+        with opener.open(request,timeout=20) as response:
+            preview=json.load(response)
+        self.check('Simulacion de alertas sin modificar umbrales',preview.get('temperature')=='alert'
+                   and preview.get('activity')=='alert' and call('/settings')==old_settings)
         request=Request(self.base+'/api/v1/auth/logout',data=b'',method='POST',headers={'X-CSRF-Token':session['csrf_token']})
         with opener.open(request,timeout=20) as response:self.check('Sesion de comprobacion cerrada',response.status==204)
 
@@ -496,9 +516,9 @@ finally:
             '-e','DATABASE_URL','-e','TEST_DATABASE_URL','-e','APP_ENV','-e','SIMULATION_ENABLED','-e','APP_DATABASE_PASSWORD','-e','GEOCATTLE_TEST_DATABASE',image]
         self.command('migrate-test-database',run+['python','-m','geocattle.migrate'],extra_env=test_env)
         output=self.command('pytest-linux-backend',run+['python','-m','pytest','/app/tests','-q','-p','no:cacheprovider'],extra_env=test_env,timeout=900)
-        self.report['backend_tests_passed']=test_counts(output,'pytest')
+        self.report['backend_tests_passed']=parse_test_counts(output,'pytest')
         output=self.command('unittest-linux-adapters',run+['python','-m','unittest',*UNIT_MODULES],extra_env=test_env,timeout=180)
-        self.report['adapter_tests_passed']=test_counts(output,'unittest')
+        self.report['adapter_tests_passed']=parse_test_counts(output,'unittest')
         before=self.count_telemetry('persistence-before')
         self.command('stop-qa-preserving-volumes',self.compose('down'),timeout=120)
         self.command('restart-existing-qa',self.compose('up','-d','--wait','--wait-timeout','240'),timeout=600)
@@ -524,6 +544,10 @@ finally:
 
 
 def main():
+    # Docker and pip report progress with Unicode, even on legacy Windows consoles.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(errors='backslashreplace')
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--project-dir',type=Path,default=Path(__file__).resolve().parents[1])
     parser.add_argument('--web-port',type=int,default=18084)

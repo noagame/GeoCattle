@@ -478,6 +478,39 @@ def test_owner_invitation_previews_and_enrols_each_collaborator_role(v3, role):
     assert v3.db.execute(text("SELECT count(*) FROM audit_log WHERE actor_id=:u AND action='accept_invitation'"), {'u': identity.id}).scalar_one() == 1
 
 
+def test_invitation_filter_keeps_history_and_applies_before_limit(v3):
+    owner = v3.client('owner')
+    enable_owner_mfa(v3, owner)
+    base_path = '/api/v1/v3/invitations'
+    for state, farm in [('pending', 'owner'), ('accepted', 'owner'), ('revoked', 'owner'), ('foreign', 'other_owner')]:
+        v3.db.execute(text("""INSERT INTO invitations(farm_id,email,role_code,token_hash,invited_by,
+              expires_at,accepted_at,accepted_user_id,revoked_at,created_at)
+            VALUES(:farm,:email,'worker',:token,:owner,
+              now() + CASE WHEN :state='pending' THEN interval '1 day' ELSE interval '-1 day' END,
+              CASE WHEN :state='accepted' THEN now()-interval '2 days' END,
+              CASE WHEN :state='accepted' THEN :worker END,
+              CASE WHEN :state='revoked' THEN now()-interval '2 days' END,
+              now()-interval '3 days')"""), {'farm': v3.farms[farm].id, 'email': f'{state}@qa.test',
+            'token': uuid4().hex, 'state': state, 'owner': v3.users[farm].id, 'worker': v3.users['worker'].id})
+    v3.db.execute(text("""INSERT INTO invitations(farm_id,email,role_code,token_hash,invited_by,expires_at,created_at)
+        SELECT :farm,'expired-'||n||'@qa.test','veterinarian',gen_random_uuid()::text,:owner,
+          now(),now()-interval '2 days'+n*interval '1 second'
+        FROM generate_series(1,101) AS n"""), {'farm': v3.farms['owner'].id, 'owner': v3.users['owner'].id})
+    v3.db.commit()
+
+    main = owner.get(f'{base_path}?view=main')
+    assert main.status_code == 200, main.text
+    assert {row['email']: row['status'] for row in main.json()['items']} == {
+        'pending@qa.test': 'pending', 'accepted@qa.test': 'accepted', 'revoked@qa.test': 'revoked'}
+    expired = owner.get(f'{base_path}?view=expired')
+    assert expired.status_code == 200, expired.text
+    history = expired.json()['items']
+    assert len(history) == 100
+    assert all(row['status'] == 'expired' and row['email'].startswith('expired-') for row in history)
+    assert all('token_hash' not in row for row in history)
+    assert owner.get(base_path).json()['items'] == history
+
+
 @pytest.mark.parametrize('state,expected', [
     ('unknown', 401), ('expired', 401), ('accepted', 401), ('revoked', 401),
     ('inactive_farm', 403), ('inactive_account', 403), ('other_environment', 403),

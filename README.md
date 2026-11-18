@@ -4,14 +4,16 @@ GeoCattle es una aplicación de supervisión bovina con mapas, geocercas, teleme
 
 ## Estado del sistema
 
-Revisión del **16 de noviembre de 2026**.
+Revisión del **17 de noviembre de 2026**.
 
 | Área | Estado |
 |---|---|
 | Aplicación | Gestión de predios, usuarios, bovinos, fichas sanitarias, alertas y telemetría. |
-| Geocercas | Editor de vértices, versiones y última ubicación válida en alertas de desconexión. [Detalle](docs/CORRECCIONES_GEOCERCAS_ALERTAS_2026-10-29.md). |
+| Geocercas | Varias geocercas por predio, una zona vigilada por animal y traslado de collares con vigencias históricas. |
+| Mapa sin Internet | Imagen satelital de Temuco incluida, escala métrica y soporte para ortofotos y caminos locales. |
 | Inventario de gateways | Registro, ubicación, edición, archivado e historial de recepciones, con migración `005`. [Detalle](docs/CRUD_GATEWAYS.md). |
 | Captura USB | Selector **Directo** o **Gateways**, detección por identidad USB, lotes JSON, almacenamiento local y reintento hacia PostgreSQL. [Operación](docs/DESARROLLO_LOCAL.md). |
+| Alertas de sensores | Umbral térmico, mínimo de actividad y duración configurables por predio. El simulador permite probar cambios antes de guardarlos. |
 | Acceso de administrador | Usuario y contraseña en desarrollo y simulación. El TOTP es configurable para ese inicio de sesión. [Configuración](#acceso-de-administrador). |
 | Hardware | Código Arduino del collar, las dos receptoras y los dos repetidores. [Firmware](firmware/README.md). |
 | Docker y LoRaWAN | Docker levanta la aplicación y admite perfiles MQTT/ChirpStack. La validación física de LoRaWAN está pendiente. |
@@ -21,14 +23,14 @@ El código de la aplicación y de la captura se mantiene en `main`. Para contrib
 ## Funcionalidades
 
 - Sesiones HttpOnly, CSRF, permisos por predio y roles de administrador, dueño, trabajador y veterinario. TOTP configurable para el inicio de sesión de administrador y verificación adicional para operaciones sensibles.
-- Contexto multipredio, gestión de clientes, invitaciones, membresías, confianza por acción y aprobación de propuestas del trabajador.
+- Contexto multipredio, gestión de clientes, invitaciones, membresías, confianza por acción y aprobación de propuestas del trabajador. Las invitaciones vencidas se consultan mediante el filtro correspondiente.
 - Bovinos con DIIO, ficha técnica y sanitaria, historial, tratamientos y agenda con autoría.
-- Mapa Leaflet con OpenStreetMap opcional y cuadrícula local, recentrado y dibujo de geocercas versionadas.
-- Asociaciones históricas entre collar y animal, sector y geocerca, con vigencias y sin reatribuir lecturas anteriores.
+- Mapa Leaflet con imagen satelital local, OpenStreetMap opcional, escala métrica, recentrado y dibujo de geocercas versionadas.
+- Asociaciones históricas entre collar y animal, sector y geocerca. En **Sectores y geocercas** se puede trasladar un animal con su collar a otro potrero.
 - Recepción académica LoRa directo mediante una T3 USB con CSV V4 y JSON V5, y captura de lotes JSON mediante una T3 base. La cola local deduplica y reintenta la entrega a la API.
 - Visualización de GPS, satélites usados, HDOP, temperatura superficial, aceleración, actividad, movimiento, batería, USB y calidad radio según los campos recibidos.
 - Historial paginado, gráficas y trayectoria por collar, registro diario y exportación JSONL de la página consultada.
-- **Alertas y atención → Configurar alertas**: batería, temperatura, actividad y cercanía al límite de geocerca. Solo dueño y administrador pueden guardar parámetros; cada cambio conserva versión y auditoría.
+- **Alertas y atención → Configurar alertas** reúne batería, temperatura, actividad y cercanía al límite de geocerca. Dueño y administrador pueden simular reglas de sensores y guardar valores por predio con versión y auditoría.
 - Condición técnica de las alertas separada de su atención humana; supervisión de ausencia de comunicación y vigencia GPS.
 - Gateways, KPI, mantenimiento, auditoría, avisos externos en cola y simulación identificada y separada del hardware real.
 
@@ -82,6 +84,8 @@ La instalación ya preparada necesita `.env.academic`, PostgreSQL/PostGIS local,
 
 Ctrl+C detiene la captura en primer plano. `Pausar-Captura-COM5.ps1` libera el puerto de una captura en segundo plano. `Detener-Prototipo.ps1` detiene los servicios locales. El archivo diario y la cola SQLite están en `.runtime/capture/`. La aplicación persiste las lecturas en PostgreSQL/PostGIS.
 
+En **Recepción de collares**, revisa la última lectura y, por separado, la fecha de la última posición GPS válida. Con la T3 base, **0 saltos** representa recepción directa en la base. Para comprobar el paso por repetidores, verifica que los paquetes registren **1 o 2 saltos**.
+
 En `main`, el arranque aplica hasta `005_gateway_management.sql`. Respalda la base antes de actualizar una instalación existente y valida primero la migración en una copia.
 
 ### Acceso de administrador
@@ -102,7 +106,26 @@ Para volver a pedir TOTP al iniciar sesión, define `ADMIN_LOGIN_MFA=true` en el
 
 El administrador crea cuentas de dueños. El dueño invita a trabajadores y veterinarios desde Equipo y permisos. Cada invitado activa su cuenta con un enlace de uso único y vencimiento. Los enlaces se entregan manualmente.
 
-En **Alertas y atención**, solo dueño y administrador del predio seleccionado pueden configurar parámetros. Trabajador y veterinario mantienen consulta y atención. Temperatura y actividad permiten preparar umbrales, pero su activación fuera de simulación conserva la validación preventiva pendiente de terreno. Las reglas automáticas de comunicación y salida de geocerca mantienen su comportamiento.
+En **Alertas y atención → Configurar alertas**, dueño y administrador pueden editar y guardar los parámetros del predio. Trabajador y veterinario mantienen consulta y atención. **Probar alertas de sensores** usa lecturas simuladas y los valores visibles en el formulario antes de guardarlos. Los resultados de la prueba quedan en pantalla.
+
+- **Temperatura superficial.** Una lectura nueva igual o superior al umbral abre la alerta. Una lectura inferior la resuelve.
+- **Actividad reducida.** Un promedio inferior al mínimo durante una ventana completa de lecturas abre la alerta. Una ventana completa cuyo promedio se recupera la resuelve.
+- **Activación operativa.** Temperatura y actividad se pueden configurar antes de activarlas. En desarrollo o producción, la activación requiere la validación de terreno registrada con `PREVENTIVE_RULES_VALIDATED=true`. Al desactivar una regla, las alertas vigentes de ese tipo pasan al historial como resueltas y conservan su evidencia.
+
+### Mapa local y traslado de collares
+
+En **Sectores y geocercas**, elige **Satélite local** para abrir la imagen incluida. Cubre 24 × 24 km de Temuco y alrededores, con resolución de origen de 10 m por píxel. Las posiciones y geocercas se dibujan encima y se conservan al cambiar de fondo. GeoCattle y PostgreSQL deben estar disponibles en el PC o la red local. [Fuente y licencia de Sentinel-2](frontend/public/mapa-local/satelite/FUENTE.md).
+
+**Caminos locales** admite una capa opcional `frontend/public/mapa-local/base.geojson`. Exporta cartografía autorizada a GeoJSON `FeatureCollection` en WGS84, con coordenadas `[longitud, latitud]`. Si falta la capa, aparece la cuadrícula WGS84. **OpenStreetMap** utiliza el servicio en línea.
+
+Para instalar una ortofoto del predio, usa un GeoTIFF RGB de 8 bits georreferenciado. El conversor usa `rasterio` y `Pillow` en un entorno Python aparte. Tras generar la carpeta, instala su contenido en `frontend/public/mapa-local/satelite`. En la instalación nativa recompila `frontend` con `npm run build`. En Docker recompila y recrea el servicio `web` usando la configuración con la que se inició ese proyecto.
+
+```bash
+python -m pip install rasterio Pillow
+python scripts/preparar_mapa_satelital.py predio.tif satelite-nuevo --nombre "Ortofoto del predio" --atribucion "Fuente y fecha" --max-zoom 17
+```
+
+El panel **Trasladar collar entre geocercas** preselecciona el collar cuando solo hay uno asociado y destaca su zona vigilada. Selecciona el potrero de destino y confirma el traslado. Cada animal conserva su propio collar, historial y alerta. La salida se confirma con dos posiciones GPS válidas consecutivas fuera de su zona vigente. Para supervisar varios animales a la vez, cada uno necesita un collar activo.
 
 ## Desarrollo y verificaciones
 
@@ -111,7 +134,10 @@ En **Alertas y atención**, solo dueño y administrador del predio seleccionado 
 python3 scripts/local_backend.py test
 
 # Contrato y adaptadores: sin placas ni escritura en la base operativa
-python -m unittest qa.test_capture_startup qa.test_serial_receiver qa.test_capture_runtime qa.test_lora_json qa.test_lora_usb qa.test_esp32_contract qa.test_academic_bridge
+python -m unittest qa.test_capture_startup qa.test_serial_receiver qa.test_capture_runtime qa.test_lora_json qa.test_lora_usb qa.test_lora_bus qa.test_receiver_profiles qa.test_receiver_switching qa.test_esp32_contract qa.test_academic_bridge
+
+# Arranque, pruebas HTTP y persistencia en un proyecto Docker aislado
+python qa/docker_portability.py
 
 # Interfaz
 cd frontend
@@ -155,7 +181,7 @@ docs/                   Arquitectura, operación, informes y evidencias
 
 ## Datos y alcance
 
-Se conservan los documentos originales del repositorio y la telemetría histórica local. `.env*`, `.runtime/`, bases, colas, capturas, credenciales y dependencias generadas quedan fuera de Git; las evidencias nuevas publicadas utilizan datos QA o muestran formularios sin ubicación privada.
+Se conservan los documentos originales del repositorio y la telemetría histórica local. Los archivos de entorno privados, bases, colas USB, capturas y credenciales permanecen en cada instalación. El mapa de demostración incluido procede de una fuente pública.
 
 La posición se considera vigente hasta `2T + 30 s`; la ausencia de comunicación supera `3T + 30 s` desde una recepción nueva. Duplicados y datos tardíos no rejuvenecen esos estados. Sin fix no se inventan coordenadas. Si el collar no envía UTC, se marca la hora aproximada de primera recepción del PC.
 

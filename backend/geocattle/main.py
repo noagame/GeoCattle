@@ -442,7 +442,8 @@ def settings_response(r,user):
         "can_edit":bool(user.farm_id and user.role in ("owner","admin")),
         "environment":config.app_env,
         "preventive_rules_validated":config.preventive_rules_validated,
-        "preventive_rules_allowed":config.app_env=="simulation" or config.preventive_rules_validated}}
+        "preventive_rules_allowed":config.preventive_rules_allowed,
+        "temperature_rule_allowed":config.temperature_rule_allowed}}
 
 @api.get("/settings")
 def get_settings(user=Depends(current_user),db=Depends(get_db, scope="function")):
@@ -467,7 +468,10 @@ def update_settings(body:SettingsIn,user=Depends(owner),db=Depends(get_db, scope
     r=db.get(RuleSettings,user.farm_id,with_for_update=True)
     if not r:raise HTTPException(503,"Reglas no inicializadas")
     if r.version!=body.expected_version:raise HTTPException(409,"Versión de reglas obsoleta")
-    if settings().app_env!="simulation" and not settings().preventive_rules_validated and (body.temperature_enabled or body.activity_enabled):raise HTTPException(422,"Sensores preventivos requieren validación de campo PREVENTIVE_RULES_VALIDATED")
+    config=settings()
+    if ((body.temperature_enabled and not config.temperature_rule_allowed)
+            or (body.activity_enabled and not config.preventive_rules_allowed)):
+        raise HTTPException(422,"Sensores preventivos requieren validación de campo PREVENTIVE_RULES_VALIDATED")
     before=settings_json(r)
     for k,v in body.model_dump(exclude={"expected_version"}).items():setattr(r,k,v)
     r.version+=1

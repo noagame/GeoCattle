@@ -4,7 +4,7 @@ GeoCattle es una aplicación de supervisión bovina con mapas, geocercas, teleme
 
 ## Estado del sistema
 
-Revisión del **17 de noviembre de 2026**.
+Revisión del **18 de noviembre de 2026**.
 
 | Área | Estado |
 |---|---|
@@ -12,7 +12,8 @@ Revisión del **17 de noviembre de 2026**.
 | Geocercas | Varias geocercas por predio, una zona vigilada por animal y traslado de collares con vigencias históricas. |
 | Mapa sin Internet | Imagen satelital de Temuco incluida, escala métrica y soporte para ortofotos y caminos locales. |
 | Inventario de gateways | Registro, ubicación, edición, archivado e historial de recepciones, con migración `005`. [Detalle](docs/CRUD_GATEWAYS.md). |
-| Captura USB | Selector **Directo** o **Gateways**, detección por identidad USB, lotes JSON, almacenamiento local y reintento hacia PostgreSQL. [Operación](docs/DESARROLLO_LOCAL.md). |
+| Captura USB | Selector **Directo** o **Gateways**, detección por identidad USB, lotes JSON, cola local y reintentos ante fallos de entrega o bloqueos breves del archivo de estado. [Operación](docs/DESARROLLO_LOCAL.md). |
+| Registro veterinario | Ficha técnica, mediciones y cambios sanitarios con historial protegido. La migración `006` adapta el guardado al rol restringido de PostgreSQL. |
 | Alertas de sensores | Umbral térmico, mínimo de actividad y duración configurables por predio. El simulador permite probar cambios antes de guardarlos. |
 | Acceso de administrador | Usuario y contraseña en desarrollo y simulación. El TOTP es configurable para ese inicio de sesión. [Configuración](#acceso-de-administrador). |
 | Hardware | Código Arduino del collar, las dos receptoras y los dos repetidores. [Firmware](firmware/README.md). |
@@ -110,7 +111,8 @@ En **Alertas y atención → Configurar alertas**, dueño y administrador pueden
 
 - **Temperatura superficial.** Una lectura nueva igual o superior al umbral abre la alerta. Una lectura inferior la resuelve.
 - **Actividad reducida.** Un promedio inferior al mínimo durante una ventana completa de lecturas abre la alerta. Una ventana completa cuyo promedio se recupera la resuelve.
-- **Activación operativa.** Temperatura y actividad se pueden configurar antes de activarlas. En desarrollo o producción, la activación requiere la validación de terreno registrada con `PREVENTIVE_RULES_VALIDATED=true`. Al desactivar una regla, las alertas vigentes de ese tipo pasan al historial como resueltas y conservan su evidencia.
+- **Activación en terreno.** La activación operativa de temperatura y actividad requiere `PREVENTIVE_RULES_VALIDATED=true`. Al desactivar una regla, las alertas vigentes de ese tipo pasan al historial como resueltas y conservan su evidencia.
+- **Prueba térmica del prototipo.** Con `APP_ENV=development`, agrega `PROTOTYPE_TEMPERATURE_ENABLED=true` al archivo privado de entorno (`.env.academic` en Windows nativo o `.env.docker` en Docker físico) y aplica la configuración reiniciando la API. Recarga el panel, activa **Temperatura superficial elevada** y guarda. El valor es `false` por defecto. Esta opción se limita a la regla térmica en desarrollo. [Configuración de alertas](docs/CONFIGURACION_ALERTAS.md).
 
 ### Mapa local y traslado de collares
 

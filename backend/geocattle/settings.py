@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     mqtt_tls: bool = False
     mqtt_spool_path: str = "/data/mqtt-spool.sqlite3"
     preventive_rules_validated: bool = False
+    prototype_temperature_enabled: bool = False
     notification_webhook_url: str | None = None
     notification_webhook_token: str | None = Field(default=None, repr=False)
     notification_max_attempts: int = 3
@@ -58,6 +59,14 @@ class Settings(BaseSettings):
         if not self.database_url.startswith("postgresql"):
             raise ValueError("La base de aplicación debe ser PostgreSQL/PostGIS")
         return self
+
+    @property
+    def preventive_rules_allowed(self) -> bool:
+        return self.app_env == "simulation" or self.preventive_rules_validated
+
+    @property
+    def temperature_rule_allowed(self) -> bool:
+        return self.preventive_rules_allowed or (self.app_env == "development" and self.prototype_temperature_enabled)
 
 @lru_cache
 def settings() -> Settings:

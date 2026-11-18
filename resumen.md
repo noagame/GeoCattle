@@ -104,3 +104,12 @@ Ver [revisión Docker y portabilidad](docs/REVISION_DOCKER_PORTABILIDAD.md) y [e
 Se separan las áreas de trabajo mediante `dev/software`, `dev/hardware-captura` y `develop`, conservando `main` como versión estable y las carpetas existentes. Fabián (`noagame`) y Boris (`BorBP`) pueden modificar software y cualquier módulo necesario; los contratos compartidos se revisan entre ambos. La documentación y CODEOWNERS distinguen coordinación de área de permisos de edición.
 
 Se añaden guía de colaboración, plantilla de PR y tres controles de CI: frontend, captura/contratos y reglas de dominio. El trabajo de lotes y selección de receptores que estaba pendiente se conserva en la rama de hardware como desarrollo en curso, separado de la versión estable. No se modifica la base operativa ni se programan placas. Las restricciones obligatorias en GitHub necesitan activación con permisos de administración; los archivos de CI y CODEOWNERS no las habilitan por sí solos.
+
+## Rendimiento, captura y registro veterinario — 18 de noviembre de 2026
+
+- El panel consulta animales y alertas en grupos. El registro de métricas ya se ejecuta en el grupo de hilos para que una escritura lenta permita atender peticiones en paralelo.
+- El capturador USB vuelve a intentar el reemplazo del archivo de estado si Windows lo mantiene ocupado. La entrega a PostgreSQL conserva su cola local y registra sus propios errores.
+- El dueño o administrador puede habilitar la temperatura para ensayos en desarrollo mediante `PROTOTYPE_TEMPERATURE_ENABLED`. La regla se activa desde el panel del predio.
+- La migración `006` y el flujo de cambios permiten guardar fichas, mediciones y correcciones sanitarias con el rol restringido de PostgreSQL. El historial conserva sus permisos de lectura e inserción y sus protecciones contra modificación.
+
+Con 70 collares simulados y cinco sesiones durante 10 minutos se verificaron 1.000 consultas al panel con p95 de 545 ms y 934 lecturas persistidas. Se validaron 140 alertas de salida, ráfagas de hasta 32 peticiones simultáneas y recuperación de 1.000 lecturas sin duplicados tras un corte simulado. La regresión de software incluye un guardado veterinario con el rol restringido y la verificación de reintentos de captura en Windows.

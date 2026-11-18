@@ -1,6 +1,6 @@
 # Configuración de parámetros desde Alertas y atención
 
-Actualización: 24 de octubre de 2026.
+Actualización del 18 de noviembre de 2026.
 
 ## Acceso
 
@@ -19,7 +19,7 @@ El formulario es el mismo en **Reglas del predio**. Ambos accesos consultan y gu
 
 Se corrigió el texto antiguo que describía la proximidad como distancia entre animales. La regla existente usa la distancia al borde de la geocerca; no se cambió su cálculo.
 
-Temperatura y actividad conservan la validación preventiva del servidor. Cuando no están habilitadas para el entorno, se pueden guardar sus umbrales, pero sus interruptores de activación aparecen bloqueados con una explicación. No se ha declarado validación de campo mediante este ajuste.
+Temperatura y actividad conservan la validación preventiva del servidor para operación en terreno. En desarrollo, `PROTOTYPE_TEMPERATURE_ENABLED=true` habilita el interruptor de temperatura para pruebas con las lecturas del collar. El dueño o administrador todavía debe marcar la casilla y guardar en el predio correspondiente. El permiso de actividad sigue sujeto a la validación preventiva. El panel mantiene los umbrales editables aun cuando sus interruptores estén bloqueados.
 
 Las reglas automáticas de vigencia de posición, ausencia de comunicación y dos posiciones exteriores consecutivas se explican al pie del formulario y mantienen su comportamiento. No son campos nuevos configurables en esta entrega.
 
@@ -41,7 +41,8 @@ GET y PUT `/api/v1/settings` devuelven los campos habituales y:
     "can_edit": true,
     "environment": "development",
     "preventive_rules_validated": false,
-    "preventive_rules_allowed": false
+    "preventive_rules_allowed": false,
+    "temperature_rule_allowed": false
   }
 }
 ```

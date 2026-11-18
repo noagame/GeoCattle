@@ -46,7 +46,7 @@ export type Settings = {
   version: number; battery_low_mv: number; temperature_high_c: number | null; activity_low_threshold: number | null;
   activity_window_minutes: number; proximity_meters: number;
   temperature_enabled: boolean; activity_enabled: boolean; proximity_enabled: boolean;
-  capabilities?: { can_edit: boolean; environment: 'simulation' | 'development' | 'production'; preventive_rules_validated: boolean; preventive_rules_allowed: boolean };
+  capabilities?: { can_edit: boolean; environment: 'simulation' | 'development' | 'production'; preventive_rules_validated: boolean; preventive_rules_allowed: boolean; temperature_rule_allowed?: boolean };
   [key: string]: unknown;
 };
 export type Audit = { id: string; action: string; at: string; actor_id: string | null; object_type: string; object_id: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null };

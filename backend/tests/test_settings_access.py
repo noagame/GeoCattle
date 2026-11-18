@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import text
 
 from geocattle.models import RuleSettings
-from geocattle.settings import settings
+from geocattle.settings import Settings, settings
 from test_v3_api import v3
 from test_v3_admin_filters import admin_client
 
@@ -18,6 +18,7 @@ pytestmark = pytest.mark.skipif(not os.environ.get('TEST_DATABASE_URL'), reason=
 @pytest.fixture(autouse=True)
 def unvalidated_preventive_sensors(monkeypatch):
     monkeypatch.setattr(settings(), 'preventive_rules_validated', False)
+    monkeypatch.setattr(settings(), 'prototype_temperature_enabled', False)
 
 
 def rule_payload(version=1, **overrides):
@@ -52,6 +53,7 @@ def test_settings_capabilities_and_write_permissions_match_actor(v3, profile, ca
         'can_edit': can_edit, 'environment': settings().app_env,
         'preventive_rules_validated': False,
         'preventive_rules_allowed': settings().app_env == 'simulation',
+        'temperature_rule_allowed': settings().app_env == 'simulation',
     }
     changed = client.put('/api/v1/settings', json=rule_payload(before.json()['version']))
     assert changed.status_code == (200 if can_edit else 403), changed.text
@@ -106,6 +108,31 @@ def test_validated_flag_exposes_capability_and_allows_preventive_rules(v3, monke
     assert response.status_code == 200, response.text
     assert response.json()['temperature_enabled'] is True and response.json()['activity_enabled'] is True
     assert response.json()['capabilities']['preventive_rules_allowed'] is True
+
+
+def test_prototype_enables_only_temperature_for_an_authorized_profile(v3, monkeypatch):
+    assert settings().app_env == 'development'
+    monkeypatch.setattr(settings(), 'prototype_temperature_enabled', True)
+    owner = v3.client('owner')
+    initial = owner.get('/api/v1/settings').json()
+    assert initial['capabilities']['temperature_rule_allowed'] is True
+    assert initial['capabilities']['preventive_rules_validated'] is False
+    assert initial['capabilities']['preventive_rules_allowed'] is False
+    assert initial['temperature_enabled'] is False
+
+    payload = rule_payload(initial['version'], temperature_enabled=True)
+    assert v3.client('worker').put('/api/v1/settings', json=payload).status_code == 403
+    assert owner.put('/api/v1/settings', json={**payload, 'activity_enabled': True}).status_code == 422
+    saved = owner.put('/api/v1/settings', json=payload)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()['temperature_enabled'] is True
+    assert saved.json()['activity_enabled'] is False
+    assert len(audit_updates(v3)) == 1
+
+
+def test_prototype_temperature_switch_cannot_replace_production_validation():
+    config = Settings.model_construct(app_env='production', prototype_temperature_enabled=True)
+    assert config.temperature_rule_allowed is False
 
 
 def test_sensor_preview_matches_thresholds_without_changing_farm_settings_or_events(v3):

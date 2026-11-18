@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm import aliased
 from .db import get_db
 from .models import *
 from .schemas import *
@@ -66,29 +67,94 @@ def telemetry_json(t):
     if t is None:return None
     keys=["id","device_id","animal_id","session_id","seq","observed_at","received_at","longitude","latitude","gnss_valid","surface_temperature_c","activity_index","battery_mv","source","quality","config_version"]
     return {k:getattr(t,k) for k in keys}
-def event_json(db,e):
-    animal=db.get(Animal,e.animal_id) if e.animal_id else None
-    position=db.get(Telemetry,e.last_position_id) if e.last_position_id else None
-    # Persisted reference: never replace historical evidence with today's state.
-    location={"telemetry":telemetry_json(position),"age_at_detection_seconds":max(0,(e.opened_at-position.observed_at).total_seconds()),"hardware_id":db.get(Device,e.device_id).hardware_id} if position and position.farm_id==e.farm_id and position.device_id==e.device_id and position.animal_id==e.animal_id and position.gnss_valid else None
-    return {"last_known_position":location,"id":e.id,"animal_id":e.animal_id,"animal_name":animal.name if animal else None,"diio":animal.diio if animal else None,"device_id":e.device_id,"device_name":db.get(Device,e.device_id).name,"telemetry_id":e.telemetry_id,"geofence_id":e.geofence_id,"telemetry":telemetry_json(db.get(Telemetry,e.telemetry_id)) if e.telemetry_id else None,"evidence":telemetry_json(db.get(Telemetry,e.telemetry_id)) if e.telemetry_id else None,"geofence_name":db.get(Geofence,e.geofence_id).name if e.geofence_id else None,"geofence_version":db.get(Geofence,e.geofence_id).version if e.geofence_id else None,"type":e.type,"severity":e.severity,"condition":e.condition,"attention":e.attention,"opened_at":e.opened_at,"resolved_at":e.resolved_at,"detail":e.detail,"actions":[{"id":a.id,"actor_id":a.actor_id,"action":a.action,"at":a.at,"note":a.note} for a in db.scalars(select(EventAction).where(EventAction.event_id==e.id).order_by(EventAction.at)).all()]}
+def events_json(db,events):
+    if not events:
+        return []
+    ids=[event.id for event in events]
+    position=aliased(Telemetry)
+    sample=aliased(Telemetry)
+    rows=db.execute(select(Event.id,Animal.name,Animal.diio,Device.name,Device.hardware_id,
+                           Geofence.name,Geofence.version,sample,position).select_from(Event)
+        .join(Device,Device.id==Event.device_id)
+        .outerjoin(Animal,Animal.id==Event.animal_id)
+        .outerjoin(Geofence,Geofence.id==Event.geofence_id)
+        .outerjoin(sample,sample.id==Event.telemetry_id)
+        .outerjoin(position,position.id==Event.last_position_id)
+        .where(Event.id.in_(ids)))
+    evidence={row[0]:row[1:] for row in rows}
+    actions=defaultdict(list)
+    for action in db.scalars(select(EventAction).where(EventAction.event_id.in_(ids)).order_by(EventAction.at)):
+        actions[action.event_id].append({"id":action.id,"actor_id":action.actor_id,"action":action.action,
+                                         "at":action.at,"note":action.note})
+
+    result=[]
+    for event in events:
+        animal_name,diio,device_name,hardware_id,fence_name,fence_version,reading,fix=evidence[event.id]
+        # Use the persisted position at detection, even if a newer fix exists.
+        location=None
+        if (fix and fix.farm_id==event.farm_id and fix.device_id==event.device_id
+                and fix.animal_id==event.animal_id and fix.gnss_valid):
+            location={"telemetry":telemetry_json(fix),"hardware_id":hardware_id,
+                      "age_at_detection_seconds":max(0,(event.opened_at-fix.observed_at).total_seconds())}
+        reading_data=telemetry_json(reading)
+        result.append({"last_known_position":location,"id":event.id,"animal_id":event.animal_id,
+                       "animal_name":animal_name,"diio":diio,"device_id":event.device_id,"device_name":device_name,
+                       "telemetry_id":event.telemetry_id,"geofence_id":event.geofence_id,"telemetry":reading_data,
+                       "evidence":reading_data,"geofence_name":fence_name,"geofence_version":fence_version,
+                       "type":event.type,"severity":event.severity,"condition":event.condition,
+                       "attention":event.attention,"opened_at":event.opened_at,"resolved_at":event.resolved_at,
+                       "detail":event.detail,"actions":actions[event.id]})
+    return result
 def device_json(db,d):
     assignment=db.scalar(select(Assignment).where(Assignment.device_id==d.id,at_time(Assignment,utcnow())))
     pending=db.scalar(select(DeviceConfig).where(DeviceConfig.device_id==d.id,DeviceConfig.status.in_(["requested","sent"])).order_by(DeviceConfig.version.desc()))
     return {"id":d.id,"hardware_id":d.hardware_id,"dev_eui":d.dev_eui,"name":d.name,"transport":d.transport,"enabled":d.enabled,"interval_seconds":d.interval_seconds,"config_version":d.config_version,"pending_config":{"version":pending.version,"interval_seconds":pending.interval_seconds,"status":pending.status} if pending else None,"animal_id":assignment.animal_id if assignment else None,"last_received_at":d.last_received_at}
-def animal_json(db,a):
+def animals_json(db,animals):
+    if not animals:
+        return []
     now=utcnow()
-    state=db.get(AnimalState,a.id)
-    assignment=db.scalar(select(Assignment).where(Assignment.animal_id==a.id,at_time(Assignment,now)))
-    device=db.get(Device,assignment.device_id) if assignment else None
-    t=db.get(Telemetry,state.telemetry_id) if state and state.telemetry_id else None
-    p=db.get(Telemetry,state.position_telemetry_id) if state and state.position_telemetry_id else None
-    sector=db.get(Sector,a.sector_id) if a.sector_id else None
-    events=db.scalars(select(Event).where(Event.animal_id==a.id,Event.condition=="active")).all()
-    position,communication=freshness(p.observed_at if p else None,device.last_received_at if device else None,device.interval_seconds if device else 300,now)
-    if device is None or not device.enabled or not a.enabled: communication="unknown"
-    status="critical" if any(e.severity=="critical" for e in events) else "warning" if events else "unknown" if position!="fresh" or communication!="recent" or not t or not t.gnss_valid or not state or state.geofence_status=="unknown" else "normal"
-    return {"id":a.id,"diio":a.diio,"name":a.name,"orientation":a.orientation,"version":a.version,"vital_status":a.status,"breed":a.breed,"color":a.color,"sex":a.sex,"birth_date":a.birth_date,"enabled":a.enabled,"sector_id":a.sector_id,"sector_name":sector.name if sector else None,"device_id":device.id if device else None,"device_name":device.name if device else None,"status":status,"position_status":position,"communication_status":communication,"geofence_status":state.geofence_status if state else "unknown","last_telemetry":telemetry_json(t),"last_position":telemetry_json(p),"position_age_seconds":max(0,(now-p.observed_at).total_seconds()) if p else None,"active_events":len(events)}
+    ids=[animal.id for animal in animals]
+    alerts=(select(Event.animal_id,func.count().label("total"),func.bool_or(Event.severity=="critical").label("critical"))
+            .where(Event.animal_id.in_(ids),Event.condition=="active").group_by(Event.animal_id).subquery())
+    latest=aliased(Telemetry)
+    position=aliased(Telemetry)
+    rows=db.execute(select(Animal.id,AnimalState,Device,latest,position,Sector.name,alerts.c.total,alerts.c.critical)
+        .select_from(Animal)
+        .outerjoin(AnimalState,AnimalState.animal_id==Animal.id)
+        .outerjoin(Assignment,(Assignment.animal_id==Animal.id)&at_time(Assignment,now))
+        .outerjoin(Device,Device.id==Assignment.device_id)
+        .outerjoin(latest,latest.id==AnimalState.telemetry_id)
+        .outerjoin(position,position.id==AnimalState.position_telemetry_id)
+        .outerjoin(Sector,Sector.id==Animal.sector_id)
+        .outerjoin(alerts,alerts.c.animal_id==Animal.id)
+        .where(Animal.id.in_(ids)))
+    snapshots={row[0]:row[1:] for row in rows}
+
+    result=[]
+    for animal in animals:
+        state,device,reading,fix,sector_name,active_count,critical=snapshots[animal.id]
+        position_status,communication=freshness(fix.observed_at if fix else None,
+            device.last_received_at if device else None,device.interval_seconds if device else 300,now)
+        if device is None or not device.enabled or not animal.enabled:
+            communication="unknown"
+        geofence_status=state.geofence_status if state else "unknown"
+        if critical:
+            status="critical"
+        elif active_count:
+            status="warning"
+        elif position_status!="fresh" or communication!="recent" or not reading or not reading.gnss_valid or geofence_status=="unknown":
+            status="unknown"
+        else:
+            status="normal"
+        result.append({"id":animal.id,"diio":animal.diio,"name":animal.name,"orientation":animal.orientation,
+                       "version":animal.version,"vital_status":animal.status,"breed":animal.breed,"color":animal.color,
+                       "sex":animal.sex,"birth_date":animal.birth_date,"enabled":animal.enabled,"sector_id":animal.sector_id,
+                       "sector_name":sector_name,"device_id":device.id if device else None,"device_name":device.name if device else None,
+                       "status":status,"position_status":position_status,"communication_status":communication,
+                       "geofence_status":geofence_status,"last_telemetry":telemetry_json(reading),"last_position":telemetry_json(fix),
+                       "position_age_seconds":max(0,(now-fix.observed_at).total_seconds()) if fix else None,
+                       "active_events":active_count or 0})
+    return result
 def fence_sector_ids(db,g):
     return sorted(set(db.scalars(select(GeofenceSector.sector_id).where(GeofenceSector.geofence_id==g.id)).all()) | {g.sector_id},key=str)
 
@@ -145,21 +211,21 @@ def logout(request:Request,response:Response,user=Depends(current_user),db=Depen
 def dashboard(user=Depends(current_user),db=Depends(get_db, scope="function")):
     farm=db.get(Farm,user.farm_id) if user.farm_id else None
     if not farm:raise HTTPException(409,"Selecciona o crea un predio para consultar monitoreo")
-    animals=[animal_json(db,a) for a in db.scalars(select(Animal).where(Animal.farm_id==user.farm_id,Animal.enabled.is_(True)).order_by(Animal.diio)).all()]
+    animals=animals_json(db,db.scalars(select(Animal).where(Animal.farm_id==user.farm_id,Animal.enabled.is_(True)).order_by(Animal.diio)).all())
     events=db.scalars(select(Event).where(Event.farm_id==user.farm_id,Event.condition=="active").order_by(Event.opened_at.desc())).all()
     summary={"total":len(animals),**{s:sum(a["status"]==s for a in animals) for s in ("normal","warning","critical","unknown")},"active_events":len(events)}
-    return {"farm":{"id":farm.id,"name":farm.name,"environment":farm.environment},"summary":summary,"animals":animals,"events":[event_json(db,e) for e in events],"sectors":[{"id":s.id,"name":s.name} for s in db.scalars(select(Sector).where(Sector.farm_id==farm.id)).all()]}
+    return {"farm":{"id":farm.id,"name":farm.name,"environment":farm.environment},"summary":summary,"animals":animals,"events":events_json(db,events),"sectors":[{"id":s.id,"name":s.name} for s in db.scalars(select(Sector).where(Sector.farm_id==farm.id)).all()]}
 @api.get("/animals")
 def animals(q:str=Query(default="",max_length=100),sector_id:UUID|None=None,limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0),user=Depends(current_user),db=Depends(get_db, scope="function")):
     query=select(Animal).where(Animal.farm_id==user.farm_id)
     if q:query=query.where(or_(Animal.diio.ilike(f"%{q}%"),Animal.name.ilike(f"%{q}%")))
     if sector_id:accessible(db,Sector,sector_id,user);query=query.where(Animal.sector_id==sector_id)
     total=db.scalar(select(func.count()).select_from(query.subquery()))
-    return {"items":[animal_json(db,a) for a in db.scalars(query.order_by(Animal.diio).limit(limit).offset(offset)).all()],"total":total}
+    return {"items":animals_json(db,db.scalars(query.order_by(Animal.diio).limit(limit).offset(offset)).all()),"total":total}
 @api.get("/animals/{animal_id}")
 def animal(animal_id:UUID,user=Depends(current_user),db=Depends(get_db, scope="function")):
     a=accessible(db,Animal,animal_id,user)
-    result=animal_json(db,a)
+    result=animals_json(db,[a])[0]
     at=utcnow()
     collar=db.scalar(select(Assignment).where(Assignment.animal_id==a.id,Assignment.farm_id==user.farm_id,at_time(Assignment,at)))
     zone=db.execute(text("""SELECT x.id,x.geofence_id,g.name AS geofence_name,g.version AS geofence_version,
@@ -201,7 +267,7 @@ def create_animal(body:AnimalIn,user=Depends(owner),db=Depends(get_db, scope="fu
     append_audit(db,user.farm_id,user.id,"animal",a.id,"create",after=body.model_dump(mode="json"))
     from .v3_security import execute
     execute(db,"INSERT INTO animal_holdings(id,animal_id,farm_id,valid_from,reason) VALUES(:id,:a,:f,now(),'registration')",id=uuid4(),a=a.id,f=a.farm_id)
-    return animal_json(db,a)
+    return animals_json(db,[a])[0]
 @api.patch("/animals/{animal_id}")
 def update_animal(animal_id:UUID,body:AnimalPatch,user=Depends(owner),db=Depends(get_db, scope="function")):
     a=accessible(db,Animal,animal_id,user,True)
@@ -218,7 +284,7 @@ def update_animal(animal_id:UUID,body:AnimalPatch,user=Depends(owner),db=Depends
     for k,v in changes.items():setattr(a,k,v)
     a.version+=1
     db.flush();append_audit(db,user.farm_id,user.id,"animal",a.id,"update",before,body.model_dump(mode="json",exclude_unset=True))
-    return animal_json(db,a)
+    return animals_json(db,[a])[0]
 @api.get("/animals/{animal_id}/history")
 def history(animal_id:UUID,start:datetime|None=None,end:datetime|None=None,limit:int=Query(500,ge=1,le=1000),offset:int=Query(0,ge=0),user=Depends(current_user),db=Depends(get_db, scope="function")):
     accessible(db,Animal,animal_id,user);period(start,end)
@@ -344,14 +410,14 @@ def events(condition:Literal["active","resolved"]|None=None,attention:Literal["p
     if condition:query=query.where(Event.condition==condition)
     if attention:query=query.where(Event.attention==attention)
     total=db.scalar(select(func.count()).select_from(query.subquery()))
-    return {"items":[event_json(db,e) for e in db.scalars(query.order_by(Event.opened_at.desc()).limit(limit).offset(offset)).all()],"total":total}
+    return {"items":events_json(db,db.scalars(query.order_by(Event.opened_at.desc()).limit(limit).offset(offset)).all()),"total":total}
 @api.post("/events/{event_id}/actions")
 def action(event_id:UUID,body:ActionIn,user=Depends(operator),db=Depends(get_db, scope="function")):
     e=accessible(db,Event,event_id,user,True);before={"attention":e.attention,"condition":e.condition}
     e.attention={"acknowledge":"acknowledged","review":"in_review","conclude":"concluded","reopen":"pending"}[body.action]
     db.add(EventAction(event_id=e.id,actor_id=user.id,action=body.action,note=body.note))
     append_audit(db,user.farm_id,user.id,"event",e.id,body.action,before,{"attention":e.attention,"condition":e.condition,"note":body.note});db.flush()
-    return event_json(db,e)
+    return events_json(db,[e])[0]
 @api.post("/devices/{device_id}/config",status_code=201)
 def config(device_id:UUID,body:ConfigIn,user=Depends(owner),db=Depends(get_db, scope="function")):
     d=accessible(db,Device,device_id,user,True)

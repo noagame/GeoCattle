@@ -6,7 +6,7 @@ from datetime import timedelta
 from uuid import uuid4, UUID as PythonUUID
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine,func,select,text
+from sqlalchemy import create_engine,event as sql_event,func,select,text
 from sqlalchemy.orm import Session
 from geocattle.models import *
 from geocattle.schemas import TelemetryIn
@@ -238,6 +238,45 @@ def test_sensor_rule_configuration_drives_alert_lifecycle(data,monkeypatch):
     assert disabled.json()["temperature_high_c"]==41 and disabled.json()["activity_enabled"] is True
     reading(10,345,45,.30)
     assert active("high_surface_temperature") is None
+
+
+def test_dashboard_loads_animals_and_events_without_per_row_queries(data):
+    db,client,farm,user,_,_,_,_,now=data
+    login=client.post("/api/v1/auth/login",json={"username":user.username,"password":"test-only-strong-password"})
+    assert login.status_code==200,login.text
+
+    def dashboard():
+        connection=db.connection()
+        selects=[]
+
+        def count(conn,cursor,sql,parameters,context,executemany):
+            if sql.lstrip().upper().startswith("SELECT"):
+                selects.append(sql)
+
+        sql_event.listen(connection,"before_cursor_execute",count)
+        try:
+            response=client.get("/api/v1/dashboard")
+            assert response.status_code==200,response.text
+            return response.json(),len(selects)
+        finally:
+            sql_event.remove(connection,"before_cursor_execute",count)
+
+    initial,initial_queries=dashboard()
+    assert initial["summary"]["total"]==1
+    assert initial_queries>0
+    for number in range(8):
+        animal=Animal(farm_id=farm.id,diio=f"QA-{uuid4()}",name=f"Animal {number}",orientation="meat",enabled=True)
+        device=Device(farm_id=farm.id,hardware_id=f"qa-{uuid4()}",name=f"Collar {number}",transport="academic",
+                      interval_seconds=300,enabled=True,installed_at=now)
+        db.add_all([animal,device]);db.flush()
+        db.add(Assignment(farm_id=farm.id,animal_id=animal.id,device_id=device.id,valid_from=now))
+        db.add(Event(farm_id=farm.id,animal_id=animal.id,device_id=device.id,type="escape",severity="critical",detail={}))
+    db.commit()
+    result,queries=dashboard()
+    assert result["summary"]["total"]==9 and result["summary"]["critical"]==8
+    assert result["summary"]["active_events"]==8 and len(result["events"])==8
+    assert all(row["animal_name"].startswith("Animal ") and row["device_name"].startswith("Collar ") for row in result["events"])
+    assert queries<=initial_queries+3
 
 
 def test_duplicate_and_late_do_not_rejuvenate(data):

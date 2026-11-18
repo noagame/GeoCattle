@@ -8,10 +8,11 @@ from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 from contextlib import asynccontextmanager
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, or_, select, text
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError, TimeoutError as DatabaseTimeout
 from sqlalchemy.orm import aliased
 from .db import get_db
 from .models import *
@@ -29,12 +30,23 @@ dummy_hash=hash_password(secrets.token_urlsafe(32))
 @app.exception_handler(IntegrityError)
 async def integrity_error(request,exc): return JSONResponse(status_code=409,content={"detail":"Conflicto de identidad, versión, geometría o intervalo temporal; no se guardaron cambios"})
 @app.exception_handler(OperationalError)
+@app.exception_handler(DatabaseTimeout)
 async def unavailable(request,exc): return JSONResponse(status_code=503,content={"detail":"Base de datos temporalmente no disponible"})
 from fastapi.exceptions import RequestValidationError
 @app.exception_handler(RequestValidationError)
 async def validation_error(request,exc):
     errors=[".".join(str(x) for x in e["loc"])+": "+e["msg"] for e in exc.errors()]
     return JSONResponse(status_code=422,content={"detail":"; ".join(errors)})
+
+def persist_request_metrics(request,response,elapsed_ms):
+    from .db import SessionLocal
+    from .v3_security import execute
+    actor=getattr(request.state,'actor',None)
+    with SessionLocal.begin() as metrics_db:
+        execute(metrics_db,"INSERT INTO request_metrics(id,account_id,farm_id,actor_id,request_id,method,route_template,status_code,duration_ms,request_bytes,response_bytes) VALUES(:i,(SELECT account_id FROM farms WHERE id=:f),:f,:u,:r,:m,:p,:s,:d,:b,:o)",
+                i=uuid4(),f=getattr(actor,'farm_id',None),u=getattr(actor,'id',None),r=request.state.request_id,
+                m=request.method,p=getattr(request.scope.get('route'),'path','unmatched'),s=response.status_code,
+                d=elapsed_ms,b=int(request.headers.get('content-length','0')),o=int(response.headers.get('content-length','0')))
 
 @app.middleware("http")
 async def security_headers(request,call_next):
@@ -45,12 +57,8 @@ async def security_headers(request,call_next):
     response.headers["X-Content-Type-Options"]="nosniff"
     response.headers["Cache-Control"]="no-store"
     try:
-        from .db import SessionLocal
-        from .v3_security import execute
-        actor=getattr(request.state,'actor',None)
-        farm_id=getattr(actor,'farm_id',None)
-        with SessionLocal.begin() as metrics_db:
-            execute(metrics_db,"INSERT INTO request_metrics(id,account_id,farm_id,actor_id,request_id,method,route_template,status_code,duration_ms,request_bytes,response_bytes) VALUES(:i,(SELECT account_id FROM farms WHERE id=:f),:f,:u,:r,:m,:p,:s,:d,:b,:o)",i=uuid4(),f=farm_id,u=getattr(actor,'id',None),r=request.state.request_id,m=request.method,p=getattr(request.scope.get('route'),'path','unmatched'),s=response.status_code,d=max(0,(time.monotonic()-request.state.started)*1000),b=int(request.headers.get('content-length','0')),o=int(response.headers.get('content-length','0')))
+        elapsed_ms=max(0,(time.monotonic()-request.state.started)*1000)
+        await run_in_threadpool(persist_request_metrics,request,response,elapsed_ms)
     except Exception:
         import logging
         logging.getLogger('geocattle.metrics').warning('Métrica no persistida; revisar conexión/configuración de observabilidad')

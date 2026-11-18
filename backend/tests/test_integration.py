@@ -1,11 +1,14 @@
 """PostGIS integration: run with TEST_DATABASE_URL pointing to a migrated test DB.
 Each test uses an external rollback transaction; no persisted production writes.
 """
+import asyncio
 import os
 from datetime import timedelta
+from threading import Event as ThreadEvent
 from uuid import uuid4, UUID as PythonUUID
 import pytest
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine,event as sql_event,func,select,text
 from sqlalchemy.orm import Session
 from geocattle.models import *
@@ -13,6 +16,7 @@ from geocattle.schemas import TelemetryIn
 from geocattle.security import hash_password
 from geocattle.domain import ingest,check_timeouts
 from geocattle.db import get_db
+from geocattle import main
 from geocattle.main import app
 from geocattle.settings import settings
 
@@ -277,6 +281,35 @@ def test_dashboard_loads_animals_and_events_without_per_row_queries(data):
     assert result["summary"]["active_events"]==8 and len(result["events"])==8
     assert all(row["animal_name"].startswith("Animal ") and row["device_name"].startswith("Collar ") for row in result["events"])
     assert queries<=initial_queries+3
+
+
+def test_slow_metrics_leave_parallel_http_request_responsive(monkeypatch):
+    entered=ThreadEvent()
+    release=ThreadEvent()
+    completed_while_held=[]
+
+    def persist(request,response,elapsed_ms):
+        if request.url.path=="/api/docs":
+            entered.set()
+            completed_while_held.append(not release.wait(timeout=5))
+
+    monkeypatch.setattr(main,"persist_request_metrics",persist)
+
+    async def concurrent_requests():
+        async with AsyncClient(transport=ASGITransport(app=app),base_url="http://test") as client:
+            slow=asyncio.create_task(client.get("/api/docs"))
+            try:
+                assert await asyncio.to_thread(entered.wait,2)
+                quick=await asyncio.wait_for(client.get("/not-found"),timeout=2)
+                assert quick.status_code==404
+                assert not slow.done()
+            finally:
+                release.set()
+                reply=await slow
+            assert reply.status_code==200
+
+    asyncio.run(concurrent_requests())
+    assert completed_while_held==[False]
 
 
 def test_duplicate_and_late_do_not_rejuvenate(data):

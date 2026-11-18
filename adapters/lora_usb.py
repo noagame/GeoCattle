@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import tempfile
 import threading
 import time
 import urllib.error
@@ -212,6 +213,29 @@ def load_env(path):
     return values
 
 
+def publish_capture_status(target, snapshot):
+    """Publish a complete snapshot even if Windows briefly holds the previous file open."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', prefix='.status.',
+                                         suffix='.tmp', dir=target.parent, delete=False) as output:
+            temporary = Path(output.name)
+            json.dump(snapshot, output)
+        for delay in (0.05, 0.1, 0.2, 0.4):
+            try:
+                os.replace(temporary, target)
+                return
+            except PermissionError:
+                time.sleep(delay)
+        os.replace(temporary, target)
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                LOG.debug('No se pudo limpiar el archivo temporal de estado: %s', temporary)
+
+
 def capture(args):
     import serial
     from serial.tools.list_ports import comports
@@ -230,20 +254,20 @@ def capture(args):
               'last_line_at': None, 'last_packet_at': None}
 
     def write_status():
-        snapshot = {**status, **archive.stats(), 'updated_at': datetime.now(timezone.utc).isoformat()}
-        target = args.directory / 'status.json'
-        temporary = target.with_suffix('.tmp')
-        temporary.write_text(json.dumps(snapshot), encoding='utf-8')
-        os.replace(temporary, target)
+        try:
+            snapshot = {**status, **archive.stats(), 'updated_at': datetime.now(timezone.utc).isoformat()}
+            publish_capture_status(args.directory / 'status.json', snapshot)
+        except (OSError, sqlite3.Error) as error:
+            LOG.warning('No se pudo actualizar el estado local de la captura: %s', error)
 
     def background():
         while not stop.is_set():
             try:
                 archive.deliver(args.url, private['INGEST_KEY'])
-                if not stop.is_set():
-                    write_status()
             except Exception:
-                LOG.exception('Error actualizando entrega/estado; capturas conservadas')
+                LOG.exception('Error en la entrega de telemetria; capturas conservadas')
+            if not stop.is_set():
+                write_status()
             stop.wait(2)
 
     worker = threading.Thread(target=background, daemon=True)

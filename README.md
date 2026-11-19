@@ -26,8 +26,8 @@ El código de la aplicación y de la captura se mantiene en `main`. Para contrib
 - Sesiones HttpOnly, CSRF, permisos por predio y roles de administrador, dueño, trabajador y veterinario. TOTP configurable para el inicio de sesión de administrador y verificación adicional para operaciones sensibles.
 - Contexto multipredio, gestión de clientes, invitaciones, membresías, confianza por acción y aprobación de propuestas del trabajador. Las invitaciones vencidas se consultan mediante el filtro correspondiente.
 - Bovinos con DIIO, ficha técnica y sanitaria, historial, tratamientos y agenda con autoría.
-- Mapa Leaflet con imagen satelital local, OpenStreetMap opcional, escala métrica, recentrado y dibujo de geocercas versionadas.
-- Asociaciones históricas entre collar y animal, sector y geocerca. En **Sectores y geocercas** se puede trasladar un animal con su collar a otro potrero.
+- Mapa Leaflet con imagen satelital y cartografía vial locales, OpenStreetMap opcional, escala métrica, recentrado y dibujo de geocercas versionadas.
+- Asociaciones históricas entre collar y animal, sector y geocerca, con vigencias que preservan las lecturas anteriores. En **Territorio → Sectores y geocercas** se puede trasladar un animal con su collar a otro potrero.
 - Recepción académica LoRa directo mediante una T3 USB con CSV V4 y JSON V5, y captura de lotes JSON mediante una T3 base. La cola local deduplica y reintenta la entrega a la API.
 - Visualización de GPS, satélites usados, HDOP, temperatura superficial, aceleración, actividad, movimiento, batería, USB y calidad radio según los campos recibidos.
 - Historial paginado, gráficas y trayectoria por collar, registro diario y exportación JSONL de la página consultada.
@@ -87,7 +87,9 @@ Ctrl+C detiene la captura en primer plano. `Pausar-Captura-COM5.ps1` libera el p
 
 En **Recepción de collares**, revisa la última lectura y, por separado, la fecha de la última posición GPS válida. Con la T3 base, **0 saltos** representa recepción directa en la base. Para comprobar el paso por repetidores, verifica que los paquetes registren **1 o 2 saltos**.
 
-En `main`, el arranque aplica hasta `005_gateway_management.sql`. Respalda la base antes de actualizar una instalación existente y valida primero la migración en una copia.
+El arranque aplica las migraciones pendientes en orden. Respalda la base antes de actualizar una instalación existente y valida primero la migración en una copia.
+
+El engranaje junto a «Cerrar sesión» abre el perfil personal. La barra lateral agrupa las páginas relacionadas según los permisos de cada rol.
 
 ### Acceso de administrador
 

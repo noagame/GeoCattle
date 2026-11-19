@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     session_secret: str = Field(default="development-change-this-secret-before-use", repr=False)
     mfa_encryption_key: str | None = Field(default=None, repr=False)
     admin_login_mfa: bool = False
+    local_admin_password_only: bool = False
     ingest_key: str = Field(default="development-change-this-ingest-key", repr=False)
     cookie_secure: bool = False
     allowed_origins: str = "http://localhost:5173,http://localhost:8080"
@@ -45,6 +46,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def isolation(self):
+        if self.local_admin_password_only and self.app_env != "development":
+            raise ValueError("LOCAL_ADMIN_PASSWORD_ONLY requiere APP_ENV=development")
         if self.simulation_enabled and self.app_env != "simulation":
             raise ValueError("SIMULATION_ENABLED requiere APP_ENV=simulation")
         if self.app_env == "production":

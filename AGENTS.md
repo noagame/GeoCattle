@@ -34,7 +34,7 @@ Ejecuta las verificaciones pertinentes al cambio. Indica qué pruebas se ejecuta
 ## Colaboración
 
 - Revisa `git status --short --branch` antes de editar o cambiar de rama. Conserva los cambios existentes y limita el diff al alcance pedido.
-- `dev/software` y `dev/hardware-captura` organizan el trabajo. Los cambios se integran por PR a `develop` y se promueven a `main` tras la revisión. Coordina cambios en contratos, migraciones y arranque. Sigue [CONTRIBUTING.md](CONTRIBUTING.md) y [Desarrollo colaborativo](docs/DESARROLLO_COLABORATIVO.md).
+- `main` reúne la aplicación y la captura. Integra y publica los cambios en esta rama. Coordina cambios en contratos, migraciones y arranque. Sigue [CONTRIBUTING.md](CONTRIBUTING.md) y [Desarrollo colaborativo](docs/DESARROLLO_COLABORATIVO.md).
 
 # DOX framework
 

@@ -17,7 +17,7 @@ from sqlalchemy.orm import aliased
 from .db import get_db
 from .models import *
 from .schemas import *
-from .security import current_user, owner, operator, service_auth, create_session, token_hash, verify_password, hash_password
+from .security import admin_login_requires_mfa, current_user, owner, operator, service_auth, create_session, token_hash, verify_password, hash_password
 from .domain import ingest, append_audit, freshness, at_time, check_timeouts, clear_animal_monitoring, resolve_assignment_events, reset_pasture_monitoring, temperature_alert, low_activity_alert
 from .settings import settings
 
@@ -203,7 +203,7 @@ def login(body:LoginIn,request:Request,response:Response,db=Depends(get_db, scop
     if user.farm_id and db.get(Farm,user.farm_id).environment!=settings().app_env:raise HTTPException(403,"Cuenta de otro entorno")
     from .v3_security import one,create_challenge
     from .v3_auth import issue_session
-    if user.role == 'admin' and settings().admin_login_requires_mfa:
+    if user.role == 'admin' and admin_login_requires_mfa(request):
         factor=one(db,'SELECT id FROM mfa_factors WHERE user_id=:u AND verified_at IS NOT NULL AND revoked_at IS NULL',u=user.id)
         return create_challenge(db,user,'login' if factor else 'mfa_setup',setup=not bool(factor))
     attempts.clear()

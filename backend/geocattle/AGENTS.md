@@ -9,6 +9,7 @@
 - Reutiliza los controles de `security.py`, `v3_auth.py`, `v3_security.py` y `v3_operation_auth.py` según el router. Si cambia una operación con alcance de predio, revisa las consultas y permisos de lectura y escritura.
 - Para cambios de API revisa `schemas.py`, los tipos y clientes de [frontend](../../frontend/src/AGENTS.md) y el [contrato de API](../../docs/CONTRATO_API.md). Para cambios de almacenamiento revisa `models.py` y [database](../../database/AGENTS.md).
 - Conserva el origen y las fechas de observación y recepción al procesar telemetría. Las alertas y su atención conservan estados distintos. [Arquitectura](../../docs/ARQUITECTURA.md)
+- `ADMIN_LOGIN_MFA` y producción obligan a verificar TOTP al administrador. En desarrollo, `LOCAL_ADMIN_PASSWORD_ONLY` limita el acceso por contraseña al prototipo nativo en loopback. El inicio de sesión y la validación de sesiones aplican la misma política.
 
 ## Verificación
 

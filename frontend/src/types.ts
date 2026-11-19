@@ -49,7 +49,7 @@ export type Settings = {
   capabilities?: { can_edit: boolean; environment: 'simulation' | 'development' | 'production'; preventive_rules_validated: boolean; preventive_rules_allowed: boolean; temperature_rule_allowed?: boolean };
   [key: string]: unknown;
 };
-export type Audit = { id: string; action: string; at: string; actor_id: string | null; object_type: string; object_id: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null };
+export type Audit = { id: string; action: string; at: string; actor_id: string | null; farm_id?: string | null; object_type: string; object_id: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null };
 export type Notification = { id: string; status: string; created_at: string; channel: string; event_id: string; attempts: { attempt: number; at: string; status: string; provider_id?: string | null; error?: string | null }[] };
 export type Maintenance = { id: string; device_id: string; device_name: string; battery_id: string | null; kind: 'inspection' | 'recharge' | 'replacement' | 'retirement'; at: string; responsible_id: string; responsible_name: string; result: string };
 export type List<T> = { items: T[]; total: number };

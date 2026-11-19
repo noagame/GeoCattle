@@ -14,7 +14,7 @@ import { FarmSelector } from './FarmSelector';
 
 import { EnrolPage, ProfilePage, ResetPasswordPage } from './V3Account';
 import { roleLabels } from './v3types';
-import type { Gateway } from './v3types';
+import type { ActivityCounts, Gateway } from './v3types';
 
 const AdminDashboard = lazy(() => import('./V3Admin').then(module => ({ default: module.AdminDashboard })));
 const AdminOwners = lazy(() => import('./V3Admin').then(module => ({ default: module.AdminOwners })));
@@ -26,14 +26,17 @@ const TeamPage = lazy(() => import('./V3Farm').then(module => ({ default: module
 const UserNotifications = lazy(() => import('./V3Farm').then(module => ({ default: module.UserNotifications })));
 const ChangesPage = lazy(() => import('./V3Health').then(module => ({ default: module.ChangesPage })));
 const HealthPage = lazy(() => import('./V3Health').then(module => ({ default: module.HealthPage })));
+const SupportPage = lazy(() => import('./V3Support').then(module => ({ default: module.SupportPage })));
 
-type Page = 'hardware' | 'overview' | 'animals' | 'devices' | 'geofences' | 'events' | 'operations' | 'settings' | 'admin' | 'owners' | 'users' | 'farms' | 'team' | 'changes' | 'health' | 'gateways' | 'profile' | 'notices' | 'audit';
+type Page = 'hardware' | 'overview' | 'animals' | 'devices' | 'geofences' | 'events' | 'operations' | 'settings' | 'admin' | 'owners' | 'users' | 'farms' | 'team' | 'changes' | 'health' | 'gateways' | 'profile' | 'notices' | 'audit' | 'support' | 'support-admin';
 export type Notify = (message: string) => void;
 const allNavigation = [
   { id: 'hardware' as Page, title: 'Recepción de collares', icon: Radio },
   { id: 'admin' as Page, title: 'Panel administrador', icon: LayoutDashboard, global: true },
   { id: 'owners' as Page, title: 'Dueños y clientes', icon: Building2, global: true },
   { id: 'users' as Page, title: 'Usuarios de plataforma', icon: Users, global: true },
+  { id: 'support-admin' as Page, title: 'Solicitudes de soporte', icon: Inbox, global: true },
+  { id: 'support' as Page, title: 'Mis solicitudes a soporte', icon: CircleHelp },
   { id: 'overview' as Page, title: 'Panel del predio', icon: LayoutDashboard },
   { id: 'farms' as Page, title: 'Mis predios', icon: Building2 },
   { id: 'animals' as Page, title: 'Bovinos y monitoreo', icon: Sprout },
@@ -51,7 +54,7 @@ const allNavigation = [
   { id: 'profile' as Page, title: 'Mi perfil', icon: Settings },
 ];
 
-type NavigationItem = (typeof allNavigation)[number];
+type NavigationItem = (typeof allNavigation)[number] & { count?: number; countLabel?: string };
 type NavigationGroup = { id: string; title: string; icon: LucideIcon; pages: Page[] };
 const sidebarLayout: (Page | NavigationGroup)[] = [
   'admin',
@@ -60,7 +63,8 @@ const sidebarLayout: (Page | NavigationGroup)[] = [
   { id: 'land', title: 'Territorio', icon: MapPin, pages: ['farms', 'geofences'] },
   { id: 'equipment', title: 'Dispositivos', icon: Radio, pages: ['hardware', 'devices', 'gateways'] },
   { id: 'management', title: 'Gestión del predio', icon: Activity, pages: ['team', 'changes', 'operations', 'settings', 'audit'] },
-  { id: 'platform', title: 'Administración', icon: ShieldCheck, pages: ['owners', 'users'] },
+  { id: 'platform', title: 'Administración', icon: ShieldCheck, pages: ['owners', 'users', 'support-admin'] },
+  'support',
 ];
 
 function SidebarNavigation({ navigation, activePage, navigate }: {
@@ -79,6 +83,7 @@ function SidebarNavigation({ navigation, activePage, navigate }: {
     const current = activePage === item.id;
     return <button key={item.id} type="button" className={`nav-item${current ? ' nav-active' : ''}`} onClick={() => navigate(item.id)} aria-current={current ? 'page' : undefined}>
       <item.icon size={18} aria-hidden="true" /><span>{item.title}</span>
+      {!!item.count && <span className="nav-count" aria-label={`${item.count} ${item.countLabel}`}>{item.count}</span>}
     </button>;
   }
 
@@ -97,10 +102,13 @@ function SidebarNavigation({ navigation, activePage, navigate }: {
 
       const expanded = openGroup === entry.id;
       const submenuId = `sidebar-${entry.id}`;
+      const count = children.find(item => !!item.count);
       return <div key={entry.id}>
         <button type="button" className={`nav-item nav-group-toggle${activeGroupId === entry.id ? ' nav-group-current' : ''}`}
           aria-expanded={expanded} aria-controls={submenuId} onClick={() => setOpenGroup(current => current === entry.id ? null : entry.id)}>
-          <entry.icon size={18} aria-hidden="true" /><span>{entry.title}</span><ChevronDown className="nav-group-chevron" size={15} aria-hidden="true" />
+          <entry.icon size={18} aria-hidden="true" /><span>{entry.title}</span>
+          {!expanded && count && <span className="nav-count" aria-label={`${count.count} ${count.countLabel}`}>{count.count}</span>}
+          <ChevronDown className="nav-group-chevron" size={15} aria-hidden="true" />
         </button>
         <div className="nav-submenu" id={submenuId} hidden={!expanded}>
           {children.map(pageButton)}
@@ -146,22 +154,39 @@ function readPublicToken(kind: 'enrol' | 'reset') {
 }
 export default function App() {
   const [session, updateSession] = useState<Session | null>(null); const [checking, setChecking] = useState(true); const [authError, setAuthError] = useState(''); const [authNotice, setAuthNotice] = useState('');
-  const [page, setPage] = useState<Page>(() => (allNavigation.find(nav => nav.id === location.hash.slice(1))?.id ?? 'overview')); const [enrolToken, setEnrolToken] = useState(() => readPublicToken('enrol')); const [resetToken, setResetToken] = useState(() => readPublicToken('reset'));
+  const [route, setRoute] = useState(() => location.hash.slice(1)); const [enrolToken, setEnrolToken] = useState(() => readPublicToken('enrol')); const [resetToken, setResetToken] = useState(() => readPublicToken('reset'));
+  const [pageName, routeParams] = route.split('?', 2);
+  const page = allNavigation.find(nav => nav.id === pageName)?.id ?? 'overview';
+  const requestId = new URLSearchParams(routeParams).get('request');
   const [mobileMenu, setMobileMenu] = useState(false); const [connected, setConnected] = useState(true); const [contextBusy, setContextBusy] = useState(false); const [contextError, setContextError] = useState(''); const [search, setSearch] = useState(''); const [toast, setToast] = useState('');
   const admin = session?.user.role === 'admin'; const hasFarm = !!session?.user.farm_id;
   const role = session?.user.role; const owner = role === 'owner' || admin; const worker = role === 'worker' || role === 'operator';
   const overview = useData<Overview>(session && hasFarm ? '/dashboard' : null, session && hasFarm ? 30000 : 0, session?.user.farm_id ?? '');
-  const allowed = new Set<Page>(['profile']);
+  const activity = useData<ActivityCounts>(session ? '/v3/activity-counts' : null, 30000,
+    `${session?.user.id ?? ''}:${session?.user.farm_id ?? ''}`);
+  const unreadNotices = activity.data?.unread_notices ?? 0;
+  const allowed = new Set<Page>(['profile', 'support']);
   if (hasFarm) allowed.add('notices');
   if (admin) ['admin', 'owners', 'users', 'audit', 'farms'].forEach(p => allowed.add(p as Page));
+  if (admin && !hasFarm) allowed.add('support-admin');
   if (role === 'owner') allowed.add('farms');
   if (hasFarm) {
     ['overview', 'animals', 'events'].forEach(p => allowed.add(p as Page));
     if (role !== 'viewer') allowed.add('health');
     if (owner) ['hardware', 'devices', 'gateways', 'geofences', 'team', 'changes', 'operations', 'settings', 'audit'].forEach(p => allowed.add(p as Page));
-    if (worker) allowed.add('changes');
+    if (worker || role === 'veterinarian') allowed.add('changes');
   }
-  const navigation = allNavigation.filter(item => allowed.has(item.id)).map(item => item.id === 'farms' && admin ? { ...item, title: 'Predios de plataforma' } : item.id === 'changes' && worker ? { ...item, title: 'Mis reportes y solicitudes' } : item.id === 'overview' ? { ...item, title: role === 'owner' ? 'Panel dueño' : role === 'veterinarian' ? 'Panel veterinario' : worker ? 'Panel trabajador' : 'Panel del predio' } : item);
+  const navigation: NavigationItem[] = allNavigation.filter(item => allowed.has(item.id)).map(item => {
+    if (item.id === 'changes') return {
+      ...item, title: owner ? item.title : worker ? 'Mis reportes y solicitudes' : 'Mis registros',
+      count: activity.data?.pending_changes, countLabel: 'pendientes',
+    };
+    if (item.id === 'support') return { ...item, count: activity.data?.unread_support, countLabel: 'respuestas sin leer' };
+    if (item.id === 'support-admin') return { ...item, count: activity.data?.pending_support, countLabel: 'pendientes' };
+    if (item.id === 'farms' && admin) return { ...item, title: 'Predios de plataforma' };
+    if (item.id === 'overview') return { ...item, title: role === 'owner' ? 'Panel dueño' : role === 'veterinarian' ? 'Panel veterinario' : worker ? 'Panel trabajador' : 'Panel del predio' };
+    return item;
+  });
   const defaultPage: Page = admin ? 'admin' : hasFarm ? 'overview' : role === 'owner' ? 'farms' : 'profile'; const activePage = allowed.has(page) ? page : defaultPage;
   const refreshSession = () => api<Session>('/auth/me').then(result => { setSession(result); updateSession(result); }).catch(err => setToast(message(err)));
   useEffect(() => {
@@ -169,18 +194,18 @@ export default function App() {
     api<Session>('/auth/me').then(result => { if (alive) { setSession(result); updateSession(result); } }).catch(err => { if (alive && (!(err instanceof ApiError) || err.status !== 401)) setAuthError(message(err)); }).finally(() => { if (alive) setChecking(false); });
     const expired = () => { setSession(null); updateSession(null); setAuthError('La sesión ha caducado. Ingresa nuevamente.'); setAuthNotice(''); };
     const connectivity = (event: Event) => setConnected((event as CustomEvent<boolean>).detail);
-    const route = () => { setPage(allNavigation.find(nav => nav.id === location.hash.slice(1))?.id ?? 'overview'); setEnrolToken(readPublicToken('enrol')); setResetToken(readPublicToken('reset')); };
-    window.addEventListener('session-expired', expired); window.addEventListener('api-connectivity', connectivity); window.addEventListener('hashchange', route);
-    return () => { alive = false; window.removeEventListener('session-expired', expired); window.removeEventListener('api-connectivity', connectivity); window.removeEventListener('hashchange', route); };
+    const readRoute = () => { setRoute(location.hash.slice(1)); setEnrolToken(readPublicToken('enrol')); setResetToken(readPublicToken('reset')); };
+    window.addEventListener('session-expired', expired); window.addEventListener('api-connectivity', connectivity); window.addEventListener('hashchange', readRoute);
+    return () => { alive = false; window.removeEventListener('session-expired', expired); window.removeEventListener('api-connectivity', connectivity); window.removeEventListener('hashchange', readRoute); };
   }, []);
   useEffect(() => { if (!toast) return; const timeout = setTimeout(() => setToast(''), 6000); return () => clearTimeout(timeout); }, [toast]);
-  function navigate(next: Page) { location.hash = next; setPage(next); setMobileMenu(false); }
+  function navigate(next: Page) { location.hash = next; setRoute(next); setMobileMenu(false); }
   async function switchFarm(farmId: string) { if ((!farmId && !admin) || farmId === (session?.user.farm_id ?? '')) return; setContextBusy(true); setContextError(''); try { const result = await write<Session>('/auth/context', { farm_id: farmId || null }); setSession(result); updateSession(result); setSearch(''); navigate('overview'); } catch (err) { setContextError(message(err)); } finally { setContextBusy(false); } }
   async function logout() { try { await api('/auth/logout', { method: 'POST' }); setSession(null); updateSession(null); setAuthError(''); } catch (err) { setToast(message(err)); } }
   if (checking) return <div className="app-start"><Brand /><Loading label="Conectando con GeoCattle…" /></div>;
   if (resetToken) return <ResetPasswordPage token={resetToken} onBack={() => { setSession(null); updateSession(null); setAuthError(''); setAuthNotice(''); location.hash = ''; setResetToken(''); }} />;
   if (enrolToken) return <EnrolPage token={enrolToken} onBack={() => { location.hash = ''; setEnrolToken(''); }} />;
-  if (!session) return <Login onLogin={result => { updateSession(result); setAuthNotice(''); setAuthError(''); setPage(result.user.role === 'admin' ? 'admin' : 'overview'); }} initialError={authError} initialNotice={authNotice} />;
+  if (!session) return <Login onLogin={result => { updateSession(result); setAuthNotice(''); setAuthError(''); if (!pageName) navigate(result.user.role === 'admin' ? 'admin' : 'overview'); }} initialError={authError} initialNotice={authNotice} />;
   const farmName = session.user.farms?.find(f => f.id === session.user.farm_id)?.name ?? overview.data?.farm.name ?? 'Selecciona un predio';
   return <div className="app-shell v3-shell"><a className="v3-skip-link" href="#main-content" onClick={e => { e.preventDefault(); document.getElementById('main-content')?.focus(); }}>Saltar al contenido</a>{mobileMenu && <button className="sidebar-overlay" aria-label="Cerrar navegación" onClick={() => setMobileMenu(false)} />}
     <aside className={`sidebar ${mobileMenu ? 'sidebar-open' : ''}`}>
@@ -203,7 +228,22 @@ export default function App() {
         </div>
       </div>
     </aside>
-    <div className="app-body"><header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Abrir menú" onClick={() => setMobileMenu(true)}><Menu size={22} /></button><span>{admin && ['admin', 'owners', 'users', 'audit'].includes(activePage) ? 'Plataforma' : farmName}</span><ChevronRight size={15} /><strong>{navigation.find(nav => nav.id === activePage)?.title}</strong></div>{hasFarm && <form className="global-search" onSubmit={e => { e.preventDefault(); navigate('animals'); }}><Search size={16} /><input aria-label="Buscar animales por nombre o DIIO" placeholder="Buscar nombre o DIIO…" value={search} onChange={e => setSearch(e.target.value)} /><kbd>↵</kbd></form>}<div className="topbar-actions">{allowed.has('events') && <button type="button" className={`topbar-action-btn alert-btn ${activePage === 'events' ? 'active' : ''} ${overview.data?.summary.active_events ? 'has-alerts' : ''}`} aria-label={`Alertas y atención del predio${overview.data?.summary.active_events ? ` (${overview.data.summary.active_events} activas)` : ''}`} title={`Alertas y atención del predio${overview.data?.summary.active_events ? ` (${overview.data.summary.active_events} activas)` : ''}`} onClick={() => navigate('events')}><Bell size={19} />{!!overview.data?.summary.active_events && <span className="topbar-badge alert-badge" aria-hidden="true">{overview.data.summary.active_events}</span>}</button>}{allowed.has('notices') && <button type="button" className={`topbar-action-btn notice-btn ${activePage === 'notices' ? 'active' : ''}`} aria-label="Mis avisos y actividad personal" title="Mis avisos y actividad personal" onClick={() => navigate('notices')}><Inbox size={19} /></button>}</div></header>
+    <div className="app-body">
+      <header className="topbar">
+        <div className="breadcrumb">
+          <button className="icon-button mobile-menu" aria-label="Abrir menú" onClick={() => setMobileMenu(true)}><Menu size={22} /></button>
+          <span>{activePage === 'support' ? 'Mi cuenta' : admin && ['admin', 'owners', 'users', 'audit', 'support-admin'].includes(activePage) ? 'Plataforma' : farmName}</span>
+          <ChevronRight size={15} /><strong>{navigation.find(nav => nav.id === activePage)?.title}</strong>
+        </div>
+        {hasFarm && <form className="global-search" onSubmit={e => { e.preventDefault(); navigate('animals'); }}><Search size={16} /><input aria-label="Buscar animales por nombre o DIIO" placeholder="Buscar nombre o DIIO…" value={search} onChange={e => setSearch(e.target.value)} /><kbd>↵</kbd></form>}
+        <div className="topbar-actions">
+          {allowed.has('events') && <button type="button" className={`topbar-action-btn alert-btn ${activePage === 'events' ? 'active' : ''} ${overview.data?.summary.active_events ? 'has-alerts' : ''}`} aria-label={`Alertas y atención del predio${overview.data?.summary.active_events ? ` (${overview.data.summary.active_events} activas)` : ''}`} title={`Alertas y atención del predio${overview.data?.summary.active_events ? ` (${overview.data.summary.active_events} activas)` : ''}`} onClick={() => navigate('events')}><Bell size={19} />{!!overview.data?.summary.active_events && <span className="topbar-badge alert-badge" aria-hidden="true">{overview.data.summary.active_events}</span>}</button>}
+          {allowed.has('notices') && <button type="button" className={`topbar-action-btn notice-btn ${activePage === 'notices' ? 'active' : ''}`}
+            aria-label={`Mis avisos${unreadNotices ? ` (${unreadNotices} sin leer)` : ''}`} title="Mis avisos" onClick={() => navigate('notices')}>
+            <Inbox size={19} />{!!unreadNotices && <span className="topbar-badge notice-badge" aria-hidden="true">{unreadNotices > 99 ? '99+' : unreadNotices}</span>}
+          </button>}
+        </div>
+      </header>
       {!connected && <div className="connectivity-banner" role="alert"><WifiOff size={17} /><span>Conexión interrumpida. La información visible puede estar desactualizada.</span><button onClick={overview.reload}>Reintentar</button></div>}
       {overview.data?.farm.environment === 'simulation' && <div className="simulation-banner"><span className="simulation-tag">SIMULACIÓN</span><span>Predio de demostración. Las lecturas con origen <strong>sim</strong> son simuladas.</span></div>}
       <main className="main-content" id="main-content" tabIndex={-1}><ErrorNotice error={contextError} />{contextBusy ? <Loading label="Cambiando al predio autorizado…" /> : <Suspense fallback={<Loading label="Abriendo panel…" />}><div key={`${session.user.id}-${session.user.farm_id}-${role}`}>
@@ -213,7 +253,7 @@ export default function App() {
         {activePage === 'farms' && <FarmsPage admin={admin} notify={setToast} onUpdated={refreshSession} />}
         {activePage === 'animals' && <AnimalsPage search={search} setSearch={setSearch} canWrite={owner} notify={setToast} />}
         {activePage === 'health' && <HealthPage worker={worker} actorId={session.user.id} notify={setToast} />}
-        {activePage === 'changes' && <ChangesPage worker={worker} notify={setToast} />}
+        {activePage === 'changes' && <ChangesPage key={requestId ?? 'list'} worker={worker} canReview={owner} requestId={requestId} notify={setToast} onChange={activity.reload} />}
         {activePage === 'team' && <TeamPage key={session.user.farm_id ?? ''} admin={admin} notify={setToast} />}
         {activePage === 'gateways' && <GatewaysPage notify={setToast} />}
         {activePage === 'hardware' && <HardwarePage farmId={session.user.farm_id ?? ''} />}{activePage === 'devices' && <DevicesPage canWrite={owner} notify={setToast} />}
@@ -222,7 +262,8 @@ export default function App() {
         {activePage === 'operations' && <OperationsPage canWrite={owner} canAudit={owner} notify={setToast} simulation={overview.data?.farm.environment === 'simulation'} onChange={overview.reload} />}
         {activePage === 'settings' && <SettingsPage canWrite={owner} notify={setToast} simulation={overview.data?.farm.environment === 'simulation'} farmName={farmName} />}
         {activePage === 'audit' && <AuditPage global={admin} />}
-        {activePage === 'notices' && <UserNotifications notify={setToast} />}
+        {activePage === 'notices' && <UserNotifications notify={setToast} onChange={activity.reload} />}
+        {(activePage === 'support' || activePage === 'support-admin') && <SupportPage key={route} admin={activePage === 'support-admin'} notify={setToast} onChange={activity.reload} />}
         {activePage === 'profile' && <ProfilePage notify={setToast} mfaEnabled={session.user.mfa_enabled} onUpdated={refreshSession} onSignedOut={() => { setSession(null); updateSession(null); setAuthError(''); setAuthNotice('Contraseña actualizada. Inicia sesión con tu nueva clave.'); location.hash = ''; }} />}
       </div></Suspense>}</main><footer className="app-footer"><span>GeoCattle <span>·</span> {roleLabels[role ?? '']}</span><span><span className={`connection-dot ${connected ? 'green' : 'red'}`} />{connected ? 'Red local' : 'Conexión interrumpida'}<span className="footer-separator">|</span>Hora de Chile</span></footer>
     </div>{toast && <div className="toast" role="status"><Check size={18} /><span>{toast}</span><button className="icon-button" aria-label="Cerrar aviso" onClick={() => setToast('')}><X size={16} /></button></div>}

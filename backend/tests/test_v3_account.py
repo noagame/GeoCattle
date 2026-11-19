@@ -1,6 +1,7 @@
 """Credential and recovery integration; all fixtures roll back their data."""
 import os
 from datetime import timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
@@ -89,8 +90,78 @@ def test_closure_is_only_a_reauthenticated_request_and_preserves_records(v3):
     assert client.get('/api/v1/auth/me').status_code == 200
     assert v3.db.execute(text('SELECT active FROM users WHERE id=:u'), {'u': v3.users['owner'].id}).scalar_one() is True
     assert v3.db.execute(text('SELECT count(*) FROM animals WHERE id=:a'), {'a': v3.animals['owner'].id}).scalar_one() == 1
-    assert v3.db.execute(text("SELECT count(*) FROM account_tokens WHERE user_id=:u AND purpose='close_account'"),
+    assert v3.db.execute(text("SELECT count(*) FROM support_requests WHERE requester_id=:u AND kind='close_account'"),
         {'u': v3.users['owner'].id}).scalar_one() == 1
+
+
+def test_support_is_private_and_global_admin_response_reaches_requester(v3):
+    worker = v3.client('worker')
+    owner = v3.client('owner')
+    admin, _ = admin_session(v3)
+    support = '/api/v1/auth/support-requests'
+    counts = '/api/v1/v3/activity-counts'
+    previous = admin.get(counts).json()['pending_support']
+
+    closure = worker.post('/api/v1/auth/account/close-request', json={'password': PASSWORD, 'reason': 'Motivo privado'})
+    assert closure.status_code == 201, closure.text
+    ident = closure.json()['request_id']
+    access = worker.post(support, json={'kind': 'access_issue', 'description': 'Consulta de acceso'})
+    assert access.status_code == 201, access.text
+    assert worker.post(support, json={'kind': 'close_account', 'description': 'Sin credenciales'}).status_code == 422
+    assert worker.post(support, json={'kind': 'change_email', 'description': '  '}).status_code == 422
+
+    mine = worker.get(support).json()['items']
+    assert {item['id'] for item in mine} == {ident, access.json()['request_id']}
+    assert owner.get(support).json()['total'] == 0
+    assert owner.get(support, params={'admin': True}).status_code == 403
+    decision = {'status': 'resolved', 'response': 'Revisión de cuenta completada'}
+    assert owner.post(f'{support}/{ident}/decision', json=decision).status_code == 403
+
+    # Preserve historical evidence without returning its private text to the farm owner.
+    v3.db.execute(text("""INSERT INTO audit_log(id,farm_id,actor_id,object_type,object_id,action,at,after)
+        VALUES(:id,:farm,:worker,'account_request',:ref,'account_closure_requested',now(),'{"reason":"Privado histórico"}')"""),
+        {'id': uuid4(), 'farm': v3.farms['owner'].id, 'worker': v3.users['worker'].id, 'ref': ident})
+    assert owner.get('/api/v1/v3/audit', params={'entity': 'account_request'}).json()['total'] == 0
+    assert all(item['object_type'] != 'account_request' for item in owner.get('/api/v1/audit').json()['items'])
+    new_audit = v3.db.execute(text("""SELECT farm_id,after FROM audit_log
+        WHERE object_id=:i AND action='account_closure_requested' AND farm_id IS NULL"""), {'i': ident}).one()
+    assert new_audit.after == {'kind': 'close_account', 'status': 'pending'}
+
+    assert admin.get(counts).json()['pending_support'] == previous + 2
+    queue = admin.get(support, params={'admin': True, 'status': 'pending'}).json()['items']
+    assert next(item for item in queue if item['id'] == ident)['description'] == 'Motivo privado'
+    context = admin.post('/api/v1/auth/context', json={'farm_id': str(v3.farms['owner'].id)})
+    assert context.status_code == 200
+    assert admin.get(support, params={'admin': True}).status_code == 403
+    assert admin.post(f'{support}/{ident}/decision', json=decision).status_code == 403
+    assert admin.post('/api/v1/auth/context', json={'farm_id': None}).status_code == 200
+
+    assert admin.post(f'{support}/{ident}/decision', json=decision).status_code == 200
+    assert admin.post(f'{support}/{ident}/decision', json=decision).status_code == 200
+    assert admin.post(f'{support}/{ident}/decision', json={**decision, 'response': 'Otra respuesta'}).status_code == 409
+    assert admin.get(counts).json()['pending_support'] == previous + 1
+    answered = worker.get(support, params={'status': 'resolved'}).json()
+    assert answered['total'] == 1 and answered['items'][0]['response'] == decision['response']
+    assert worker.get(counts).json()['unread_support'] == 1
+    assert owner.post(f'{support}/{ident}/read', json={}).status_code == 404
+    assert worker.post(f'{support}/{ident}/read', json={}).status_code == 200
+    assert worker.get(counts).json()['unread_support'] == 0
+    assert worker.get('/api/v1/auth/me').status_code == 200
+
+
+def test_audit_records_known_login_and_context_states(v3):
+    admin, _ = admin_session(v3)
+    farm = v3.farms['owner']
+    assert admin.post('/api/v1/auth/context', json={'farm_id': str(farm.id)}).status_code == 200
+    assert admin.post('/api/v1/auth/context', json={'farm_id': None}).status_code == 200
+    contexts = admin.get('/api/v1/v3/audit', params={'action': 'select_context'}).json()['items']
+    platform = {'scope': 'platform', 'role': 'admin'}
+    farm_context = {'scope': 'farm', 'farm_id': str(farm.id), 'farm_name': farm.name, 'role': 'admin'}
+    assert any(item['before'] == platform and item['after'] == farm_context for item in contexts)
+    assert any(item['before'] == farm_context and item['after'] == platform for item in contexts)
+    login = admin.get('/api/v1/v3/audit', params={'action': 'login', 'actor_id': str(v3.users['admin'].id)}).json()['items'][0]
+    assert login['before'] is None
+    assert login['after'] == {'status': 'active', 'mfa_verified': True, **platform}
 
 
 def test_recovery_codes_require_mfa_are_hashed_and_regeneration_invalidates_old(v3):

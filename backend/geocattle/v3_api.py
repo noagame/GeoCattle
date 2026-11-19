@@ -313,6 +313,7 @@ def audits(user=Depends(current_user),db=Depends(get_db,scope='function'),limit:
     if user.role!='admin':
         if farm_id and farm_id!=farm_scope(user):raise HTTPException(403,'Predio no autorizado')
         farm_id=farm_scope(user)
+        predicates.extend(["a.object_type<>'account_request'", "a.action<>'account_closure_requested'"])
     if farm_id:predicates.append('a.farm_id=:f');p['f']=farm_id
     for name,value,column in [('actor',actor_id,'a.actor_id'),('action',action,'a.action'),('entity',entity,'a.object_type')]:
         if value:predicates.append(column+'=:'+name);p[name]=value
@@ -326,7 +327,8 @@ def audits(user=Depends(current_user),db=Depends(get_db,scope='function'),limit:
     source=' FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id'
     data=rows(db,'SELECT a.id,a.farm_id,a.actor_id,a.object_type,a.object_id,a.action,a.at,u.username AS actor_name,u.username AS username,a.before,a.after'+source+where+' ORDER BY a.at DESC,a.id LIMIT :n OFFSET :offset',n=limit,offset=offset,**p)
     total=one(db,'SELECT count(*) AS n'+source+where,**p)['n']
-    audit(db,user,'read_audit','audit_log');return {'items':data,'total':total}
+    audit(db,user,'read_audit','audit_log',after={'scope': 'farm' if farm_id else 'platform'})
+    return {'items':data,'total':total}
 
 @router.get('/invitations')
 def invitations(request:Request,view:Literal['main','expired']|None=None,user=Depends(owner),db=Depends(get_db,scope='function')):
@@ -428,17 +430,40 @@ def revoke(ident:UUID,request:Request,user=Depends(owner),db=Depends(get_db,scop
     audit(db,user,'trust_revoked','trust_grant',ident)
 
 
-def change_rows(db,user):
+def change_rows(db,user,ident=None,status=None,limit=100,offset=0):
     where='r.farm_id=:f'
     args={'f':farm_scope(user)}
     if user.role not in ('owner','admin'):where+=' AND r.requested_by=:u';args['u']=user.id
-    return rows(db,"""SELECT r.*,coalesce(nullif(u.full_name,''),u.username) AS requester_name,
-      CASE WHEN d.decision='rejected' THEN 'rejected' WHEN x.request_id IS NOT NULL THEN 'applied' ELSE 'pending' END AS status,
-      d.decision,d.reason,x.entity_type,x.entity_id,a.diio FROM change_requests r JOIN users u ON u.id=r.requested_by
+    if ident is not None:
+        where+=' AND r.id=:id'
+        args['id']=ident
+    if status == 'pending':
+        where+=' AND d.request_id IS NULL'
+    elif status == 'applied':
+        where+=' AND x.request_id IS NOT NULL'
+    elif status == 'rejected':
+        where+=" AND d.decision='rejected'"
+    source = """ FROM change_requests r JOIN users u ON u.id=r.requested_by
       LEFT JOIN change_decisions d ON d.request_id=r.id LEFT JOIN change_applications x ON x.request_id=r.id
-      LEFT JOIN animals a ON a.id=r.animal_id WHERE """+where+' ORDER BY r.created_at DESC LIMIT 100',**args)
+      LEFT JOIN animals a ON a.id=r.animal_id WHERE """ + where
+    items = rows(db,"""SELECT r.*,coalesce(nullif(u.full_name,''),u.username) AS requester_name,
+      CASE WHEN d.decision='rejected' THEN 'rejected' WHEN x.request_id IS NOT NULL THEN 'applied' ELSE 'pending' END AS status,
+      d.decision,d.reason,x.entity_type,x.entity_id,a.diio""" + source +
+      ' ORDER BY r.created_at DESC,r.id DESC LIMIT :limit OFFSET :offset',limit=limit,offset=offset,**args)
+    total = len(items) if ident is not None else one(db,'SELECT count(*) AS n' + source,**args)['n']
+    return {'items': items, 'total': total}
+
 @router.get('/changes')
-def changes(user=Depends(current_user),db=Depends(get_db,scope='function')):return listing(change_rows(db,user))
+def changes(status:Literal['pending','applied','rejected']|None=None,limit:int=Query(100,ge=1,le=100),
+        offset:int=Query(0,ge=0),user=Depends(current_user),db=Depends(get_db,scope='function')):
+    return change_rows(db,user,status=status,limit=limit,offset=offset)
+
+@router.get('/changes/{ident}')
+def change_detail(ident:UUID,user=Depends(current_user),db=Depends(get_db,scope='function')):
+    items = change_rows(db,user,ident=ident)['items']
+    if not items:
+        raise HTTPException(404, 'Solicitud no disponible en este predio')
+    return items[0]
 
 def normalized_payload(action,payload):
     from pydantic import ValidationError
@@ -668,13 +693,39 @@ def archive_gateway(ident:UUID,body:GatewayArchiveIn,user=Depends(owner),db=Depe
     return result
 
 @router.get('/notifications')
-def notifications(user=Depends(current_user),db=Depends(get_db,scope='function')):
-    return listing(rows(db,"SELECT id,message,channel,status,read_at,created_at,request_id,schedule_id FROM notifications WHERE recipient_id=:u AND farm_id=:f ORDER BY created_at DESC LIMIT 100",u=user.id,f=farm_scope(user)))
+def notifications(unread:bool=False,limit:int=Query(100,ge=1,le=100),offset:int=Query(0,ge=0),
+        user=Depends(current_user),db=Depends(get_db,scope='function')):
+    source = ' FROM notifications WHERE recipient_id=:u AND farm_id=:f'
+    if unread:
+        source += ' AND read_at IS NULL'
+    params = {'u': user.id, 'f': farm_scope(user)}
+    items = rows(db,'SELECT id,message,channel,status,read_at,created_at,request_id,schedule_id' + source +
+        ' ORDER BY created_at DESC,id DESC LIMIT :limit OFFSET :offset',limit=limit,offset=offset,**params)
+    total = one(db,'SELECT count(*) AS n' + source,**params)['n']
+    return {'items': items, 'total': total}
 @router.post('/notifications/{ident}/read')
 def read_notification(ident:UUID,user=Depends(current_user),db=Depends(get_db,scope='function')):
     result=execute(db,"UPDATE notifications SET status='read',read_at=now() WHERE id=:i AND recipient_id=:u AND farm_id=:f",i=ident,u=user.id,f=farm_scope(user))
     if result.rowcount!=1:raise HTTPException(403,'Notificación no autorizada')
     return {'read':True}
+
+
+@router.get('/activity-counts')
+def activity_counts(user=Depends(current_user),db=Depends(get_db,scope='function')):
+    counts = {'unread_notices': 0, 'pending_changes': 0, 'unread_support': 0, 'pending_support': 0}
+    if user.farm_id:
+        counts['unread_notices'] = one(db, """SELECT count(*) AS n FROM notifications
+            WHERE recipient_id=:u AND farm_id=:f AND read_at IS NULL""", u=user.id, f=user.farm_id)['n']
+        if user.role in ('owner', 'admin', 'worker'):
+            owner_scope = '' if user.role in ('owner', 'admin') else ' AND r.requested_by=:u'
+            counts['pending_changes'] = one(db, """SELECT count(*) AS n FROM change_requests r
+                WHERE r.farm_id=:f AND NOT EXISTS(SELECT 1 FROM change_decisions d WHERE d.request_id=r.id)"""
+                + owner_scope, f=user.farm_id, u=user.id)['n']
+    counts['unread_support'] = one(db, """SELECT count(*) AS n FROM support_requests
+        WHERE requester_id=:u AND status<>'pending' AND read_at IS NULL""", u=user.id)['n']
+    if user.base_role == 'admin' and not user.farm_id:
+        counts['pending_support'] = one(db, "SELECT count(*) AS n FROM support_requests WHERE status='pending'")['n']
+    return counts
 
 
 def queue_health_reminders(db):

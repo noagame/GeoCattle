@@ -1,13 +1,15 @@
-"""Credential changes, closure requests and assisted recovery without external mail."""
+"""Account security, private support requests and assisted recovery."""
 import re
 import secrets
 import time
 from collections import defaultdict, deque
 from datetime import timedelta
+from types import SimpleNamespace
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from sqlalchemy import select, update
 
 from .db import get_db
@@ -15,7 +17,7 @@ from .models import Farm, LoginSession, User, utcnow
 from .security import current_user, hash_password, token_hash, verify_password
 from .settings import settings
 from .v3_auth import issue_session
-from .v3_security import audit, check_code, create_challenge, execute, one
+from .v3_security import audit, check_code, create_challenge, execute, one, rows
 
 
 router = APIRouter(prefix='/api/v1/auth', tags=['Account and recovery V3'])
@@ -25,6 +27,9 @@ _dummy_hash = hash_password(secrets.token_urlsafe(32))
 
 class Strict(BaseModel):
     model_config = ConfigDict(extra='forbid')
+
+
+SupportText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
 
 
 class Reauthenticate(Strict):
@@ -39,7 +44,17 @@ class PasswordChange(Strict):
 
 
 class CloseRequest(Reauthenticate):
-    reason: str = Field(min_length=1, max_length=2000)
+    reason: SupportText
+
+
+class SupportRequest(Strict):
+    kind: Literal['change_email', 'access_issue']
+    description: SupportText
+
+
+class SupportDecision(Strict):
+    status: Literal['resolved', 'rejected']
+    response: SupportText
 
 
 class ResetIssue(Reauthenticate):
@@ -123,16 +138,76 @@ def change_password(body: PasswordChange, request: Request, response: Response,
 @router.post('/account/close-request', status_code=201)
 def request_closure(body: CloseRequest, request: Request, user=Depends(current_user), db=Depends(get_db, scope='function')):
     identity = _reauthenticate(db, request, user, body.password, body.code)
-    pending = one(db, """SELECT id FROM account_tokens WHERE user_id=:u AND purpose='close_account'
-        AND consumed_at IS NULL AND expires_at>now() ORDER BY created_at DESC LIMIT 1""", u=identity.id)
-    ident = pending['id'] if pending else uuid4()
-    if not pending:
-        execute(db, """INSERT INTO account_tokens(id,user_id,purpose,token_hash,expires_at)
-            VALUES(:i,:u,'close_account',:t,now()+interval '30 days')""",
-            i=ident, u=identity.id, t=token_hash(secrets.token_urlsafe(40)))
-    audit(db, user, 'account_closure_requested', 'account_request', ident,
-        after={'reason': body.reason, 'status': 'pending_review', 'data_preserved': True})
+    pending = one(db, """SELECT id FROM support_requests WHERE requester_id=:u AND kind='close_account'
+        AND status='pending' ORDER BY created_at DESC, id DESC LIMIT 1""", u=identity.id)
+    ident = pending['id'] if pending else create_support_request(db, user, 'close_account', body.reason)
     return {'requested': True, 'request_id': ident, 'status': 'pending_review'}
+
+
+def create_support_request(db, user, kind, description):
+    ident = uuid4()
+    execute(db, """INSERT INTO support_requests(id,requester_id,kind,description)
+        VALUES(:i,:u,:k,:d)""", i=ident, u=user.id, k=kind, d=description)
+    action = 'account_closure_requested' if kind == 'close_account' else 'support_request_created'
+    audit(db, SimpleNamespace(id=user.id), action, 'account_request', ident,
+          after={'kind': kind, 'status': 'pending'})
+    return ident
+
+
+def global_support_admin(user):
+    if user.base_role != 'admin' or user.farm_id is not None:
+        raise HTTPException(403, 'Abre el panel global de administración para gestionar solicitudes')
+
+
+@router.get('/support-requests')
+def support_requests(admin: bool = False, status: Literal['pending', 'resolved', 'rejected'] | None = None,
+        limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0),
+        user=Depends(current_user), db=Depends(get_db, scope='function')):
+    if admin:
+        global_support_admin(user)
+    scope = 'true' if admin else 'r.requester_id=:user_id'
+    where = ' WHERE ' + scope + (' AND r.status=:status' if status else '')
+    params = {'user_id': user.id, 'status': status, 'limit': limit, 'offset': offset}
+    items = rows(db, """SELECT r.id,r.kind,r.status,r.description,r.response,r.created_at,r.resolved_at,r.read_at,
+        coalesce(nullif(u.full_name,''),u.username) AS requester_name,
+        coalesce(u.email,u.username) AS requester_email
+        FROM support_requests r JOIN users u ON u.id=r.requester_id""" + where +
+        ' ORDER BY r.created_at DESC, r.id DESC LIMIT :limit OFFSET :offset', **params)
+    total = one(db, 'SELECT count(*) AS n FROM support_requests r' + where, **params)['n']
+    return {'items': items, 'total': total}
+
+
+@router.post('/support-requests', status_code=201)
+def submit_support_request(body: SupportRequest, user=Depends(current_user), db=Depends(get_db, scope='function')):
+    ident = create_support_request(db, user, body.kind, body.description)
+    return {'request_id': ident, 'status': 'pending'}
+
+
+@router.post('/support-requests/{ident}/decision')
+def decide_support_request(ident: UUID, body: SupportDecision,
+        user=Depends(current_user), db=Depends(get_db, scope='function')):
+    global_support_admin(user)
+    item = one(db, 'SELECT kind,status,response FROM support_requests WHERE id=:i FOR UPDATE', i=ident)
+    if not item:
+        raise HTTPException(404, 'Solicitud de soporte no encontrada')
+    if item['status'] != 'pending':
+        if item['status'] != body.status or item['response'] != body.response:
+            raise HTTPException(409, 'La solicitud ya fue respondida')
+        return {'request_id': ident, 'status': body.status}
+    execute(db, """UPDATE support_requests SET status=:s,response=:r,resolved_by=:u,resolved_at=now()
+        WHERE id=:i""", i=ident, u=user.id, s=body.status, r=body.response)
+    audit(db, user, 'support_request_decided', 'account_request', ident,
+          before={'status': 'pending'}, after={'kind': item['kind'], 'status': body.status})
+    return {'request_id': ident, 'status': body.status}
+
+
+@router.post('/support-requests/{ident}/read')
+def read_support_response(ident: UUID, user=Depends(current_user), db=Depends(get_db, scope='function')):
+    result = execute(db, """UPDATE support_requests SET read_at=coalesce(read_at,now())
+        WHERE id=:i AND requester_id=:u AND status<>'pending'""", i=ident, u=user.id)
+    if result.rowcount != 1:
+        raise HTTPException(404, 'Respuesta no disponible')
+    return {'read': True}
 
 
 def _code_hash(code):

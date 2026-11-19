@@ -174,11 +174,25 @@ def test_owner_is_denied_other_owner_farm_animal_and_context(v3):
 
 def test_worker_pending_health_does_not_mutate_until_owner_approval(v3):
     worker=v3.client('worker');owner=v3.client('owner')
+    other_owner=v3.client('other_owner');vet=v3.client('vet')
+    counts='/api/v1/v3/activity-counts'
     payload={'event_type':'vaccination','description':'Vacuna aplicada y reportada por trabajador'}
     submitted=worker.post('/api/v1/v3/changes',json=body(v3,'health_record',payload))
     assert submitted.status_code==201,submitted.text
     assert submitted.json()['status']=='pending'
     req=submitted.json()['id']
+    detail=f'/api/v1/v3/changes/{req}'
+    assert worker.get(detail).json()['status']=='pending'
+    assert owner.get(detail).json()['id']==req
+    assert other_owner.get(detail).status_code==404
+    assert vet.get(detail).status_code==404
+    assert owner.get(counts).json()['pending_changes']==1
+    assert other_owner.get(counts).json()['pending_changes']==0
+    notice=owner.get('/api/v1/v3/notifications').json()['items'][0]
+    assert notice['request_id']==req and owner.get(counts).json()['unread_notices']==1
+    assert worker.post(f"/api/v1/v3/notifications/{notice['id']}/read",json={}).status_code==403
+    assert owner.post(f"/api/v1/v3/notifications/{notice['id']}/read",json={}).status_code==200
+    assert owner.get(counts).json()['unread_notices']==0
     before=owner.get(f"/api/v1/v3/animals/{v3.animals['owner'].id}/record")
     assert before.status_code==200 and before.json()['health_events']==[]
     assert before.json()['pending_health_warning'] is True
@@ -186,6 +200,9 @@ def test_worker_pending_health_does_not_mutate_until_owner_approval(v3):
     approved=owner.post(f'/api/v1/v3/changes/{req}/decision',json={'decision':'approved'})
     assert approved.status_code==200,approved.text
     assert approved.json()['status']=='applied'
+    assert worker.get(detail).json()['status']=='applied'
+    assert worker.get(counts).json()['unread_notices']==1
+    assert owner.get(counts).json()['pending_changes']==0
     after=owner.get(f"/api/v1/v3/animals/{v3.animals['owner'].id}/record")
     assert after.status_code==200
     assert len(after.json()['health_events'])==1 and after.json()['health_events'][0]['effective'] is True

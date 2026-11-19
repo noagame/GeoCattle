@@ -491,6 +491,8 @@ def update_settings(body:SettingsIn,user=Depends(owner),db=Depends(get_db, scope
 @api.get("/audit")
 def audit(limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0),user=Depends(owner),db=Depends(get_db, scope="function")):
     query=select(Audit).where(Audit.farm_id==user.farm_id)
+    if user.role != "admin":
+        query=query.where(Audit.object_type!="account_request", Audit.action!="account_closure_requested")
     return {"items":[{k:getattr(a,k) for k in ["id","actor_id","object_type","object_id","action","at","before","after"]} for a in db.scalars(query.order_by(Audit.at.desc()).limit(limit).offset(offset)).all()],"total":db.scalar(select(func.count()).select_from(query.subquery()))}
 @api.get("/notifications")
 def notifications(user=Depends(current_user),db=Depends(get_db, scope="function")):

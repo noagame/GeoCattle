@@ -8,6 +8,7 @@
 
 - Las migraciones se ordenan por nombre y quedan registradas en `schema_migrations`. Añade un SQL numerado con nombre único y conserva las migraciones desplegadas.
 - Al cambiar tablas o relaciones revisa restricciones, índices, privilegios de `geocattle_app`, historial y compatibilidad con filas existentes. Los modelos del backend y los diagramas documentan el esquema que aplican las migraciones.
+- `support_requests` conserva casos privados por cuenta, con respuesta, estado y lectura del solicitante. La migración 007 recupera los folios de cierre pendientes y sus motivos a partir de los registros históricos.
 
 ## Verificación
 

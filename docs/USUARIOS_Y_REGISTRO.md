@@ -53,6 +53,12 @@ Un enlace usado, revocado o vencido no activa acceso. Si vence, el dueño genera
 
 Las cuentas de prueba no incluyen confianza directa concedida al trabajador. El propietario puede concederla por acción cuando quiera probar ese flujo; no se activa de forma automática.
 
+## Solicitudes y seguimiento
+
+- El trabajador envía propuestas desde **Mis reportes y solicitudes**. El dueño las revisa en **Aprobaciones**. El contador indica pendientes y los avisos personales abren el detalle con la decisión vigente.
+- Cada cuenta consulta sus casos privados en **Mis solicitudes a soporte**. Desde allí puede reportar un problema de acceso o solicitar un cambio de correo. El cierre se solicita desde **Mi perfil → Seguridad y acceso**, con contraseña y TOTP cuando corresponde.
+- El administrador cambia a **Panel global → Administración → Solicitudes de soporte** para responder un caso. El titular recibe la respuesta en su bandeja, con el mismo folio y un contador de respuestas sin leer. La bandeja registra la decisión sobre el caso. La desactivación de acceso se gestiona por separado.
+
 ## Verificación de esta actualización
 
 - 95 pruebas de backend correctas, incluidas15 verificaciones nuevas de invitaciones, roles, vigencia y conservación de identidades. Registro: `.runtime/review/backend-tests-2026-10-24.txt`.

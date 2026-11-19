@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { Building2, Check, Link as LinkIcon, Pencil, Plus, Radio, ShieldCheck, Users } from 'lucide-react';
-import { date, message, useData, write } from './api';
+import { date, message, query, useData, write } from './api';
 import { Badge, Empty, ErrorNotice, Loading, Modal, PageTitle, Panel, PanelTitle, Submit } from './ui';
 import { StepUpGate } from './V3Account';
 import { useVerifiedOperation } from './V3Operation';
+import { Pagination } from './PagesAnimals';
 import type { Notify } from './App';
 import type { List } from './types';
 import type { Farm, Invitation, Member, Trust, UserNotice } from './v3types';
@@ -95,8 +96,55 @@ function RevokeTrustForm({ trust, onClose, onSaved }: { trust: Trust; onClose: (
   return <Modal title="Revocar confianza" onClose={onClose}><form className="form-body" onSubmit={submit}><p>Las próximas acciones de «{changeLabels[trust.action] ?? trust.action}» volverán a requerir aprobación del dueño.</p>{verification.fields}<ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" disabled={busy} onClick={onClose}>Cancelar</button><Submit busy={busy}>Confirmar revocación</Submit></div></form></Modal>;
 }
 export { GatewaysPage } from './GatewayManagement';
-export function UserNotifications({ notify }: { notify: Notify }) {
-  const notices = useData<List<UserNotice>>('/v3/notifications'); const [busy, setBusy] = useState(''); const [error, setError] = useState('');
-  async function mark(id: string) { setBusy(id); setError(''); try { await write(`/v3/notifications/${id}/read`, {}); notices.reload(); notify('Aviso marcado como leído.'); } catch (err) { setError(message(err)); } finally { setBusy(''); } }
-  return <><PageTitle eyebrow="TU ACTIVIDAD" title="Avisos personales" description="Solicitudes, decisiones y novedades dirigidas a tu cuenta." /><Panel><ErrorNotice error={error || notices.error} retry={notices.reload} />{notices.loading ? <Loading /> : notices.data?.items.length ? <div className="v3-notices">{notices.data.items.map(n => <article key={n.id}><div><strong>{n.title || 'Aviso de GeoCattle'}</strong><p>{n.body || n.message || n.status || 'Actividad registrada'}</p><small>{date(n.created_at)}</small></div>{n.read_at ? <span className="neutral-tag"><Check size={14} />Leído</span> : <button className="button secondary small" disabled={busy === n.id} onClick={() => mark(n.id)}>Marcar leído</button>}</article>)}</div> : <Empty title="Sin avisos personales" description="Los cambios y decisiones relevantes aparecerán aquí." />}</Panel></>;
+export function UserNotifications({ notify, onChange }: { notify: Notify; onChange: () => void }) {
+  const [unread, setUnread] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const limit = 25;
+  const notices = useData<List<UserNotice>>('/v3/notifications' + query({
+    unread: unread ? 'true' : '', offset: String(offset), limit: String(limit),
+  }));
+  function reload() { notices.reload(); onChange(); }
+  async function mark(id: string) {
+    setBusy(id); setError('');
+    try {
+      await write(`/v3/notifications/${id}/read`, {});
+      if (unread && offset && notices.data?.items.length === 1) setOffset(Math.max(0, offset - limit));
+      reload(); notify('Aviso marcado como leído.');
+    }
+    catch (err) { setError(message(err)); }
+    finally { setBusy(''); }
+  }
+  return <>
+    <PageTitle eyebrow="TU ACTIVIDAD" title="Avisos personales" description="Solicitudes, decisiones y novedades dirigidas a tu cuenta."
+      actions={<button className="button secondary" onClick={reload}>Actualizar</button>} />
+    <Panel>
+      <div className="list-toolbar">
+        <label>Mostrar<select value={unread ? 'unread' : 'all'} onChange={event => {
+          setUnread(event.target.value === 'unread'); setOffset(0); setError('');
+        }}><option value="all">Todos los avisos</option><option value="unread">Avisos sin leer</option></select></label>
+      </div>
+      <ErrorNotice error={error || notices.error} retry={reload} />
+      {notices.loading ? <Loading /> : notices.data?.items.length ? <div className="v3-notices">
+        {notices.data.items.map(n => {
+          const body = n.body || n.message || n.status || 'Actividad registrada';
+          const action = body.match(/^(Solicitud pendiente|Cambio aplicado): (\w+)$/);
+          return <article key={n.id}>
+            <div><strong>{n.title || 'Aviso de GeoCattle'}</strong>
+              <p>{action && changeLabels[action[2]] ? `${action[1]} · ${changeLabels[action[2]]}` : body}</p>
+              <small>{date(n.created_at)}</small>
+            </div>
+            <div className="v3-inline-actions">
+              {n.request_id && <a className="button secondary small" href={`#changes?request=${encodeURIComponent(n.request_id)}`}>Abrir solicitud</a>}
+              {n.read_at ? <span className="neutral-tag"><Check size={14} />Leído</span>
+                : <button className="button secondary small" disabled={busy === n.id} onClick={() => mark(n.id)}>Marcar leído</button>}
+            </div>
+          </article>;
+        })}
+      </div> : <Empty title={unread ? 'Sin avisos sin leer' : 'Sin avisos personales'} description="Los cambios y decisiones relevantes aparecerán aquí." />}
+      {notices.data && (offset > 0 || notices.data.total > limit) &&
+        <Pagination offset={offset} count={notices.data.items.length} total={notices.data.total} limit={limit} onChange={setOffset} />}
+    </Panel>
+  </>;
 }

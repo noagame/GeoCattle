@@ -82,6 +82,18 @@ function AdminUserForm({ user, onClose, onSaved }: { user: AdminUser; onClose: (
   async function submit(e: FormEvent) { e.preventDefault(); setBusy(true); setError(''); try { await write(`/v3/admin/users/${user.id}`, { full_name: name, active }, 'PATCH'); onSaved(); } catch (err) { setError(message(err)); } finally { setBusy(false); } }
   return <Modal title="Administrar identidad" onClose={onClose}><form className="form-body" onSubmit={submit}><p className="form-intro">{user.email || user.username}</p><label>Nombre completo<input required maxLength={150} value={name} onChange={e => setName(e.target.value)} /></label><label className="checkbox-field"><input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />Acceso activo</label><label className="checkbox-field"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} required />Confirmo el cambio sobre esta identidad y sus accesos.</label><ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" onClick={onClose}>Cancelar</button><Submit busy={busy}>Actualizar usuario</Submit></div></form></Modal>;
 }
+function AuditState({ item, state }: { item: Audit; state: 'before' | 'after' }) {
+  const value = item[state];
+  if (value != null) return <pre>{JSON.stringify(value, null, 2)}</pre>;
+  if (state === 'after' && item.action === 'select_context') {
+    return <p className="form-intro">{item.farm_id ? `Predio seleccionado · ${item.farm_id}` : 'Panel global de administración'}</p>;
+  }
+  if (state === 'after' && item.action === 'login') {
+    return <p className="form-intro">Inicio de sesión registrado.</p>;
+  }
+  return <p className="form-intro">{state === 'before' ? 'Estado anterior sin registrar.' : 'Estado posterior sin registrar.'}</p>;
+}
+
 export function AuditPage({ global = false }: { global?: boolean }) {
   const [offset, setOffset] = useState(0); const [search, setSearch] = useState('');
   const [actor, setActor] = useState(''); const [action, setAction] = useState(''); const [entity, setEntity] = useState(''); const [farm, setFarm] = useState('');
@@ -108,7 +120,19 @@ export function AuditPage({ global = false }: { global?: boolean }) {
       <div className="form-actions"><button type="button" className="button secondary" onClick={clear}>Restablecer</button><button type="submit" className="button primary">Buscar en servidor</button></div>
     </form></Panel>
     <Panel><PanelTitle title="Resultados de auditoría" subtitle={`${audit.data?.total ?? '—'} registros coincidentes`} /><ErrorNotice error={audit.error} retry={audit.reload} />
-      {audit.loading ? <Loading /> : audit.data?.items.length ? <div className="audit-list">{audit.data.items.map(item => <details key={item.id} className="audit-item"><summary><span className="notification-icon"><ShieldCheck size={17} /></span><div><strong>{item.object_type} · {item.action}</strong><small>{date(item.at || item.created_at)} · {item.username || item.actor_name || item.actor_id || 'Servicio del sistema'}</small></div><span className="neutral-tag">Ver detalle</span></summary><div className="audit-state"><div><h4>Estado anterior</h4><pre>{JSON.stringify(item.before, null, 2) ?? 'Sin estado anterior'}</pre></div><div><h4>Estado posterior</h4><pre>{JSON.stringify(item.after, null, 2) ?? 'Sin estado posterior'}</pre></div></div></details>)}</div> : <Empty title="Sin registros para estos filtros" description="Cambia la búsqueda o amplía el período." />}
+      {audit.loading ? <Loading /> : audit.data?.items.length ? <div className="audit-list">
+        {audit.data.items.map(item => <details key={item.id} className="audit-item">
+          <summary><span className="notification-icon"><ShieldCheck size={17} /></span>
+            <div><strong>{item.object_type} · {item.action}</strong>
+              <small>{date(item.at || item.created_at)} · {item.username || item.actor_name || item.actor_id || 'Servicio del sistema'}</small>
+            </div><span className="neutral-tag">Ver detalle</span>
+          </summary>
+          <div className="audit-state">
+            <div><h4>Estado anterior</h4><AuditState item={item} state="before" /></div>
+            <div><h4>Estado posterior</h4><AuditState item={item} state="after" /></div>
+          </div>
+        </details>)}
+      </div> : <Empty title="Sin registros para estos filtros" description="Cambia la búsqueda o amplía el período." />}
       {audit.data && <Pagination offset={offset} count={audit.data.items.length} total={audit.data.total} limit={100} onChange={setOffset} />}
     </Panel>
   </>;

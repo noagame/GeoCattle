@@ -4,13 +4,83 @@ import { date, message, query, useData, write } from './api';
 import { Badge, Detail, Empty, ErrorNotice, Loading, Modal, PageTitle, Panel, PanelTitle, Submit } from './ui';
 import type { Animal, Device, List } from './types';
 import type { Notify } from './App';
+import { Pagination } from './PagesAnimals';
 import type { AnimalRecord, Change, ClinicalEvent, Schedule } from './v3types';
 import { changeLabels, changeStates, healthLabels, operationLabels } from './v3types';
 
-export function ChangesPage({ worker = false, notify }: { worker?: boolean; notify: Notify }) {
-  const changes = useData<List<Change>>('/v3/changes'); const [filter, setFilter] = useState(''); const [creating, setCreating] = useState(false); const [review, setReview] = useState<Change | null>(null);
-  const visible = changes.data?.items.filter(c => !filter || statusOf(c) === filter) ?? [];
-  return <><PageTitle eyebrow={worker ? 'REGISTRO OPERATIVO' : 'VALIDACIÓN DEL DUEÑO'} title={worker ? 'Mis reportes y solicitudes' : 'Aprobaciones de cambios'} description={worker ? 'Registra hechos del predio y consulta su revisión o aplicación directa.' : 'Revisa los cambios propuestos por trabajadores antes de incorporarlos al registro efectivo.'} actions={<><button className="button secondary" onClick={changes.reload}><RefreshCw size={16} />Actualizar</button>{<button className="button primary" onClick={() => setCreating(true)}><Plus size={17} />Registrar cambio</button>}</>} /><div className="notice"><ClipboardList size={19} /><span>{worker ? 'La confianza se concede por acción. El servidor determina si tu cambio se aplica directamente o queda pendiente.' : 'Una solicitud pendiente se conserva como propuesta. El historial efectivo se actualiza al aprobarla.'}</span></div><Panel><div className="list-toolbar"><label>Estado<select value={filter} onChange={e => setFilter(e.target.value)}><option value="">Todos los estados</option><option value="pending">Pendientes</option><option value="applied">Aplicados</option><option value="rejected">Rechazados</option></select></label><span className="list-count">{visible.length} solicitudes visibles</span></div><ErrorNotice error={changes.error} retry={changes.reload} />{changes.loading ? <Loading /> : visible.length ? <div className="v3-changes">{visible.map(c => <article key={c.id}><div className="v3-change-header"><div><strong>{changeLabels[c.action] ?? c.action}</strong><small>{date(c.created_at || c.requested_at)}{(c.requester_name || c.full_name) && ` · ${c.requester_name || c.full_name}`}</small></div><Badge status={statusOf(c) === 'applied' ? 'normal' : statusOf(c) === 'rejected' ? 'critical' : 'warning'}>{changeStates[c.status ?? c.decision ?? 'pending'] ?? c.status ?? 'Pendiente'}</Badge></div><ChangePayload change={c} />{!worker && statusOf(c) === 'pending' && <button className="button secondary small" onClick={() => setReview(c)}>Revisar y decidir</button>}{c.reason && <p className="form-intro">Motivo: {c.reason}</p>}</article>)}</div> : <Empty title="Sin solicitudes para mostrar" description={worker ? 'Los cambios que registres aparecerán aquí.' : 'Las propuestas de trabajadores aparecerán aquí.'} />}</Panel>{creating && <ChangeForm worker={worker} onClose={() => setCreating(false)} onSaved={result => { setCreating(false); changes.reload(); notify(result.status === 'pending' ? 'Solicitud enviada al dueño para aprobación.' : 'Cambio registrado; consulta su estado en el historial.'); }} />}{review && <DecisionForm change={review} onClose={() => setReview(null)} onSaved={() => { setReview(null); changes.reload(); notify('Decisión guardada con trazabilidad.'); }} />}</>;
+export function ChangesPage({ worker, canReview, requestId, notify, onChange }: {
+  worker: boolean;
+  canReview: boolean;
+  requestId: string | null;
+  notify: Notify;
+  onChange: () => void;
+}) {
+  const [filter, setFilter] = useState('');
+  const [offset, setOffset] = useState(0);
+  const [creating, setCreating] = useState(false);
+  const [review, setReview] = useState<Change | null>(null);
+  const limit = 25;
+  const changes = useData<List<Change>>(requestId ? null : '/v3/changes' + query({ status: filter, offset: String(offset), limit: String(limit) }));
+  const detail = useData<Change>(requestId ? `/v3/changes/${encodeURIComponent(requestId)}` : null);
+  const data = requestId ? detail : changes;
+  const visible = requestId
+    ? detail.data ? [detail.data] : []
+    : changes.data?.items ?? [];
+  function refresh() { data.reload(); onChange(); }
+
+  return <>
+    <PageTitle eyebrow="SOLICITUDES DEL PREDIO"
+      title={requestId ? 'Detalle de la solicitud' : canReview ? 'Aprobaciones de cambios' : worker ? 'Mis reportes y solicitudes' : 'Mis registros'}
+      description={canReview && !requestId ? 'Revisa las propuestas de trabajadores antes de incorporarlas al historial.' : undefined}
+      actions={<>
+        {requestId && <a className="button secondary" href="#changes">Ver todas las solicitudes</a>}
+        <button className="button secondary" onClick={refresh}><RefreshCw size={16} />Actualizar</button>
+        {!requestId && (worker || canReview) && <button className="button primary" onClick={() => setCreating(true)}><Plus size={17} />Registrar cambio</button>}
+      </>} />
+    {!requestId && (worker || canReview) && <div className="notice"><ClipboardList size={19} /><span>
+      {worker ? 'Las propuestas se envían al dueño. La confianza vigente permite aplicar directamente la acción autorizada.'
+        : 'El historial efectivo se actualiza al aprobar una propuesta pendiente.'}
+    </span></div>}
+    <Panel>
+      {!requestId && <div className="list-toolbar">
+        <label>Estado<select value={filter} onChange={event => { setFilter(event.target.value); setOffset(0); }}>
+          <option value="">Todos los estados</option><option value="pending">Pendientes</option>
+          <option value="applied">Aplicados</option><option value="rejected">Rechazados</option>
+        </select></label>
+        <span className="list-count">{changes.data?.total ?? '—'} solicitudes</span>
+      </div>}
+      <ErrorNotice error={data.error} retry={refresh} />
+      {data.loading ? <Loading /> : visible.length ? <div className="v3-changes">
+        {visible.map(change => {
+          const status = statusOf(change);
+          return <article key={change.id}>
+            <div className="v3-change-header">
+              <div><strong>{changeLabels[change.action] ?? change.action}</strong>
+                <small>{date(change.created_at || change.requested_at)}{change.requester_name && ` · ${change.requester_name}`}</small>
+              </div>
+              <Badge status={status === 'applied' ? 'normal' : status === 'rejected' ? 'critical' : 'warning'}>
+                {changeStates[change.decision === 'direct' ? 'direct' : status]}
+              </Badge>
+            </div>
+            <ChangePayload change={change} />
+            {canReview && status === 'pending' && <button className="button secondary small" onClick={() => setReview(change)}>Revisar y decidir</button>}
+            {change.reason && <p className="form-intro">Motivo · {change.reason}</p>}
+          </article>;
+        })}
+      </div> : !data.error && <Empty title="Sin solicitudes para mostrar" description="Las solicitudes del historial aparecerán aquí." />}
+      {!requestId && changes.data && (offset > 0 || changes.data.total > limit) &&
+        <Pagination offset={offset} count={visible.length} total={changes.data.total} limit={limit} onChange={setOffset} />}
+    </Panel>
+    {creating && <ChangeForm worker={worker} onClose={() => setCreating(false)} onSaved={result => {
+      setCreating(false); refresh();
+      notify(result.status === 'pending' ? 'Solicitud enviada al dueño para aprobación.' : 'Cambio registrado en el historial.');
+    }} />}
+    {review && <DecisionForm change={review} onClose={() => setReview(null)} onSaved={() => {
+      setReview(null);
+      if (filter === 'pending' && offset && visible.length === 1) setOffset(Math.max(0, offset - limit));
+      refresh(); notify('Decisión guardada con trazabilidad.');
+    }} />}
+  </>;
 }
 function statusOf(change: Change) { if (change.applied_at || ['applied', 'approved', 'direct', 'trusted'].includes(change.status ?? change.decision ?? '')) return 'applied'; if ((change.status ?? change.decision) === 'rejected') return 'rejected'; return 'pending'; }
 const payloadLabels: Record<string, string> = { event_type: 'Evento', description: 'Descripción', diagnosis: 'Diagnóstico', operation: 'Operación', status: 'Estado vital', breed: 'Raza', color: 'Color', sex: 'Sexo', birth_date: 'Nacimiento', weight_kg: 'Peso (kg)', height_cm: 'Altura (cm)', battery_id: 'Batería', result: 'Resultado', kind: 'Atención', due_at: 'Fecha planificada', occurred_at: 'Fecha del hecho', target_event_id: 'Registro relacionado', target_schedule_id: 'Atención relacionada', completed_event_id: 'Evento de administración' };

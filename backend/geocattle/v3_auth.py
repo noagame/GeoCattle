@@ -19,6 +19,13 @@ class StepIn(PasswordIn):code:str=Field(min_length=6,max_length=6)
 class ContextIn(Strict):farm_id:UUID|None
 
 
+def audit_context(actor):
+    if actor.farm_id:
+        farm = next(f for f in actor.farms if f['id'] == actor.farm_id)
+        return {'scope': 'farm', 'farm_id': actor.farm_id, 'farm_name': farm['name'], 'role': actor.role}
+    return {'scope': 'platform' if actor.base_role == 'admin' else 'account', 'role': actor.role}
+
+
 def issue_session(db,user,response,mfa=False):
     token,session=create_session(db,user)
     if mfa:session.mfa_verified_at=utcnow();session.step_up_at=utcnow()
@@ -26,7 +33,8 @@ def issue_session(db,user,response,mfa=False):
     if not actor.farms and user.role not in ('admin','owner'):
         raise HTTPException(403,'No tienes una membresía vigente; contacta al dueño')
     response.set_cookie('geocattle_session',token,httponly=True,secure=settings().cookie_secure,samesite='lax',max_age=settings().session_hours*3600,path='/')
-    audit(db,actor,'login','session',user.id)
+    audit(db,actor,'login','session',user.id,
+          after={'status': 'active', 'mfa_verified': mfa, **audit_context(actor)})
     return {'user':user_json(actor),'csrf_token':session.csrf_token}
 
 
@@ -56,7 +64,7 @@ def verify(body:VerifyIn,request:Request,response:Response,db=Depends(get_db,sco
     execute(db,'UPDATE auth_challenges SET consumed_at=now(),verified_at=now() WHERE id=:i',i=challenge['id'])
     if challenge['session_token_hash']:
         session.mfa_verified_at=utcnow();session.step_up_at=utcnow()
-        actor=actor_for(db,user,session);audit(db,actor,'mfa_enrolled','security')
+        actor=actor_for(db,user,session);audit(db,actor,'mfa_enrolled','security',after={'mfa_enabled': True})
         return {'user':user_json(actor),'csrf_token':session.csrf_token}
     return issue_session(db,user,response,mfa=True)
 
@@ -86,7 +94,7 @@ def stepup(body:StepIn,request:Request,user=Depends(current_user),db=Depends(get
     except HTTPException:
         db.commit();raise
     execute(db,'UPDATE auth_challenges SET consumed_at=now(),verified_at=now() WHERE token_hash=:t',t=token_hash(marker['challenge_token']))
-    request.state.session.step_up_at=utcnow();audit(db,user,'step_up','security')
+    request.state.session.step_up_at=utcnow();audit(db,user,'step_up','security',after={'verified': True})
     return {'verified':True,'expires_at':utcnow()+timedelta(minutes=10)}
 
 
@@ -96,5 +104,6 @@ def context(body:ContextIn,request:Request,user=Depends(current_user),db=Depends
     if body.farm_id is not None and str(body.farm_id) not in {str(f['id']) for f in user.farms}:raise HTTPException(403,'Predio no autorizado')
     request.state.session.active_farm_id=body.farm_id
     actor=actor_for(db,db.get(User,user.id),request.state.session)
-    audit(db,actor,'select_context','farm',body.farm_id)
+    audit(db,actor,'select_context','farm' if body.farm_id else 'platform',body.farm_id,
+          before=audit_context(user),after=audit_context(actor))
     return {'user':user_json(actor),'csrf_token':request.state.session.csrf_token}

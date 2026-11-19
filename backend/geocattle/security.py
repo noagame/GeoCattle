@@ -45,7 +45,8 @@ def current_user(request: Request,db=Depends(get_db, scope="function")):
         raise HTTPException(401, "Se requiere MFA para administrador")
     request.state.identity=user
     request.state.session=session
-    session.last_seen_at=utcnow()
+    if request.url.path != '/api/v1/v3/activity-counts':
+        session.last_seen_at=utcnow()
     if request.method not in ("GET","HEAD","OPTIONS"):
         csrf=request.headers.get("X-CSRF-Token","")
         if not hmac.compare_digest(csrf,session.csrf_token): raise HTTPException(403,"Token CSRF inválido")

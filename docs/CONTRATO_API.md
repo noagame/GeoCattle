@@ -121,6 +121,15 @@ Las pruebas de referencia están en `qa/test_lora_json.py`, `qa/test_lora_usb.py
 
 Invitación manual, válida durante 48 horas y de un uso. Sin registro público libre ni envío automático de correo. Guía: [USUARIOS_Y_REGISTRO.md](USUARIOS_Y_REGISTRO.md).
 
+## Solicitudes y avisos
+
+- `POST /auth/account/close-request` con `{password,code?,reason}` reautentica al titular y devuelve `{requested,request_id,status}`. Si hay una solicitud de cierre pendiente, devuelve su folio.
+- `POST /auth/support-requests` con `{kind,description}` crea un caso privado de tipo `change_email` o `access_issue`. `GET /auth/support-requests` lista los propios, con `status`, `limit` y `offset` opcionales. `admin=true` requiere administrador en contexto global y abre la bandeja de plataforma.
+- `POST /auth/support-requests/{id}/decision` requiere administrador en contexto global y guarda `{status,response}` con resultado `resolved` o `rejected`. El titular confirma la lectura mediante `POST /auth/support-requests/{id}/read`. La decisión resuelve el caso y comunica el resultado.
+- `GET /v3/changes` acepta `status`, `limit` y `offset`. `GET /v3/changes/{id}` aplica el mismo ámbito de predio y autoría. En el predio, dueño y administrador pueden revisar las propuestas y los demás perfiles consultan las propias.
+- `GET /v3/notifications` acepta `unread`, `limit` y `offset`. Los avisos de propuestas incluyen `request_id`. `GET /v3/activity-counts` devuelve `unread_notices`, `pending_changes`, `unread_support` y `pending_support` dentro del ámbito de la sesión.
+- La auditoría de predio excluye los casos privados de cuenta. Los nuevos eventos de cambio de contexto guardan `before` y `after` con el ámbito y, para un predio, su identidad y nombre.
+
 ## Configuración desde el panel de alertas
 
 El dueño y el administrador con predio seleccionado pueden ajustar los parámetros mediante **Alertas y atención → Configurar alertas**. Se comparte formulario y versión con **Reglas del predio**. GET/PUT `/settings` incorporan `capabilities` con los permisos de edición, el entorno y la disponibilidad de activación preventiva. `temperature_rule_allowed` informa el permiso específico de temperatura. Los permisos se calculan en el servidor y los datos de auditoría conservan los parámetros de la regla. Ver [configuración de alertas](CONFIGURACION_ALERTAS.md).

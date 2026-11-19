@@ -14,33 +14,9 @@ GeoCattle se sirve en http://localhost:8084/#hardware. La cuenta inicial es
 `prototipo@geocattle.local`; la contrasena se consulta localmente en el archivo
 privado `.runtime/acceso_prototipo.json`. No compartir ni subir ese archivo.
 
-Desde PowerShell normal:
+Abre [`Abrir-GeoCattle.cmd`](../Abrir-GeoCattle.cmd) para levantar los servicios locales. La instancia preparada usa PostgreSQL/PostGIS en `127.0.0.1:55434` y la base `geocattle_academic`.
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\ruta\GeoCattle\Iniciar-Prototipo.ps1"
-```
-
-Este comando utiliza una instancia PostgreSQL 16/PostGIS 3.6.2 preparada dentro
-de `.runtime`, en 127.0.0.1:55434. No modifica la instalacion PostgreSQL 18 del
-sistema ni necesita el motor Docker para esta ejecucion local. La base es
-`geocattle_academic`, APP_ENV=development, SIMULATION_ENABLED=false. No se cargo
-la demo de animales sinteticos. Las tres migraciones originales se conservan.
-
-Para iniciar solo el capturador con el usuario de Windows (cuando el entorno
-restringido del agente no puede abrir COM5):
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\ruta\GeoCattle\Iniciar-Captura-COM5.ps1"
-```
-
-Cerrar el Monitor Serie y Plotter de Arduino antes de iniciar. Dejar la ventana
-abierta para mantener la captura. No ejecutar dos capturadores del mismo puerto.
-Se reintenta conectar cada cinco segundos si se desconecta la placa.
-
-Para Docker se conserva compose.yaml y se agrega compose.usb.yaml, que permite
-montar el estado del capturador en la API. El Docker/WSL del usuario estaban
-instalados, pero la cuenta restringida del agente recibio acceso denegado a sus
-canales de control; no se declara validada una ejecucion con Docker.
+Abre [`Iniciar-Captura.cmd`](../Iniciar-Captura.cmd) y selecciona **Directo** o **Gateways** según la receptora conectada. La detección usa la identidad USB. Cierra el Monitor Serie y el Plotter de Arduino y deja abierta la ventana de captura. Consulta [la guía actual de arranque](DESARROLLO_LOCAL.md).
 
 ## Datos y registro diario
 

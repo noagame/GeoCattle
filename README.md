@@ -37,7 +37,7 @@ Ver [CONTRIBUTING.md](CONTRIBUTING.md) y [Desarrollo colaborativo](docs/DESARROL
 - Sesiones HttpOnly, CSRF, permisos por predio y roles de administrador, dueño, trabajador y veterinario. MFA TOTP para administración y operaciones sensibles.
 - Contexto multipredio, gestión de clientes, invitaciones, membresías, confianza por acción y aprobación de propuestas del trabajador.
 - Bovinos con DIIO, ficha técnica y sanitaria, historial, tratamientos y agenda con autoría.
-- Mapa Leaflet con OpenStreetMap opcional y cuadrícula local, recentrado y dibujo de geocercas versionadas.
+- Mapa Leaflet con imagen satelital y cartografía vial locales, OpenStreetMap opcional, escala métrica, recentrado y dibujo de geocercas versionadas.
 - Asociaciones históricas entre collar y animal, sector y geocerca, con vigencias y sin reatribuir lecturas anteriores.
 - Recepción académica LoRa punto a punto mediante una T3 USB: CSV V4 y JSON V5, cola durable, deduplicación y reintentos hacia la API.
 - Visualización de GPS, satélites usados, HDOP, temperatura superficial, aceleración, actividad, movimiento, batería, USB y calidad radio según los campos recibidos.
@@ -140,7 +140,7 @@ El iniciador usa `.env.docker`, exige development sin simulación y reconoce la 
 
 Dejar la ventana de captura abierta. `Ctrl+C` detiene el lector conservando datos. Evitar arrancar un segundo lector sobre el mismo archivo de captura. Para un archivo de configuración alternativo utilizar el mismo `--env-file RUTA` tanto al levantar Docker como al iniciar captura.
 
-**Solo rama de hardware:** `--select-mode` permite elegir antes de detectar USB, y `--receiver-mode direct` o `--receiver-mode gateways` fija el método. Existen `Iniciar-Captura-Directa.cmd` y `Iniciar-Captura-Gateways.cmd`. Esas opciones no pertenecen al capturador estable de main; el trabajo de lotes y alternancia conserva verificaciones pendientes. El CRUD de gateways de main es gestión de inventario, no certificación de la red de repetidores.
+**Solo rama de hardware:** `--select-mode` permite elegir antes de detectar USB, y `--receiver-mode direct` o `--receiver-mode gateways` fija el método. En Windows, `Iniciar-Captura.cmd` muestra el menú al abrirlo sin argumentos. Esas opciones no pertenecen al capturador estable de main; el trabajo de lotes y alternancia conserva verificaciones pendientes. El CRUD de gateways de main es gestión de inventario, no certificación de la red de repetidores.
 
 ### 5. Qué levanta cada opción
 
@@ -208,27 +208,36 @@ La instancia local preparada sirve [Recepción de collares](http://localhost:808
 
 **Una clonación nueva no incluye la base física, los binarios locales ni las credenciales del PC.** Los scripts siguientes requieren esa preparación local, `.env.academic`, un entorno Python con las dependencias de backend y adaptadores, y el frontend compilado. Consulta [Desarrollo local](docs/DESARROLLO_LOCAL.md) y [USB COM5](docs/USB_COM5.md). No ejecutar el seed de simulación sobre la base física.
 
-Para abrir la aplicación nativa en Windows sin iniciar la captura USB, utiliza **Abrir-GeoCattle.cmd**. Conserva los datos y requiere la preparación local indicada arriba.
+Usa estos dos iniciadores con doble clic desde la raíz del proyecto:
 
-Para capturar con un solo paso, abre **Iniciar-Captura.cmd**. La receptora se reconoce por su identidad USB y puede cambiar de COM. El primer enlace se confirma con un paquete LoRa; consulta [Desarrollo local](docs/DESARROLLO_LOCAL.md#captura-con-doble-clic-e-identidad-usb).
+| Iniciador | Función |
+|---|---|
+| [`Abrir-GeoCattle.cmd`](Abrir-GeoCattle.cmd) | Levanta PostgreSQL, la API y el proceso de alertas. Abre la aplicación en el navegador. |
+| [`Iniciar-Captura.cmd`](Iniciar-Captura.cmd) | Permite elegir **Directo** o **Gateways** antes de buscar la receptora por identidad USB. Inicia los servicios locales si hacen falta. |
 
-El protocolo físico JSON V5 admite `p` entre `30000` y `45000` ms, incluido el emisor de 45 segundos y los anteriores de 30–40 segundos. El período anunciado se conserva en `quality.period_ms`; no confirma una configuración remota. Después de actualizar el adaptador, detén el lector con Ctrl+C y vuelve a abrir **Iniciar-Captura.cmd** para cargar el código nuevo; no hace falta reiniciar la API por este cambio.
+Cierra el Monitor Serie y el Plotter antes de capturar. En el primer enlace espera un paquete válido de la receptora. Deja abierta la ventana mientras dure la captura y usa Ctrl+C para detenerla. Para pausar una captura iniciada en segundo plano, ejecuta `Pausar-Captura-COM5.ps1` desde PowerShell.
 
-Desde PowerShell en la raíz del proyecto:
-
-```powershell
-.\Iniciar-Prototipo.ps1
-# Reiniciar solo la API después de actualizar Python:
-.\Actualizar-Visualizacion.ps1
-# Liberar COM5 para usar Arduino IDE:
-.\Pausar-Captura-COM5.ps1
-# Cerrar servicios conservando los datos:
-.\Detener-Prototipo.ps1
-```
-
-Cerrar Monitor Serie y Plotter antes de capturar; solo un proceso puede abrir el puerto. `Iniciar-Captura-COM5.ps1` permite capturar en primer plano y `Reiniciar-Prototipo.ps1` reinicia el prototipo completo.
+El protocolo JSON V5 admite `p` entre `30000` y `45000` ms. El período anunciado queda en `quality.period_ms`. Tras actualizar el adaptador, detén la captura y vuelve a abrir `Iniciar-Captura.cmd`. Para reiniciar todo el prototipo, ejecuta `Detener-Prototipo.ps1` y abre otra vez los iniciadores que necesites.
 
 Las capturas diarias y la cola SQLite son un archivo intermedio local; **PostgreSQL/PostGIS sigue siendo la base de la aplicación**. No se necesita Arduino IDE para ejecutar el software. El firmware y las herramientas de programación de placas no forman parte de esta actualización.
+
+## Mapa sin Internet
+
+Abre el mapa o el editor de geocercas y elige **Satélite local**. Puedes cambiar a **Caminos locales** u **OpenStreetMap** mientras editas. El dibujo, las geocercas y las posiciones permanecen encima al cambiar el fondo. Los dos fondos locales se sirven desde GeoCattle. Mantén encendidos el servidor y PostgreSQL y, si accedes desde otro equipo, conéctalo a la red local del servidor.
+
+La instalación de la demostración usa un recorte de Temuco y alrededores de 24 × 24 km de enero a marzo de 2025, a partir de datos Copernicus Sentinel modificados. La resolución original de 10 m por píxel sirve para reconocer referencias grandes como el río, bosques y límites visibles entre cultivos. Para trazar según cercos individuales o senderos angostos, usa una ortofoto georreferenciada de mayor resolución o verifica los vértices en terreno. La aplicación indica cuando el centro del mapa queda fuera de la imagen instalada. [Mosaicos Copernicus Sentinel-2](https://source.coop/tge-labs/sentinel-2-quarterly-cloudless-mosaics).
+
+La vista vial usa la [Red Vial de la Dirección de Vialidad del MOP](https://mapasvialidad.mop.gob.cl/descargas-2/). Para instalar otra capa de caminos coloca una `FeatureCollection` GeoJSON autorizada en `frontend/public/mapa-local/base.geojson`. Usa WGS84 con coordenadas `[longitud, latitud]`. Puedes incluir `name` para el rótulo y `bbox` para el botón de encuadre. GeoCattle usa los caminos como respaldo si falta el mapa satelital y muestra la cuadrícula WGS84 si falta el archivo vial. OpenStreetMap permanece como opción en línea. [Política de teselas de OpenStreetMap](https://operations.osmfoundation.org/policies/tiles/).
+
+Para reemplazar la imagen con una ortofoto autorizada, prepara un **GeoTIFF RGB de 8 bits georreferenciado**. Usa el conversor en un entorno Python aparte con `rasterio` y `Pillow`. Genera la carpeta en otra ubicación y copia el resultado completo a `frontend/public/mapa-local/satelite`, incluidos `manifest.json` y los directorios de zoom. Para una ortofoto de 1 m por píxel puedes usar `--max-zoom 17`.
+
+```bash
+python -m pip install rasterio Pillow
+python scripts/preparar_mapa_satelital.py predio.tif satelite-nuevo --nombre "Ortofoto del predio" --atribucion "Autor y fecha de la ortofoto" --max-zoom 17
+```
+
+- **Instalación local.** Ejecuta `npm run build` en `frontend` y recarga GeoCattle. Los archivos de `frontend/public/mapa-local` se copian a `frontend/dist/mapa-local`.
+- **Docker.** Reconstruye y recrea el servicio `web` con el mismo archivo de entorno y proyecto de la instalación. El Dockerfile incorpora `frontend/public` al compilar.
 
 ## Usuarios y alertas
 

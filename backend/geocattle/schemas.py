@@ -71,6 +71,8 @@ class PastureIn(Strict):
     animal_id: UUID
     geofence_id: UUID
     effective_at: datetime | None = None
+    expected_pasture_id: UUID | None = None
+    expected_device_id: UUID | None = None
     @field_validator("effective_at")
     @classmethod
     def aware(cls,v): return check_time(v)
@@ -80,12 +82,19 @@ class ActionIn(Strict):
 class ConfigIn(Strict):
     interval_seconds: int = Field(ge=30,le=86400)
     expected_version: int = Field(ge=0)
-class SettingsIn(Strict):
-    expected_version: int = Field(ge=1)
-    battery_low_mv: int = Field(ge=0,le=20000)
+class SensorThresholds(Strict):
     temperature_high_c: float | None = Field(default=None,ge=-60,le=100)
     activity_low_threshold: float | None = Field(default=None,ge=0,le=1000000)
     activity_window_minutes: int = Field(ge=1,le=1440)
+
+class SensorPreviewIn(SensorThresholds):
+    surface_temperature_c: float | None = Field(default=None,ge=-60,le=100)
+    activity_average: float | None = Field(default=None,ge=0,le=1000000)
+    activity_window_complete: bool
+
+class SettingsIn(SensorThresholds):
+    expected_version: int = Field(ge=1)
+    battery_low_mv: int = Field(ge=0,le=20000)
     proximity_meters: float = Field(ge=0,le=1000)
     temperature_enabled: bool
     activity_enabled: bool

@@ -3,5 +3,7 @@ from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from .main import app
 
+app.state.native_local_app = True
+
 frontend = Path(__file__).resolve().parents[2] / 'frontend' / 'dist'
 app.mount('/', StaticFiles(directory=frontend, html=True), name='frontend')

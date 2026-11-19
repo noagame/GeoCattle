@@ -18,6 +18,12 @@ def rule_position(outside_count, valid, inside):
     count=outside_count+1
     return count,"outside" if count>=2 else "pending",True if count>=2 else None
 
+def temperature_alert(value, threshold):
+    return None if value is None or threshold is None else value>=threshold
+
+def low_activity_alert(average, threshold):
+    return None if average is None or threshold is None else average<threshold
+
 def freshness(observed_at,received_at,interval,now):
     position="unknown" if observed_at is None else ("fresh" if (now-observed_at).total_seconds()<=2*interval+30 else "stale")
     communication="unknown" if received_at is None else ("recent" if (now-received_at).total_seconds()<=3*interval+30 else "absent")
@@ -38,6 +44,21 @@ def clear_animal_monitoring(db,animal_id):
     if state:
         state.outside_count=0;state.geofence_status="unknown"
         state.telemetry_id=None;state.position_telemetry_id=None;state.observed_at=None
+
+
+def reset_pasture_monitoring(db,animal_id,farm_id,geofence_id,actor_id,at):
+    state=db.get(AnimalState,animal_id,with_for_update=True)
+    if state:
+        state.outside_count=0;state.geofence_status="unknown"
+    events=db.scalars(select(Event).where(
+        Event.farm_id==farm_id,Event.animal_id==animal_id,Event.condition=="active",
+        Event.type.in_(("escape","proximity"))).with_for_update()).all()
+    for event in events:
+        event.condition="resolved";event.resolved_at=max(at,event.opened_at)
+        event.detail={**event.detail,"resolution_reason":"pasture_changed",
+                      "resolution":"Cambió la geocerca vigilada","new_geofence_id":str(geofence_id)}
+        append_audit(db,farm_id,actor_id,"event",event.id,"resolved",after={
+            "condition":"resolved","reason":"pasture_changed","geofence_id":str(geofence_id)})
 
 
 def condition(db,device,animal_id,event_type,active,severity="warning",telemetry=None,geofence=None,detail=None,at=None):
@@ -108,7 +129,8 @@ def ingest(db,payload:TelemetryIn,received_at=None):
             condition(db,device,row.animal_id,"config_timeout",False,telemetry=row)
             append_audit(db,device.farm_id,None,"device_config",config.id,"applied",after={"version":config.version})
     if not assignment or not current_assignment or assignment.id!=current_assignment.id: return {"id":str(row.id),"duplicate":False,"animal_id":str(row.animal_id) if row.animal_id else None,"state_updated":False}
-    animal=db.get(Animal,assignment.animal_id)
+    # Serialize spatial evaluation with changes to this animal's pasture.
+    animal=db.get(Animal,assignment.animal_id,with_for_update={"key_share":True})
     if not animal.enabled: return {"id":str(row.id),"duplicate":False,"animal_id":str(row.animal_id),"state_updated":False}
     state=db.get(AnimalState,animal.id,with_for_update=True)
     if state is None:
@@ -117,8 +139,10 @@ def ingest(db,payload:TelemetryIn,received_at=None):
     if state.observed_at and (row.observed_at-state.observed_at).total_seconds()>2*device.interval_seconds+30:
         state.outside_count=0
     state.telemetry_id=row.id; state.observed_at=row.observed_at
-    zone=db.scalar(select(PastureAssignment).where(PastureAssignment.animal_id==animal.id,at_time(PastureAssignment,row.observed_at)))
-    fence=db.get(Geofence,zone.geofence_id) if zone else None
+    evaluated_at=max(now,utcnow())
+    zone=db.scalar(select(PastureAssignment).where(PastureAssignment.animal_id==animal.id,at_time(PastureAssignment,evaluated_at)))
+    in_current_period=zone and zone.valid_from<=row.observed_at and (zone.valid_to is None or row.observed_at<zone.valid_to)
+    fence=db.get(Geofence,zone.geofence_id) if in_current_period else None
     inside=None
     if row.gnss_valid:
         state.position_telemetry_id=row.id
@@ -128,12 +152,13 @@ def ingest(db,payload:TelemetryIn,received_at=None):
         count,status,evidence=rule_position(state.outside_count,row.gnss_valid,inside)
         state.outside_count=count;state.geofence_status=status
         condition(db,device,animal.id,"escape",evidence,severity="critical",telemetry=row,geofence=fence,detail={"rule":"two_consecutive_valid_outside","geofence_version":fence.version})
-    else: state.outside_count=0;state.geofence_status="unknown"
-    rules=db.get(RuleSettings,device.farm_id)
+    elif zone is None: state.outside_count=0;state.geofence_status="unknown"
+    # Prevent a concurrent rule change from leaving an alert open under a disabled rule.
+    rules=db.get(RuleSettings,device.farm_id,with_for_update={"read":True})
     if rules:
         if row.battery_mv is not None: condition(db,device,animal.id,"low_battery",row.battery_mv<rules.battery_low_mv,telemetry=row,detail={"battery_mv":row.battery_mv,"threshold_mv":rules.battery_low_mv,"rule_version":rules.version})
         if rules.temperature_enabled and row.surface_temperature_c is not None:
-            condition(db,device,animal.id,"high_surface_temperature",row.surface_temperature_c>=rules.temperature_high_c,telemetry=row,detail={"surface_temperature_c":row.surface_temperature_c,"threshold_c":rules.temperature_high_c,"preventive":True,"message":"Revisión presencial; lectura superficial no diagnóstica","rule_version":rules.version})
+            condition(db,device,animal.id,"high_surface_temperature",temperature_alert(row.surface_temperature_c,rules.temperature_high_c),telemetry=row,detail={"surface_temperature_c":row.surface_temperature_c,"threshold_c":rules.temperature_high_c,"preventive":True,"message":"Revisión presencial; lectura superficial no diagnóstica","rule_version":rules.version})
         if rules.activity_enabled and row.activity_index is not None:
             start=row.observed_at-timedelta(minutes=rules.activity_window_minutes)
             samples=db.scalars(select(Telemetry).where(Telemetry.assignment_id==assignment.id,Telemetry.observed_at>=start,Telemetry.observed_at<=row.observed_at).order_by(Telemetry.observed_at)).all()
@@ -141,7 +166,7 @@ def ingest(db,payload:TelemetryIn,received_at=None):
             no_gaps=all((b.observed_at-a.observed_at).total_seconds()<=2*device.interval_seconds+30 for a,b in zip(samples,samples[1:]))
             if complete and no_gaps:
                 average=sum(s.activity_index for s in samples)/len(samples)
-                condition(db,device,animal.id,"low_activity",average<rules.activity_low_threshold,telemetry=row,detail={"average":average,"window_minutes":rules.activity_window_minutes,"preventive":True,"rule_version":rules.version})
+                condition(db,device,animal.id,"low_activity",low_activity_alert(average,rules.activity_low_threshold),telemetry=row,detail={"average":average,"threshold_activity":rules.activity_low_threshold,"window_minutes":rules.activity_window_minutes,"preventive":True,"rule_version":rules.version})
         if rules.proximity_enabled and fence and row.gnss_valid and inside is not None:
             distance=db.scalar(text("SELECT ST_Distance(t.point::geography,ST_Boundary(g.geometry)::geography) FROM telemetry t,geofences g WHERE t.id=:t AND g.id=:g"),{"t":row.id,"g":fence.id})
             condition(db,device,animal.id,"proximity",bool(inside and distance<=rules.proximity_meters),telemetry=row,geofence=fence,detail={"distance_meters":distance,"threshold_meters":rules.proximity_meters,"rule_version":rules.version})
@@ -154,15 +179,14 @@ def check_timeouts(db,now=None):
     devices=db.scalars(select(Device).where(Device.enabled.is_(True)).order_by(Device.id).with_for_update(skip_locked=True)).all()
     for d in devices:
         assignment=db.scalar(select(Assignment).where(Assignment.device_id==d.id,at_time(Assignment,now)))
-        if not assignment: continue
-        animal=db.get(Animal,assignment.animal_id)
-        if not animal.enabled: continue
-        baseline=max(d.last_received_at or assignment.valid_from,assignment.valid_from)
-        timeout=(now-baseline).total_seconds()>3*d.interval_seconds+30
-        condition(db,d,animal.id,"communication_timeout",timeout,detail={"last_received_at":d.last_received_at.isoformat() if d.last_received_at else None,"threshold_seconds":3*d.interval_seconds+30},at=now)
+        animal=db.get(Animal,assignment.animal_id) if assignment else None
+        if animal and animal.enabled:
+            baseline=max(d.last_received_at or assignment.valid_from,assignment.valid_from)
+            timeout=(now-baseline).total_seconds()>3*d.interval_seconds+30
+            condition(db,d,animal.id,"communication_timeout",timeout,detail={"last_received_at":d.last_received_at.isoformat() if d.last_received_at else None,"threshold_seconds":3*d.interval_seconds+30},at=now)
         configs=db.scalars(select(DeviceConfig).where(DeviceConfig.device_id==d.id,DeviceConfig.status.in_(["requested","sent"]))).all()
         for config in configs:
             if (now-config.requested_at).total_seconds()>settings().config_timeout_seconds:
                 config.status="failed";config.error="Sin confirmación del módulo dentro del plazo"
-                condition(db,d,animal.id,"config_timeout",True,detail={"config_version":config.version,"timeout_seconds":settings().config_timeout_seconds},at=now)
+                condition(db,d,animal.id if animal and animal.enabled else None,"config_timeout",True,detail={"config_version":config.version,"timeout_seconds":settings().config_timeout_seconds},at=now)
     db.flush()

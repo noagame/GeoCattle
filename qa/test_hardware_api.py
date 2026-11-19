@@ -72,6 +72,7 @@ class HardwareTests(unittest.TestCase):
                 transport='academic', interval_seconds=30)
             self.db.add(device); self.db.flush(); self.devices.append(device)
         self.rows = []
+        self.devices[0].last_received_at = self.now
         for seq, seconds, fix in ((1, 600, True), (2, 10, False)):
             row = Telemetry(farm_id=farms[0].id, device_id=self.devices[0].id, session_id=token, seq=seq,
                 observed_at=self.now-timedelta(seconds=seconds), received_at=self.now,
@@ -96,6 +97,24 @@ class HardwareTests(unittest.TestCase):
         empty = items[self.devices[1].hardware_id]
         self.assertIsNone(empty['latest']);self.assertIsNone(empty['last_position'])
         self.assertEqual(empty['communication_status'], 'unknown')
+
+    def test_overview_uses_applied_interval_and_last_effective_reception(self):
+        from geocattle.hardware_api import overview
+        device = self.devices[0]
+        device.interval_seconds = 45
+        device.last_received_at = self.now - timedelta(seconds=165)
+        self.db.flush()
+        current = next(row for row in overview(self.user, self.db)['items']
+                       if row['hardware_id'] == device.hardware_id)
+        self.assertEqual(current['freshness_seconds'], 120)
+        self.assertEqual(current['communication_status'], 'recent')
+
+        device.last_received_at -= timedelta(seconds=1)
+        self.db.flush()
+        stale = next(row for row in overview(self.user, self.db)['items']
+                     if row['hardware_id'] == device.hardware_id)
+        self.assertEqual(stale['communication_status'], 'stale')
+        self.assertEqual(stale['latest']['seq'], 2)
 
     def test_page_filter_and_activity_preserve_nulls(self):
         from geocattle.hardware_api import telemetry

@@ -309,9 +309,23 @@ def audits(user=Depends(current_user),db=Depends(get_db,scope='function'),limit:
     audit(db,user,'read_audit','audit_log');return {'items':data,'total':total}
 
 @router.get('/invitations')
-def invitations(request:Request,user=Depends(owner),db=Depends(get_db,scope='function')):
+def invitations(request:Request,view:Literal['main','expired']|None=None,user=Depends(owner),db=Depends(get_db,scope='function')):
     require_step_up(request)
-    return listing(rows(db,'SELECT id,email,role_code,expires_at,accepted_at,revoked_at,created_at FROM invitations WHERE farm_id=:f ORDER BY created_at DESC LIMIT 100',f=farm_scope(user)))
+    return listing(rows(db,"""WITH farm_invitations AS (
+        SELECT id,email,role_code,expires_at,accepted_at,revoked_at,created_at,
+          CASE
+            WHEN accepted_at IS NOT NULL THEN 'accepted'
+            WHEN revoked_at IS NOT NULL THEN 'revoked'
+            WHEN expires_at <= now() THEN 'expired'
+            ELSE 'pending'
+          END AS status
+        FROM invitations WHERE farm_id=:farm_id
+      )
+      SELECT * FROM farm_invitations
+      WHERE CAST(:view AS text) IS NULL
+         OR (:view = 'main' AND status <> 'expired')
+         OR (:view = 'expired' AND status = 'expired')
+      ORDER BY created_at DESC,id DESC LIMIT 100""",farm_id=farm_scope(user),view=view))
 @router.post('/invitations',status_code=201)
 def invite(body:InviteIn,request:Request,user=Depends(owner),db=Depends(get_db,scope='function')):
     if user.role!='owner':raise HTTPException(403,'Solo el dueño del predio puede invitar colaboradores; soporte administra los ya incorporados')
@@ -422,6 +436,11 @@ def normalized_payload(action,payload):
     return obj.model_dump(mode='json',exclude_unset=True)
 
 
+def lock_change(db,key):
+    # Immutable workflow rows cannot be locked by the restricted application role.
+    execute(db,'SELECT pg_advisory_xact_lock(hashtextextended(:key,0))',key=key)
+
+
 def apply_change(db,r,actor,decision,reason=None,trust_id=None):
     # Parent animal lock serializes all clinical/profile updates and optimistic versions.
     animal=None
@@ -461,7 +480,7 @@ def apply_change(db,r,actor,decision,reason=None,trust_id=None):
         h=one(db,'SELECT * FROM animal_holdings WHERE id=:i',i=r['animal_holding_id'])
         if at<h['valid_from'] or h['valid_to'] and at>=h['valid_to']:raise HTTPException(422,'Evento fuera de la permanencia del animal')
         if target:
-            old=one(db,'SELECT * FROM health_events WHERE id=:i AND farm_id=:f AND animal_holding_id=:h FOR UPDATE',i=target,f=r['farm_id'],h=r['animal_holding_id'])
+            old=one(db,'SELECT * FROM health_events WHERE id=:i AND farm_id=:f AND animal_holding_id=:h',i=target,f=r['farm_id'],h=r['animal_holding_id'])
             if not old or one(db,'SELECT id FROM health_events WHERE target_event_id=:i',i=target):raise HTTPException(409,'Evento original ajeno o ya sustituido')
             author_member=one(db,'SELECT role_code FROM farm_memberships WHERE id=:i',i=r['membership_id']) if r['membership_id'] else None
             if author_member and author_member['role_code'] in ('worker','operator') and (old['event_type'] not in ('vaccination','antibiotic','observation') or old['recorded_by']!=r['requested_by']):raise HTTPException(403,'El trabajador solo puede corregir sus propios reportes sanitarios permitidos')
@@ -473,7 +492,7 @@ def apply_change(db,r,actor,decision,reason=None,trust_id=None):
     elif r['action']=='health_schedule':
         target=p.get('target_schedule_id');completed=p.get('completed_event_id')
         if target:
-            old=one(db,'SELECT * FROM health_schedules WHERE id=:i AND farm_id=:f AND animal_holding_id=:h FOR UPDATE',i=target,f=r['farm_id'],h=r['animal_holding_id'])
+            old=one(db,'SELECT * FROM health_schedules WHERE id=:i AND farm_id=:f AND animal_holding_id=:h',i=target,f=r['farm_id'],h=r['animal_holding_id'])
             if not old or one(db,'SELECT id FROM health_schedules WHERE target_schedule_id=:i',i=target):raise HTTPException(409,'Plan ajeno o ya sustituido')
         if completed and not one(db,"SELECT id FROM health_events e WHERE e.id=:i AND e.animal_holding_id=:h AND e.operation<>'void' AND NOT EXISTS(SELECT 1 FROM health_events n WHERE n.target_event_id=e.id)",i=completed,h=r['animal_holding_id']):raise HTTPException(422,'Selecciona evento efectivo del mismo animal')
         execute(db,'INSERT INTO health_schedules(id,farm_id,animal_holding_id,request_id,kind,description,due_at,operation,target_schedule_id,completed_event_id,created_by) VALUES(:i,:f,:h,:r,:k,:d,:at,:o,:t,:e,:u)',**common,k=p['kind'],d=p['description'],at=datetime.fromisoformat(p['due_at']),o=p.get('operation','plan'),t=target,e=completed)
@@ -496,7 +515,8 @@ def submit(body:ChangeIn,user=Depends(current_user),db=Depends(get_db,scope='fun
     if user.role=='worker' and body.action=='health_record':
         if p['event_type'] not in ('vaccination','antibiotic','observation'):raise HTTPException(403,'El trabajador reporta hechos administrados; diagnósticos requieren veterinario')
         if p.get('diagnosis'):raise HTTPException(403,'El trabajador no registra diagnósticos')
-    old=one(db,'SELECT * FROM change_requests WHERE requested_by=:u AND idempotency_key=:k FOR UPDATE',u=user.id,k=body.idempotency_key)
+    lock_change(db,f'geocattle:change-submission:{user.id}:{body.idempotency_key}')
+    old=one(db,'SELECT * FROM change_requests WHERE requested_by=:u AND idempotency_key=:k',u=user.id,k=body.idempotency_key)
     if old:
         if old['farm_id']!=farm_id or old['action']!=body.action or old['payload']!=p or old['animal_id']!=body.animal_id or old['device_id']!=body.device_id:raise HTTPException(409,'La clave de idempotencia ya representa otra operación')
         item=one(db,'SELECT decision FROM change_decisions WHERE request_id=:r',r=old['id'])
@@ -529,7 +549,8 @@ def submit(body:ChangeIn,user=Depends(current_user),db=Depends(get_db,scope='fun
     return {'id':ident,'status':'pending'}
 @router.post('/changes/{ident}/decision')
 def decide(ident:UUID,body:DecisionIn,user=Depends(owner),db=Depends(get_db,scope='function')):
-    r=scoped(db,'change_requests',ident,user,True)
+    r=scoped(db,'change_requests',ident,user)
+    lock_change(db,f'geocattle:change-decision:{ident}')
     existing=one(db,'SELECT * FROM change_decisions WHERE request_id=:r',r=ident)
     if existing:
         if existing['decision']!=body.decision:raise HTTPException(409,'La solicitud ya tiene otra decisión')

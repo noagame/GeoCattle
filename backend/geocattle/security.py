@@ -21,13 +21,26 @@ def create_session(db,user):
     db.add(session)
     return token,session
 
+def admin_login_requires_mfa(request: Request) -> bool:
+    """Allow password-only admin sessions on the opted-in native loopback app."""
+    config = settings()
+    return not (
+        config.app_env == "development"
+        and config.local_admin_password_only
+        and getattr(request.app.state, "native_local_app", False)
+        and request.client is not None
+        and request.client.host in {"127.0.0.1", "::1"}
+    )
+
+
 def current_user(request: Request,db=Depends(get_db, scope="function")):
     token=request.cookies.get("geocattle_session")
     session=db.get(LoginSession,token_hash(token)) if token else None
     if not session or session.revoked_at is not None or session.expires_at<=utcnow() or (session.last_seen_at and utcnow()-session.last_seen_at>timedelta(minutes=30)): raise HTTPException(401,"Sesión requerida")
     user=db.get(User,session.user_id)
     if not user or not user.active: raise HTTPException(401,"Sesión requerida")
-    if user.role=='admin' and session.mfa_verified_at is None: raise HTTPException(401,"Se requiere MFA para administrador")
+    if user.role == 'admin' and session.mfa_verified_at is None and admin_login_requires_mfa(request):
+        raise HTTPException(401, "Se requiere MFA para administrador")
     request.state.identity=user
     request.state.session=session
     session.last_seen_at=utcnow()

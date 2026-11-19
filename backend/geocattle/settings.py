@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     simulation_enabled: bool = False
     session_secret: str = Field(default="development-change-this-secret-before-use", repr=False)
     mfa_encryption_key: str | None = Field(default=None, repr=False)
+    local_admin_password_only: bool = False
     ingest_key: str = Field(default="development-change-this-ingest-key", repr=False)
     cookie_secure: bool = False
     allowed_origins: str = "http://localhost:5173,http://localhost:8080"
@@ -26,6 +27,7 @@ class Settings(BaseSettings):
     mqtt_tls: bool = False
     mqtt_spool_path: str = "/data/mqtt-spool.sqlite3"
     preventive_rules_validated: bool = False
+    prototype_temperature_enabled: bool = False
     notification_webhook_url: str | None = None
     notification_webhook_token: str | None = Field(default=None, repr=False)
     notification_max_attempts: int = 3
@@ -39,6 +41,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def isolation(self):
+        if self.local_admin_password_only and self.app_env != "development":
+            raise ValueError("LOCAL_ADMIN_PASSWORD_ONLY requiere APP_ENV=development")
         if self.simulation_enabled and self.app_env != "simulation":
             raise ValueError("SIMULATION_ENABLED requiere APP_ENV=simulation")
         if self.app_env == "production":
@@ -53,6 +57,14 @@ class Settings(BaseSettings):
         if not self.database_url.startswith("postgresql"):
             raise ValueError("La base de aplicación debe ser PostgreSQL/PostGIS")
         return self
+
+    @property
+    def preventive_rules_allowed(self) -> bool:
+        return self.app_env == "simulation" or self.preventive_rules_validated
+
+    @property
+    def temperature_rule_allowed(self) -> bool:
+        return self.preventive_rules_allowed or (self.app_env == "development" and self.prototype_temperature_enabled)
 
 @lru_cache
 def settings() -> Settings:

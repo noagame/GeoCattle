@@ -176,6 +176,53 @@ def test_worker_pending_health_does_not_mutate_until_owner_approval(v3):
     assert v3.db.execute(text('SELECT count(*) FROM health_events WHERE request_id=CAST(:r AS uuid)'),{'r':req}).scalar_one()==1
 
 
+def test_clinical_workflow_with_read_insert_only_history(v3):
+    if not v3.db.scalar(text('SELECT rolsuper FROM pg_roles WHERE rolname=current_user')):
+        pytest.skip('La base QA requiere un administrador para crear el rol temporal de la aplicación')
+    role=f'qa_clinical_{uuid4().hex}'
+    v3.db.execute(text(f'CREATE ROLE {role} NOLOGIN'))
+    v3.db.execute(text(f'GRANT USAGE ON SCHEMA public TO {role}'))
+    v3.db.execute(text(f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {role}'))
+    v3.db.execute(text('REVOKE UPDATE, DELETE ON change_requests, change_decisions, change_applications, '
+                        f'animal_measurements, health_events, health_schedules FROM {role}'))
+    v3.db.execute(text(f'SET LOCAL ROLE {role}'))
+    v3.db.commit()
+    assert not v3.db.scalar(text("SELECT has_table_privilege('change_requests', 'UPDATE')"))
+
+    vet=v3.client('vet')
+    profile={'breed':'Ankole-Watusi','color':'Cafe','sex':'female','birth_date':'2024-04-16',
+             'weight_kg':750,'height_cm':240}
+    change=body(v3,'animal_profile',profile)
+    saved=vet.post('/api/v1/v3/changes',json=change)
+    assert saved.status_code==201,saved.text
+    assert saved.json()['decision']=='direct'
+    repeated=vet.post('/api/v1/v3/changes',json=change)
+    assert repeated.status_code==201,repeated.text
+    assert repeated.json()=={'id':saved.json()['id'],'status':'applied'}
+
+    worker=v3.client('worker')
+    owner=v3.client('owner')
+    observation={'event_type':'observation','description':'Control de integración QA'}
+    pending=worker.post('/api/v1/v3/changes',json=body(v3,'health_record',observation))
+    assert pending.status_code==201 and pending.json()['status']=='pending',pending.text
+    decision=f"/api/v1/v3/changes/{pending.json()['id']}/decision"
+    approved=owner.post(decision,json={'decision':'approved'})
+    assert approved.status_code==200,approved.text
+    assert owner.post(decision,json={'decision':'approved'}).status_code==200
+
+    corrected=vet.post('/api/v1/v3/changes',json=body(v3,'health_record',{
+        **observation,'operation':'correct','target_event_id':approved.json()['entity_id']}))
+    assert corrected.status_code==201,corrected.text
+    record=vet.get(f"/api/v1/v3/animals/{v3.animals['owner'].id}/record")
+    assert record.status_code==200,record.text
+    result=record.json()
+    assert {key:result['animal'][key] for key in ('breed','color','sex','birth_date')} == {
+        key:profile[key] for key in ('breed','color','sex','birth_date')}
+    measured=result['measurements']
+    assert len(measured)==1 and measured[0]['weight_kg']==750 and measured[0]['height_cm']==240
+    assert len(result['health_events'])==2 and sum(event['effective'] for event in result['health_events'])==1
+
+
 def test_veterinarian_direct_health_and_correction_preserve_history(v3):
     vet=v3.client('vet')
     first=vet.post('/api/v1/v3/changes',json=body(v3,'health_record',{'event_type':'pathology','description':'Evaluación clínica','diagnosis':'Hallazgo de prueba'}))
@@ -456,6 +503,39 @@ def test_owner_invitation_previews_and_enrols_each_collaborator_role(v3, role):
     assert logged.status_code == 200, logged.text
     assert logged.json()['user']['role'] == role and logged.json()['user']['farm_id'] == str(v3.farms['owner'].id)
     assert v3.db.execute(text("SELECT count(*) FROM audit_log WHERE actor_id=:u AND action='accept_invitation'"), {'u': identity.id}).scalar_one() == 1
+
+
+def test_invitation_filter_keeps_history_and_applies_before_limit(v3):
+    owner = v3.client('owner')
+    enable_owner_mfa(v3, owner)
+    base_path = '/api/v1/v3/invitations'
+    for state, farm in [('pending', 'owner'), ('accepted', 'owner'), ('revoked', 'owner'), ('foreign', 'other_owner')]:
+        v3.db.execute(text("""INSERT INTO invitations(farm_id,email,role_code,token_hash,invited_by,
+              expires_at,accepted_at,accepted_user_id,revoked_at,created_at)
+            VALUES(:farm,:email,'worker',:token,:owner,
+              now() + CASE WHEN :state='pending' THEN interval '1 day' ELSE interval '-1 day' END,
+              CASE WHEN :state='accepted' THEN now()-interval '2 days' END,
+              CASE WHEN :state='accepted' THEN :worker END,
+              CASE WHEN :state='revoked' THEN now()-interval '2 days' END,
+              now()-interval '3 days')"""), {'farm': v3.farms[farm].id, 'email': f'{state}@qa.test',
+            'token': uuid4().hex, 'state': state, 'owner': v3.users[farm].id, 'worker': v3.users['worker'].id})
+    v3.db.execute(text("""INSERT INTO invitations(farm_id,email,role_code,token_hash,invited_by,expires_at,created_at)
+        SELECT :farm,'expired-'||n||'@qa.test','veterinarian',gen_random_uuid()::text,:owner,
+          now(),now()-interval '2 days'+n*interval '1 second'
+        FROM generate_series(1,101) AS n"""), {'farm': v3.farms['owner'].id, 'owner': v3.users['owner'].id})
+    v3.db.commit()
+
+    main = owner.get(f'{base_path}?view=main')
+    assert main.status_code == 200, main.text
+    assert {row['email']: row['status'] for row in main.json()['items']} == {
+        'pending@qa.test': 'pending', 'accepted@qa.test': 'accepted', 'revoked@qa.test': 'revoked'}
+    expired = owner.get(f'{base_path}?view=expired')
+    assert expired.status_code == 200, expired.text
+    history = expired.json()['items']
+    assert len(history) == 100
+    assert all(row['status'] == 'expired' and row['email'].startswith('expired-') for row in history)
+    assert all('token_hash' not in row for row in history)
+    assert owner.get(base_path).json()['items'] == history
 
 
 @pytest.mark.parametrize('state,expected', [

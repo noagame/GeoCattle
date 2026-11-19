@@ -8,15 +8,17 @@ from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 from contextlib import asynccontextmanager
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, or_, select, text
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError, TimeoutError as DatabaseTimeout
+from sqlalchemy.orm import aliased
 from .db import get_db
 from .models import *
 from .schemas import *
-from .security import current_user, owner, operator, service_auth, create_session, token_hash, verify_password, hash_password
-from .domain import ingest, append_audit, freshness, at_time, check_timeouts, clear_animal_monitoring, resolve_assignment_events
+from .security import admin_login_requires_mfa, current_user, owner, operator, service_auth, create_session, token_hash, verify_password, hash_password
+from .domain import ingest, append_audit, freshness, at_time, check_timeouts, clear_animal_monitoring, resolve_assignment_events, reset_pasture_monitoring, temperature_alert, low_activity_alert
 from .settings import settings
 
 app=FastAPI(title="GeoCattle API",version="0.1.0",docs_url="/api/docs",openapi_url="/api/openapi.json",redoc_url=None)
@@ -28,12 +30,23 @@ dummy_hash=hash_password(secrets.token_urlsafe(32))
 @app.exception_handler(IntegrityError)
 async def integrity_error(request,exc): return JSONResponse(status_code=409,content={"detail":"Conflicto de identidad, versión, geometría o intervalo temporal; no se guardaron cambios"})
 @app.exception_handler(OperationalError)
+@app.exception_handler(DatabaseTimeout)
 async def unavailable(request,exc): return JSONResponse(status_code=503,content={"detail":"Base de datos temporalmente no disponible"})
 from fastapi.exceptions import RequestValidationError
 @app.exception_handler(RequestValidationError)
 async def validation_error(request,exc):
     errors=[".".join(str(x) for x in e["loc"])+": "+e["msg"] for e in exc.errors()]
     return JSONResponse(status_code=422,content={"detail":"; ".join(errors)})
+
+def persist_request_metrics(request,response,elapsed_ms):
+    from .db import SessionLocal
+    from .v3_security import execute
+    actor=getattr(request.state,'actor',None)
+    with SessionLocal.begin() as metrics_db:
+        execute(metrics_db,"INSERT INTO request_metrics(id,account_id,farm_id,actor_id,request_id,method,route_template,status_code,duration_ms,request_bytes,response_bytes) VALUES(:i,(SELECT account_id FROM farms WHERE id=:f),:f,:u,:r,:m,:p,:s,:d,:b,:o)",
+                i=uuid4(),f=getattr(actor,'farm_id',None),u=getattr(actor,'id',None),r=request.state.request_id,
+                m=request.method,p=getattr(request.scope.get('route'),'path','unmatched'),s=response.status_code,
+                d=elapsed_ms,b=int(request.headers.get('content-length','0')),o=int(response.headers.get('content-length','0')))
 
 @app.middleware("http")
 async def security_headers(request,call_next):
@@ -44,19 +57,16 @@ async def security_headers(request,call_next):
     response.headers["X-Content-Type-Options"]="nosniff"
     response.headers["Cache-Control"]="no-store"
     try:
-        from .db import SessionLocal
-        from .v3_security import execute
-        actor=getattr(request.state,'actor',None)
-        farm_id=getattr(actor,'farm_id',None)
-        with SessionLocal.begin() as metrics_db:
-            execute(metrics_db,"INSERT INTO request_metrics(id,account_id,farm_id,actor_id,request_id,method,route_template,status_code,duration_ms,request_bytes,response_bytes) VALUES(:i,(SELECT account_id FROM farms WHERE id=:f),:f,:u,:r,:m,:p,:s,:d,:b,:o)",i=uuid4(),f=farm_id,u=getattr(actor,'id',None),r=request.state.request_id,m=request.method,p=getattr(request.scope.get('route'),'path','unmatched'),s=response.status_code,d=max(0,(time.monotonic()-request.state.started)*1000),b=int(request.headers.get('content-length','0')),o=int(response.headers.get('content-length','0')))
+        elapsed_ms=max(0,(time.monotonic()-request.state.started)*1000)
+        await run_in_threadpool(persist_request_metrics,request,response,elapsed_ms)
     except Exception:
         import logging
         logging.getLogger('geocattle.metrics').warning('Métrica no persistida; revisar conexión/configuración de observabilidad')
     return response
 
-def accessible(db,model,ident,user,lock=False):
-    row=db.scalar(select(model).where(model.id==ident,model.farm_id==user.farm_id).with_for_update() if lock else select(model).where(model.id==ident,model.farm_id==user.farm_id))
+def accessible(db,model,ident,user,lock=False,*,no_key_update=False):
+    query=select(model).where(model.id==ident,model.farm_id==user.farm_id)
+    row=db.scalar(query.with_for_update(key_share=no_key_update) if lock else query)
     if not row: raise HTTPException(403,"Recurso no autorizado para este predio")
     return row
 
@@ -65,29 +75,94 @@ def telemetry_json(t):
     if t is None:return None
     keys=["id","device_id","animal_id","session_id","seq","observed_at","received_at","longitude","latitude","gnss_valid","surface_temperature_c","activity_index","battery_mv","source","quality","config_version"]
     return {k:getattr(t,k) for k in keys}
-def event_json(db,e):
-    animal=db.get(Animal,e.animal_id) if e.animal_id else None
-    position=db.get(Telemetry,e.last_position_id) if e.last_position_id else None
-    # Persisted reference: never replace historical evidence with today's state.
-    location={"telemetry":telemetry_json(position),"age_at_detection_seconds":max(0,(e.opened_at-position.observed_at).total_seconds()),"hardware_id":db.get(Device,e.device_id).hardware_id} if position and position.farm_id==e.farm_id and position.device_id==e.device_id and position.animal_id==e.animal_id and position.gnss_valid else None
-    return {"last_known_position":location,"id":e.id,"animal_id":e.animal_id,"animal_name":animal.name if animal else None,"diio":animal.diio if animal else None,"device_id":e.device_id,"device_name":db.get(Device,e.device_id).name,"telemetry_id":e.telemetry_id,"geofence_id":e.geofence_id,"telemetry":telemetry_json(db.get(Telemetry,e.telemetry_id)) if e.telemetry_id else None,"evidence":telemetry_json(db.get(Telemetry,e.telemetry_id)) if e.telemetry_id else None,"geofence_name":db.get(Geofence,e.geofence_id).name if e.geofence_id else None,"geofence_version":db.get(Geofence,e.geofence_id).version if e.geofence_id else None,"type":e.type,"severity":e.severity,"condition":e.condition,"attention":e.attention,"opened_at":e.opened_at,"resolved_at":e.resolved_at,"detail":e.detail,"actions":[{"id":a.id,"actor_id":a.actor_id,"action":a.action,"at":a.at,"note":a.note} for a in db.scalars(select(EventAction).where(EventAction.event_id==e.id).order_by(EventAction.at)).all()]}
+def events_json(db,events):
+    if not events:
+        return []
+    ids=[event.id for event in events]
+    position=aliased(Telemetry)
+    sample=aliased(Telemetry)
+    rows=db.execute(select(Event.id,Animal.name,Animal.diio,Device.name,Device.hardware_id,
+                           Geofence.name,Geofence.version,sample,position).select_from(Event)
+        .join(Device,Device.id==Event.device_id)
+        .outerjoin(Animal,Animal.id==Event.animal_id)
+        .outerjoin(Geofence,Geofence.id==Event.geofence_id)
+        .outerjoin(sample,sample.id==Event.telemetry_id)
+        .outerjoin(position,position.id==Event.last_position_id)
+        .where(Event.id.in_(ids)))
+    evidence={row[0]:row[1:] for row in rows}
+    actions=defaultdict(list)
+    for action in db.scalars(select(EventAction).where(EventAction.event_id.in_(ids)).order_by(EventAction.at)):
+        actions[action.event_id].append({"id":action.id,"actor_id":action.actor_id,"action":action.action,
+                                         "at":action.at,"note":action.note})
+
+    result=[]
+    for event in events:
+        animal_name,diio,device_name,hardware_id,fence_name,fence_version,reading,fix=evidence[event.id]
+        # Use the persisted position at detection, even if a newer fix exists.
+        location=None
+        if (fix and fix.farm_id==event.farm_id and fix.device_id==event.device_id
+                and fix.animal_id==event.animal_id and fix.gnss_valid):
+            location={"telemetry":telemetry_json(fix),"hardware_id":hardware_id,
+                      "age_at_detection_seconds":max(0,(event.opened_at-fix.observed_at).total_seconds())}
+        reading_data=telemetry_json(reading)
+        result.append({"last_known_position":location,"id":event.id,"animal_id":event.animal_id,
+                       "animal_name":animal_name,"diio":diio,"device_id":event.device_id,"device_name":device_name,
+                       "telemetry_id":event.telemetry_id,"geofence_id":event.geofence_id,"telemetry":reading_data,
+                       "evidence":reading_data,"geofence_name":fence_name,"geofence_version":fence_version,
+                       "type":event.type,"severity":event.severity,"condition":event.condition,
+                       "attention":event.attention,"opened_at":event.opened_at,"resolved_at":event.resolved_at,
+                       "detail":event.detail,"actions":actions[event.id]})
+    return result
 def device_json(db,d):
     assignment=db.scalar(select(Assignment).where(Assignment.device_id==d.id,at_time(Assignment,utcnow())))
     pending=db.scalar(select(DeviceConfig).where(DeviceConfig.device_id==d.id,DeviceConfig.status.in_(["requested","sent"])).order_by(DeviceConfig.version.desc()))
     return {"id":d.id,"hardware_id":d.hardware_id,"dev_eui":d.dev_eui,"name":d.name,"transport":d.transport,"enabled":d.enabled,"interval_seconds":d.interval_seconds,"config_version":d.config_version,"pending_config":{"version":pending.version,"interval_seconds":pending.interval_seconds,"status":pending.status} if pending else None,"animal_id":assignment.animal_id if assignment else None,"last_received_at":d.last_received_at}
-def animal_json(db,a):
+def animals_json(db,animals):
+    if not animals:
+        return []
     now=utcnow()
-    state=db.get(AnimalState,a.id)
-    assignment=db.scalar(select(Assignment).where(Assignment.animal_id==a.id,at_time(Assignment,now)))
-    device=db.get(Device,assignment.device_id) if assignment else None
-    t=db.get(Telemetry,state.telemetry_id) if state and state.telemetry_id else None
-    p=db.get(Telemetry,state.position_telemetry_id) if state and state.position_telemetry_id else None
-    sector=db.get(Sector,a.sector_id) if a.sector_id else None
-    events=db.scalars(select(Event).where(Event.animal_id==a.id,Event.condition=="active")).all()
-    position,communication=freshness(p.observed_at if p else None,device.last_received_at if device else None,device.interval_seconds if device else 300,now)
-    if device is None or not device.enabled or not a.enabled: communication="unknown"
-    status="critical" if any(e.severity=="critical" for e in events) else "warning" if events else "unknown" if position!="fresh" or communication!="recent" or not t or not t.gnss_valid or not state or state.geofence_status=="unknown" else "normal"
-    return {"id":a.id,"diio":a.diio,"name":a.name,"orientation":a.orientation,"version":a.version,"vital_status":a.status,"breed":a.breed,"color":a.color,"sex":a.sex,"birth_date":a.birth_date,"enabled":a.enabled,"sector_id":a.sector_id,"sector_name":sector.name if sector else None,"device_id":device.id if device else None,"device_name":device.name if device else None,"status":status,"position_status":position,"communication_status":communication,"geofence_status":state.geofence_status if state else "unknown","last_telemetry":telemetry_json(t),"last_position":telemetry_json(p),"position_age_seconds":max(0,(now-p.observed_at).total_seconds()) if p else None,"active_events":len(events)}
+    ids=[animal.id for animal in animals]
+    alerts=(select(Event.animal_id,func.count().label("total"),func.bool_or(Event.severity=="critical").label("critical"))
+            .where(Event.animal_id.in_(ids),Event.condition=="active").group_by(Event.animal_id).subquery())
+    latest=aliased(Telemetry)
+    position=aliased(Telemetry)
+    rows=db.execute(select(Animal.id,AnimalState,Device,latest,position,Sector.name,alerts.c.total,alerts.c.critical)
+        .select_from(Animal)
+        .outerjoin(AnimalState,AnimalState.animal_id==Animal.id)
+        .outerjoin(Assignment,(Assignment.animal_id==Animal.id)&at_time(Assignment,now))
+        .outerjoin(Device,Device.id==Assignment.device_id)
+        .outerjoin(latest,latest.id==AnimalState.telemetry_id)
+        .outerjoin(position,position.id==AnimalState.position_telemetry_id)
+        .outerjoin(Sector,Sector.id==Animal.sector_id)
+        .outerjoin(alerts,alerts.c.animal_id==Animal.id)
+        .where(Animal.id.in_(ids)))
+    snapshots={row[0]:row[1:] for row in rows}
+
+    result=[]
+    for animal in animals:
+        state,device,reading,fix,sector_name,active_count,critical=snapshots[animal.id]
+        position_status,communication=freshness(fix.observed_at if fix else None,
+            device.last_received_at if device else None,device.interval_seconds if device else 300,now)
+        if device is None or not device.enabled or not animal.enabled:
+            communication="unknown"
+        geofence_status=state.geofence_status if state else "unknown"
+        if critical:
+            status="critical"
+        elif active_count:
+            status="warning"
+        elif position_status!="fresh" or communication!="recent" or not reading or not reading.gnss_valid or geofence_status=="unknown":
+            status="unknown"
+        else:
+            status="normal"
+        result.append({"id":animal.id,"diio":animal.diio,"name":animal.name,"orientation":animal.orientation,
+                       "version":animal.version,"vital_status":animal.status,"breed":animal.breed,"color":animal.color,
+                       "sex":animal.sex,"birth_date":animal.birth_date,"enabled":animal.enabled,"sector_id":animal.sector_id,
+                       "sector_name":sector_name,"device_id":device.id if device else None,"device_name":device.name if device else None,
+                       "status":status,"position_status":position_status,"communication_status":communication,
+                       "geofence_status":geofence_status,"last_telemetry":telemetry_json(reading),"last_position":telemetry_json(fix),
+                       "position_age_seconds":max(0,(now-fix.observed_at).total_seconds()) if fix else None,
+                       "active_events":active_count or 0})
+    return result
 def fence_sector_ids(db,g):
     return sorted(set(db.scalars(select(GeofenceSector.sector_id).where(GeofenceSector.geofence_id==g.id)).all()) | {g.sector_id},key=str)
 
@@ -128,7 +203,7 @@ def login(body:LoginIn,request:Request,response:Response,db=Depends(get_db, scop
     if user.farm_id and db.get(Farm,user.farm_id).environment!=settings().app_env:raise HTTPException(403,"Cuenta de otro entorno")
     from .v3_security import one,create_challenge
     from .v3_auth import issue_session
-    if user.role=='admin':
+    if user.role == 'admin' and admin_login_requires_mfa(request):
         factor=one(db,'SELECT id FROM mfa_factors WHERE user_id=:u AND verified_at IS NOT NULL AND revoked_at IS NULL',u=user.id)
         return create_challenge(db,user,'login' if factor else 'mfa_setup',setup=not bool(factor))
     attempts.clear()
@@ -144,21 +219,21 @@ def logout(request:Request,response:Response,user=Depends(current_user),db=Depen
 def dashboard(user=Depends(current_user),db=Depends(get_db, scope="function")):
     farm=db.get(Farm,user.farm_id) if user.farm_id else None
     if not farm:raise HTTPException(409,"Selecciona o crea un predio para consultar monitoreo")
-    animals=[animal_json(db,a) for a in db.scalars(select(Animal).where(Animal.farm_id==user.farm_id,Animal.enabled.is_(True)).order_by(Animal.diio)).all()]
+    animals=animals_json(db,db.scalars(select(Animal).where(Animal.farm_id==user.farm_id,Animal.enabled.is_(True)).order_by(Animal.diio)).all())
     events=db.scalars(select(Event).where(Event.farm_id==user.farm_id,Event.condition=="active").order_by(Event.opened_at.desc())).all()
     summary={"total":len(animals),**{s:sum(a["status"]==s for a in animals) for s in ("normal","warning","critical","unknown")},"active_events":len(events)}
-    return {"farm":{"id":farm.id,"name":farm.name,"environment":farm.environment},"summary":summary,"animals":animals,"events":[event_json(db,e) for e in events],"sectors":[{"id":s.id,"name":s.name} for s in db.scalars(select(Sector).where(Sector.farm_id==farm.id)).all()]}
+    return {"farm":{"id":farm.id,"name":farm.name,"environment":farm.environment},"summary":summary,"animals":animals,"events":events_json(db,events),"sectors":[{"id":s.id,"name":s.name} for s in db.scalars(select(Sector).where(Sector.farm_id==farm.id)).all()]}
 @api.get("/animals")
 def animals(q:str=Query(default="",max_length=100),sector_id:UUID|None=None,limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0),user=Depends(current_user),db=Depends(get_db, scope="function")):
     query=select(Animal).where(Animal.farm_id==user.farm_id)
     if q:query=query.where(or_(Animal.diio.ilike(f"%{q}%"),Animal.name.ilike(f"%{q}%")))
     if sector_id:accessible(db,Sector,sector_id,user);query=query.where(Animal.sector_id==sector_id)
     total=db.scalar(select(func.count()).select_from(query.subquery()))
-    return {"items":[animal_json(db,a) for a in db.scalars(query.order_by(Animal.diio).limit(limit).offset(offset)).all()],"total":total}
+    return {"items":animals_json(db,db.scalars(query.order_by(Animal.diio).limit(limit).offset(offset)).all()),"total":total}
 @api.get("/animals/{animal_id}")
 def animal(animal_id:UUID,user=Depends(current_user),db=Depends(get_db, scope="function")):
     a=accessible(db,Animal,animal_id,user)
-    result=animal_json(db,a)
+    result=animals_json(db,[a])[0]
     at=utcnow()
     collar=db.scalar(select(Assignment).where(Assignment.animal_id==a.id,Assignment.farm_id==user.farm_id,at_time(Assignment,at)))
     zone=db.execute(text("""SELECT x.id,x.geofence_id,g.name AS geofence_name,g.version AS geofence_version,
@@ -200,7 +275,7 @@ def create_animal(body:AnimalIn,user=Depends(owner),db=Depends(get_db, scope="fu
     append_audit(db,user.farm_id,user.id,"animal",a.id,"create",after=body.model_dump(mode="json"))
     from .v3_security import execute
     execute(db,"INSERT INTO animal_holdings(id,animal_id,farm_id,valid_from,reason) VALUES(:id,:a,:f,now(),'registration')",id=uuid4(),a=a.id,f=a.farm_id)
-    return animal_json(db,a)
+    return animals_json(db,[a])[0]
 @api.patch("/animals/{animal_id}")
 def update_animal(animal_id:UUID,body:AnimalPatch,user=Depends(owner),db=Depends(get_db, scope="function")):
     a=accessible(db,Animal,animal_id,user,True)
@@ -217,7 +292,7 @@ def update_animal(animal_id:UUID,body:AnimalPatch,user=Depends(owner),db=Depends
     for k,v in changes.items():setattr(a,k,v)
     a.version+=1
     db.flush();append_audit(db,user.farm_id,user.id,"animal",a.id,"update",before,body.model_dump(mode="json",exclude_unset=True))
-    return animal_json(db,a)
+    return animals_json(db,[a])[0]
 @api.get("/animals/{animal_id}/history")
 def history(animal_id:UUID,start:datetime|None=None,end:datetime|None=None,limit:int=Query(500,ge=1,le=1000),offset:int=Query(0,ge=0),user=Depends(current_user),db=Depends(get_db, scope="function")):
     accessible(db,Animal,animal_id,user);period(start,end)
@@ -305,29 +380,36 @@ def create_fence(body:GeofenceIn,user=Depends(owner),db=Depends(get_db, scope="f
     for zone in zones:
         zone.valid_to=now;db.flush()
         db.add(PastureAssignment(farm_id=user.farm_id,animal_id=zone.animal_id,animal_holding_id=zone.animal_holding_id,assigned_by=user.id,geofence_id=g.id,valid_from=now))
-        state=db.get(AnimalState,zone.animal_id)
-        if state:state.outside_count=0;state.geofence_status="unknown"
+        reset_pasture_monitoring(db,zone.animal_id,user.farm_id,g.id,user.id,now)
     append_audit(db,user.farm_id,user.id,"geofence",g.id,"version_create",after={"geofence_key":str(g.geofence_key),"sector_ids":[str(sid) for sid in ids],"version":g.version,"geometry":body.geometry,"previous_id":str(old.id) if old else None})
     return fence_json(db,g)
 
 @api.post("/pasture-assignments",status_code=201)
 def assign_pasture(body:PastureIn,user=Depends(owner),db=Depends(get_db, scope="function")):
-    a=accessible(db,Animal,body.animal_id,user,True);g=accessible(db,Geofence,body.geofence_id,user)
+    a=accessible(db,Animal,body.animal_id,user,True,no_key_update=True)
+    g=accessible(db,Geofence,body.geofence_id,user,True)
     if not g.active:raise HTTPException(409,"Seleccione la versión activa de la geocerca")
     if not db.get(Sector,g.sector_id).active:raise HTTPException(409,"Seleccione un sector activo")
     if not a.enabled:raise HTTPException(409,"El animal debe estar habilitado para asignarle pastoreo")
     at=valid_effective(body.effective_at)
     if at<g.created_at:raise HTTPException(422,"Asignación precede a la versión de geocerca")
+    if body.expected_device_id is not None and not db.scalar(select(Assignment.id).where(
+        Assignment.animal_id==a.id,Assignment.device_id==body.expected_device_id,at_time(Assignment,utcnow()))):
+        raise HTTPException(409,"El collar ya no está asociado a ese animal. Revisa el traslado")
     old=db.scalar(select(PastureAssignment).where(PastureAssignment.animal_id==a.id,PastureAssignment.valid_to.is_(None)).with_for_update())
+    if old and old.geofence_id==g.id and body.effective_at is None:
+        return {"id":old.id,"animal_id":a.id,"geofence_id":g.id,"valid_from":old.valid_from,"valid_to":None}
+    if "expected_pasture_id" in body.model_fields_set and body.expected_pasture_id!=(old.id if old else None):
+        raise HTTPException(409,"La zona vigente cambió. Revisa el traslado y vuelve a confirmarlo")
     if old:
         if old.valid_from>=at:raise HTTPException(409,"Inicio debe ser posterior al previo")
         old.valid_to=at;db.flush()
+        append_audit(db,user.farm_id,user.id,"pasture_assignment",old.id,"close",after={"valid_to":at.isoformat()})
     from .v3_api import active_holding
     holding=active_holding(db,a.id,user.farm_id)
     row=PastureAssignment(id=uuid4(),farm_id=user.farm_id,animal_id=a.id,animal_holding_id=holding["id"],geofence_id=g.id,assigned_by=user.id,valid_from=at);db.add(row)
     a.sector_id=g.sector_id
-    state=db.get(AnimalState,a.id)
-    if state:state.outside_count=0;state.geofence_status="unknown"
+    reset_pasture_monitoring(db,a.id,user.farm_id,g.id,user.id,at)
     db.flush();append_audit(db,user.farm_id,user.id,"pasture_assignment",row.id,"create",after={"animal_id":str(a.id),"geofence_id":str(g.id),"valid_from":at.isoformat()})
     return {"id":row.id,"animal_id":a.id,"geofence_id":g.id,"valid_from":at,"valid_to":None}
 @api.get("/events")
@@ -336,14 +418,14 @@ def events(condition:Literal["active","resolved"]|None=None,attention:Literal["p
     if condition:query=query.where(Event.condition==condition)
     if attention:query=query.where(Event.attention==attention)
     total=db.scalar(select(func.count()).select_from(query.subquery()))
-    return {"items":[event_json(db,e) for e in db.scalars(query.order_by(Event.opened_at.desc()).limit(limit).offset(offset)).all()],"total":total}
+    return {"items":events_json(db,db.scalars(query.order_by(Event.opened_at.desc()).limit(limit).offset(offset)).all()),"total":total}
 @api.post("/events/{event_id}/actions")
 def action(event_id:UUID,body:ActionIn,user=Depends(operator),db=Depends(get_db, scope="function")):
     e=accessible(db,Event,event_id,user,True);before={"attention":e.attention,"condition":e.condition}
     e.attention={"acknowledge":"acknowledged","review":"in_review","conclude":"concluded","reopen":"pending"}[body.action]
     db.add(EventAction(event_id=e.id,actor_id=user.id,action=body.action,note=body.note))
     append_audit(db,user.farm_id,user.id,"event",e.id,body.action,before,{"attention":e.attention,"condition":e.condition,"note":body.note});db.flush()
-    return event_json(db,e)
+    return events_json(db,[e])[0]
 @api.post("/devices/{device_id}/config",status_code=201)
 def config(device_id:UUID,body:ConfigIn,user=Depends(owner),db=Depends(get_db, scope="function")):
     d=accessible(db,Device,device_id,user,True)
@@ -360,7 +442,8 @@ def settings_response(r,user):
         "can_edit":bool(user.farm_id and user.role in ("owner","admin")),
         "environment":config.app_env,
         "preventive_rules_validated":config.preventive_rules_validated,
-        "preventive_rules_allowed":config.app_env=="simulation" or config.preventive_rules_validated}}
+        "preventive_rules_allowed":config.preventive_rules_allowed,
+        "temperature_rule_allowed":config.temperature_rule_allowed}}
 
 @api.get("/settings")
 def get_settings(user=Depends(current_user),db=Depends(get_db, scope="function")):
@@ -368,16 +451,42 @@ def get_settings(user=Depends(current_user),db=Depends(get_db, scope="function")
     r=db.get(RuleSettings,user.farm_id)
     if not r:raise HTTPException(503,"Reglas no inicializadas")
     return settings_response(r,user)
+@api.post("/settings/preview")
+def preview_sensor_rules(body:SensorPreviewIn,user=Depends(owner)):
+    if not user.farm_id:raise HTTPException(409,"Selecciona un predio autorizado para probar las reglas")
+    temp=temperature_alert(body.surface_temperature_c,body.temperature_high_c)
+    activity=low_activity_alert(body.activity_average,body.activity_low_threshold)
+    return {
+        "temperature":"missing_data" if temp is None else "alert" if temp else "clear",
+        "activity":"missing_data" if activity is None else "incomplete_window" if not body.activity_window_complete else "alert" if activity else "clear",
+        "activity_window_minutes":body.activity_window_minutes,
+    }
+
 @api.put("/settings")
 def update_settings(body:SettingsIn,user=Depends(owner),db=Depends(get_db, scope="function")):
     if not user.farm_id:raise HTTPException(409,"Selecciona un predio autorizado para configurar las reglas")
     r=db.get(RuleSettings,user.farm_id,with_for_update=True)
     if not r:raise HTTPException(503,"Reglas no inicializadas")
     if r.version!=body.expected_version:raise HTTPException(409,"Versión de reglas obsoleta")
-    if settings().app_env!="simulation" and not settings().preventive_rules_validated and (body.temperature_enabled or body.activity_enabled):raise HTTPException(422,"Sensores preventivos requieren validación de campo PREVENTIVE_RULES_VALIDATED")
+    config=settings()
+    if ((body.temperature_enabled and not config.temperature_rule_allowed)
+            or (body.activity_enabled and not config.preventive_rules_allowed)):
+        raise HTTPException(422,"Sensores preventivos requieren validación de campo PREVENTIVE_RULES_VALIDATED")
     before=settings_json(r)
     for k,v in body.model_dump(exclude={"expected_version"}).items():setattr(r,k,v)
-    r.version+=1;db.flush();append_audit(db,user.farm_id,user.id,"rule_settings",user.farm_id,"update",before,settings_json(r))
+    r.version+=1
+    disabled_types=[kind for enabled,kind in ((r.temperature_enabled,"high_surface_temperature"),
+                                              (r.activity_enabled,"low_activity")) if not enabled]
+    if disabled_types:
+        now=utcnow()
+        active_events=db.scalars(select(Event).where(Event.farm_id==user.farm_id,Event.condition=="active",
+                                                     Event.type.in_(disabled_types)).with_for_update()).all()
+        for event in active_events:
+            event.condition="resolved";event.resolved_at=max(now,event.opened_at)
+            event.detail={**event.detail,"resolution_reason":"rule_disabled","resolution":"Regla desactivada en el predio",
+                          "resolved_by_rule_version":r.version}
+            append_audit(db,user.farm_id,user.id,"event",event.id,"resolved",after={"condition":"resolved","reason":"rule_disabled","rule_version":r.version})
+    db.flush();append_audit(db,user.farm_id,user.id,"rule_settings",user.farm_id,"update",before,settings_json(r))
     return settings_response(r,user)
 @api.get("/audit")
 def audit(limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0),user=Depends(owner),db=Depends(get_db, scope="function")):

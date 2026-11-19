@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import aliased
 from .db import get_db
+from .domain import freshness
 from .models import Animal, Device, Farm, Telemetry
 from .security import current_user
 
@@ -50,17 +51,16 @@ def overview(user=Depends(current_user), db=Depends(get_db, scope='function')):
     now = datetime.now(timezone.utc)
     items = []
     for device, sample, animal_name, fix in rows:
-        quality = sample.quality or {} if sample else {}
-        interval = quality.get('period_ms')
-        interval = interval / 1000 if isinstance(interval, (int, float)) and interval > 0 else device.interval_seconds
-        threshold = max(120, interval * 3)
+        _, communication = freshness(fix.observed_at if fix else None,
+                                     device.last_received_at, device.interval_seconds, now)
         age = max(0, (now - sample.observed_at).total_seconds()) if sample else None
         position_age = max(0, (now - fix.observed_at).total_seconds()) if fix else None
         items.append({'hardware_id': device.hardware_id, 'name': device.name,
             'enabled': device.enabled, 'latest': sample_dict(sample, device.hardware_id, animal_name) if sample else None,
             'last_position': sample_dict(fix, device.hardware_id) if fix else None,
             'age_seconds': age, 'position_age_seconds': position_age,
-            'freshness_seconds': threshold, 'communication_status': 'unknown' if age is None else 'recent' if age <= threshold else 'stale'})
+            'freshness_seconds': 2 * device.interval_seconds + 30,
+            'communication_status': 'stale' if communication == 'absent' else communication})
     return {'items': items, 'server_time': now}
 
 

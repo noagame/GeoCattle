@@ -1,6 +1,7 @@
 """Capture safety: no real serial ports or PostgreSQL are used."""
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -8,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import serial
-from adapters.lora_usb import Archive, capture, main
+from adapters.lora_usb import Archive, capture, main, publish_capture_status
 from adapters.serial_receiver import CaptureLease, load_receiver, save_receiver
 from adapters.receiver_profiles import load_profile
 from qa.test_lora_json import SAMPLE
@@ -46,6 +47,37 @@ class Connection:
 
 
 class CaptureRuntimeTests(unittest.TestCase):
+    def test_status_is_published_after_a_temporary_access_denial(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / 'status.json'
+            target.write_text('{"state":"old"}', encoding='utf-8')
+            replace = os.replace
+            publications = []
+
+            def deny_first(temporary, destination):
+                publications.append((temporary, destination))
+                self.assertEqual(json.loads(target.read_text(encoding='utf-8')), {'state': 'old'})
+                if len(publications) == 1:
+                    raise PermissionError('QA: temporalmente ocupado')
+                replace(temporary, destination)
+
+            with patch('adapters.lora_usb.os.replace', side_effect=deny_first), patch('adapters.lora_usb.time.sleep'):
+                publish_capture_status(target, {'state': 'receiving'})
+            self.assertEqual(len(publications), 2)
+            self.assertEqual(json.loads(target.read_text(encoding='utf-8')), {'state': 'receiving'})
+            self.assertEqual(list(target.parent.iterdir()), [target])
+
+    def test_persistent_status_access_denial_preserves_previous_snapshot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / 'status.json'
+            target.write_text('{"state":"old"}', encoding='utf-8')
+            with patch('adapters.lora_usb.os.replace', side_effect=PermissionError('QA: ocupado')) as replace, patch('adapters.lora_usb.time.sleep'):
+                with self.assertRaises(PermissionError):
+                    publish_capture_status(target, {'state': 'receiving'})
+            self.assertEqual(replace.call_count, 5)
+            self.assertEqual(json.loads(target.read_text(encoding='utf-8')), {'state': 'old'})
+            self.assertEqual(list(target.parent.iterdir()), [target])
+
     def exercise(self, folder, connections, ports, bind=False, requested='auto'):
         directory=Path(folder)
         env=directory/'test.env';env.write_text('INGEST_KEY=synthetic-local-test-key\n',encoding='utf-8')

@@ -1,6 +1,6 @@
 import { HardwarePage } from './HardwarePage';
 import { useEffect, useState, lazy, Suspense, type FormEvent } from 'react';
-import { Activity, ArrowDownLeft, ArrowRight, Bell, Building2, Check, ChevronRight, CircleHelp, ClipboardList, Fence, FileHeart, LayoutDashboard, LogOut, MapPin, Menu, Radio, RefreshCw, Search, Settings2, ShieldCheck, Sprout, UserRound, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { Activity, ArrowDownLeft, ArrowRight, Bell, Building2, Check, ChevronDown, ChevronRight, CircleHelp, ClipboardList, Fence, FileHeart, Inbox, LayoutDashboard, LogOut, MapPin, Menu, Radio, RefreshCw, Search, Settings, Settings2, ShieldCheck, Sprout, Users, Wifi, WifiOff, X, type LucideIcon } from 'lucide-react';
 import { api, ApiError, age, date, message, setSession, useData, write } from './api';
 import type { Animal, List, Geofence, Overview, Session } from './types';
 import { Badge, Empty, ErrorNotice, Loading, Panel, PanelTitle, PageTitle, eventLabels } from './ui';
@@ -8,6 +8,7 @@ import { CattleMap } from './Map';
 import { AnimalsPage, AnimalDetail, AnimalForm } from './PagesAnimals';
 import { DevicesPage, GeofencesPage, SettingsPage } from './PagesManagement';
 import { EventsPage, OperationsPage } from './PagesEvents';
+import { FarmSelector } from './FarmSelector';
 
 
 
@@ -46,9 +47,69 @@ const allNavigation = [
   { id: 'operations' as Page, title: 'Operación del predio', icon: Activity },
   { id: 'settings' as Page, title: 'Reglas del predio', icon: Settings2 },
   { id: 'audit' as Page, title: 'Auditoría', icon: ShieldCheck },
-  { id: 'notices' as Page, title: 'Mis avisos', icon: Bell },
-  { id: 'profile' as Page, title: 'Mi perfil', icon: UserRound },
+  { id: 'notices' as Page, title: 'Mis avisos', icon: Inbox },
+  { id: 'profile' as Page, title: 'Mi perfil', icon: Settings },
 ];
+
+type NavigationItem = (typeof allNavigation)[number];
+type NavigationGroup = { id: string; title: string; icon: LucideIcon; pages: Page[] };
+const sidebarLayout: (Page | NavigationGroup)[] = [
+  'admin',
+  'overview',
+  { id: 'herd', title: 'Rebaño y salud', icon: Sprout, pages: ['animals', 'health'] },
+  { id: 'land', title: 'Territorio', icon: MapPin, pages: ['farms', 'geofences'] },
+  { id: 'equipment', title: 'Dispositivos', icon: Radio, pages: ['hardware', 'devices', 'gateways'] },
+  { id: 'management', title: 'Gestión del predio', icon: Activity, pages: ['team', 'changes', 'operations', 'settings', 'audit'] },
+  { id: 'platform', title: 'Administración', icon: ShieldCheck, pages: ['owners', 'users'] },
+];
+
+function SidebarNavigation({ navigation, activePage, navigate }: {
+  navigation: NavigationItem[];
+  activePage: Page;
+  navigate: (page: Page) => void;
+}) {
+  const items = new Map(navigation.map(item => [item.id, item]));
+  const activeGroup = sidebarLayout.find(entry => typeof entry !== 'string' && entry.pages.includes(activePage));
+  const activeGroupId = typeof activeGroup === 'object' ? activeGroup.id : null;
+  const [openGroup, setOpenGroup] = useState(activeGroupId);
+
+  useEffect(() => { setOpenGroup(activeGroupId); }, [activePage, activeGroupId]);
+
+  function pageButton(item: NavigationItem) {
+    const current = activePage === item.id;
+    return <button key={item.id} type="button" className={`nav-item${current ? ' nav-active' : ''}`} onClick={() => navigate(item.id)} aria-current={current ? 'page' : undefined}>
+      <item.icon size={18} aria-hidden="true" /><span>{item.title}</span>
+    </button>;
+  }
+
+  return <nav className="sidebar-nav" aria-label="Navegación principal">
+    {sidebarLayout.map(entry => {
+      if (typeof entry === 'string') {
+        const item = items.get(entry);
+        return item && pageButton(item);
+      }
+      const children = entry.pages.flatMap(page => {
+        const item = items.get(page);
+        return item ? [item] : [];
+      });
+      if (!children.length) return null;
+      if (children.length === 1) return pageButton(children[0]);
+
+      const expanded = openGroup === entry.id;
+      const submenuId = `sidebar-${entry.id}`;
+      return <div key={entry.id}>
+        <button type="button" className={`nav-item nav-group-toggle${activeGroupId === entry.id ? ' nav-group-current' : ''}`}
+          aria-expanded={expanded} aria-controls={submenuId} onClick={() => setOpenGroup(current => current === entry.id ? null : entry.id)}>
+          <entry.icon size={18} aria-hidden="true" /><span>{entry.title}</span><ChevronDown className="nav-group-chevron" size={15} aria-hidden="true" />
+        </button>
+        <div className="nav-submenu" id={submenuId} hidden={!expanded}>
+          {children.map(pageButton)}
+        </div>
+      </div>;
+    })}
+  </nav>;
+}
+
 function Brand({ light = false }: { light?: boolean }) {
   return <div className={`brand ${light ? 'brand-light' : ''}`}><div className="brand-icon"><svg viewBox="0 0 36 36" fill="none" aria-hidden="true"><path d="M8 15 5 8l8 4M28 15l3-7-8 4M11 12c2-3 12-3 14 0l3 10-6 9h-8l-6-9 3-10Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /><path d="M14 22h8M14 18h.01M22 18h.01M17 27h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></div><span>GeoCattle<small>INTELIGENCIA PREDIAL</small></span></div>;
 }
@@ -122,8 +183,27 @@ export default function App() {
   if (!session) return <Login onLogin={result => { updateSession(result); setAuthNotice(''); setAuthError(''); setPage(result.user.role === 'admin' ? 'admin' : 'overview'); }} initialError={authError} initialNotice={authNotice} />;
   const farmName = session.user.farms?.find(f => f.id === session.user.farm_id)?.name ?? overview.data?.farm.name ?? 'Selecciona un predio';
   return <div className="app-shell v3-shell"><a className="v3-skip-link" href="#main-content" onClick={e => { e.preventDefault(); document.getElementById('main-content')?.focus(); }}>Saltar al contenido</a>{mobileMenu && <button className="sidebar-overlay" aria-label="Cerrar navegación" onClick={() => setMobileMenu(false)} />}
-    <aside className={`sidebar ${mobileMenu ? 'sidebar-open' : ''}`}><div className="sidebar-brand"><Brand light /><button className="icon-button mobile-close" aria-label="Cerrar menú" onClick={() => setMobileMenu(false)}><X size={20} /></button></div><div className="farm-switch v3-farm-switch"><label><span>{admin ? 'CONTEXTO DE SOPORTE' : 'PREDIO ACTUAL'}</span><select aria-label="Cambiar predio autorizado" value={session.user.farm_id ?? ''} disabled={contextBusy || !session.user.farms?.length} onChange={e => switchFarm(e.target.value)}><option value="">{admin ? 'Panel global' : 'Selecciona un predio'}</option>{session.user.farms?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label></div><span className="nav-label">{admin ? 'PLATAFORMA Y PREDIOS' : roleLabels[role ?? ''] ?? 'SUPERVISIÓN'}</span><nav aria-label="Navegación principal">{navigation.map(item => <button key={item.id} onClick={() => navigate(item.id)} className={`nav-item ${activePage === item.id ? 'nav-active' : ''}`} aria-current={activePage === item.id ? 'page' : undefined}><item.icon size={18} /><span>{item.title}</span>{item.id === 'events' && !!overview.data?.summary.active_events && <span className="nav-count">{overview.data.summary.active_events}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="local-status"><span className={`connection-dot ${connected ? 'green' : 'red'}`} /><div><strong>{connected ? 'Servidor conectado' : 'Servidor no disponible'}</strong><small>{overview.data?.farm.environment === 'simulation' ? 'Entorno de simulación' : 'Sesión personal'}</small></div></div><div className="sidebar-user"><span className="avatar">{(session.user.full_name || session.user.username).slice(0, 2).toUpperCase()}</span><div><strong>{session.user.full_name || session.user.username}</strong><small>{roleLabels[role ?? ''] ?? role}</small></div><button className="icon-button" onClick={logout} aria-label="Cerrar sesión" title="Cerrar sesión"><LogOut size={17} /></button></div></div></aside>
-    <div className="app-body"><header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Abrir menú" onClick={() => setMobileMenu(true)}><Menu size={22} /></button><span>{admin && ['admin', 'owners', 'users', 'audit'].includes(activePage) ? 'Plataforma' : farmName}</span><ChevronRight size={15} /><strong>{navigation.find(nav => nav.id === activePage)?.title}</strong></div>{hasFarm && <form className="global-search" onSubmit={e => { e.preventDefault(); navigate('animals'); }}><Search size={16} /><input aria-label="Buscar animales por nombre o DIIO" placeholder="Buscar nombre o DIIO…" value={search} onChange={e => setSearch(e.target.value)} /><kbd>↵</kbd></form>}{hasFarm && <button className="top-notification icon-button" aria-label="Ver mis avisos" onClick={() => navigate('notices')}><Bell size={20} /></button>}</header>
+    <aside className={`sidebar ${mobileMenu ? 'sidebar-open' : ''}`}>
+      <div className="sidebar-top">
+        <div className="sidebar-brand"><Brand light /><button className="icon-button mobile-close" aria-label="Cerrar menú" onClick={() => setMobileMenu(false)}><X size={20} /></button></div>
+        <FarmSelector currentFarmId={session.user.farm_id ?? null} farms={session.user.farms ?? []} isAdmin={admin} isBusy={contextBusy} onSelectFarm={switchFarm} />
+        <span className="nav-label">{admin ? 'PLATAFORMA Y PREDIOS' : roleLabels[role ?? ''] ?? 'SUPERVISIÓN'}</span>
+      </div>
+      <SidebarNavigation key={`${session.user.id}-${session.user.farm_id}-${role}`} navigation={navigation} activePage={activePage} navigate={navigate} />
+      <div className="sidebar-bottom">
+        <div className="local-status"><span className={`connection-dot ${connected ? 'green' : 'red'}`} /><div><strong>{connected ? 'Servidor conectado' : 'Servidor no disponible'}</strong><small>{overview.data?.farm.environment === 'simulation' ? 'Entorno de simulación' : 'Sesión personal'}</small></div></div>
+        <div className="sidebar-user">
+          <span className="avatar">{(session.user.full_name || session.user.username).slice(0, 2).toUpperCase()}</span>
+          <div className="sidebar-user-details"><strong>{session.user.full_name || session.user.username}</strong><small>{roleLabels[role ?? ''] ?? role}</small></div>
+          <button type="button" className="icon-button sidebar-profile-btn" onClick={() => navigate('profile')}
+            aria-current={activePage === 'profile' ? 'page' : undefined} aria-label="Perfil y configuración personal" title="Perfil y configuración personal">
+            <Settings size={17} aria-hidden="true" />
+          </button>
+          <button type="button" className="icon-button" onClick={logout} aria-label="Cerrar sesión" title="Cerrar sesión"><LogOut size={17} aria-hidden="true" /></button>
+        </div>
+      </div>
+    </aside>
+    <div className="app-body"><header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Abrir menú" onClick={() => setMobileMenu(true)}><Menu size={22} /></button><span>{admin && ['admin', 'owners', 'users', 'audit'].includes(activePage) ? 'Plataforma' : farmName}</span><ChevronRight size={15} /><strong>{navigation.find(nav => nav.id === activePage)?.title}</strong></div>{hasFarm && <form className="global-search" onSubmit={e => { e.preventDefault(); navigate('animals'); }}><Search size={16} /><input aria-label="Buscar animales por nombre o DIIO" placeholder="Buscar nombre o DIIO…" value={search} onChange={e => setSearch(e.target.value)} /><kbd>↵</kbd></form>}<div className="topbar-actions">{allowed.has('events') && <button type="button" className={`topbar-action-btn alert-btn ${activePage === 'events' ? 'active' : ''} ${overview.data?.summary.active_events ? 'has-alerts' : ''}`} aria-label={`Alertas y atención del predio${overview.data?.summary.active_events ? ` (${overview.data.summary.active_events} activas)` : ''}`} title={`Alertas y atención del predio${overview.data?.summary.active_events ? ` (${overview.data.summary.active_events} activas)` : ''}`} onClick={() => navigate('events')}><Bell size={19} />{!!overview.data?.summary.active_events && <span className="topbar-badge alert-badge" aria-hidden="true">{overview.data.summary.active_events}</span>}</button>}{allowed.has('notices') && <button type="button" className={`topbar-action-btn notice-btn ${activePage === 'notices' ? 'active' : ''}`} aria-label="Mis avisos y actividad personal" title="Mis avisos y actividad personal" onClick={() => navigate('notices')}><Inbox size={19} /></button>}</div></header>
       {!connected && <div className="connectivity-banner" role="alert"><WifiOff size={17} /><span>Conexión interrumpida. La información visible puede estar desactualizada.</span><button onClick={overview.reload}>Reintentar</button></div>}
       {overview.data?.farm.environment === 'simulation' && <div className="simulation-banner"><span className="simulation-tag">SIMULACIÓN</span><span>Predio de demostración. Las lecturas con origen <strong>sim</strong> son simuladas.</span></div>}
       <main className="main-content" id="main-content" tabIndex={-1}><ErrorNotice error={contextError} />{contextBusy ? <Loading label="Cambiando al predio autorizado…" /> : <Suspense fallback={<Loading label="Abriendo panel…" />}><div key={`${session.user.id}-${session.user.farm_id}-${role}`}>
@@ -134,7 +214,7 @@ export default function App() {
         {activePage === 'animals' && <AnimalsPage search={search} setSearch={setSearch} canWrite={owner} notify={setToast} />}
         {activePage === 'health' && <HealthPage worker={worker} actorId={session.user.id} notify={setToast} />}
         {activePage === 'changes' && <ChangesPage worker={worker} notify={setToast} />}
-        {activePage === 'team' && <TeamPage admin={admin} notify={setToast} />}
+        {activePage === 'team' && <TeamPage key={session.user.farm_id ?? ''} admin={admin} notify={setToast} />}
         {activePage === 'gateways' && <GatewaysPage notify={setToast} />}
         {activePage === 'hardware' && <HardwarePage farmId={session.user.farm_id ?? ''} />}{activePage === 'devices' && <DevicesPage canWrite={owner} notify={setToast} />}
         {activePage === 'geofences' && <GeofencesPage canWrite={owner} notify={setToast} />}

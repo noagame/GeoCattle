@@ -10,7 +10,7 @@ GeoCattle supervisa ganado por predio. Integra gestión bovina y sanitaria, mapa
 | Interfaz | `frontend/src/`. Revisar `api.ts`, `types.ts` y `v3types.ts` al cambiar contratos que consume la interfaz. |
 | Esquema | `database/migrations/`. `backend/geocattle/migrate.py` aplica los SQL en orden y registra cada migración. |
 | Captura | `adapters/` contiene lectores, parsers y cola de entrega. `scripts/start_capture.py` inicia la captura en el anfitrión. |
-| Arranque | `scripts/docker_project.py`, `compose.yaml`, `compose.usb.yaml` e `infrastructure/`. El prototipo nativo de Windows usa `Abrir-GeoCattle.cmd`. |
+| Arranque | `Abrir-GeoCattle.cmd` inicia el prototipo nativo en Windows. `Abrir-GeoCattle.sh` inicia desarrollo en Linux mediante `scripts/docker_project.py`, `compose.yaml` y `compose.usb.yaml`. |
 | Pruebas | `backend/tests/`, `frontend/tests/` y `qa/`. Los comandos de CI están en [validacion.yml](.github/workflows/validacion.yml). |
 
 ## Contratos que se deben preservar
@@ -116,7 +116,7 @@ Default section order:
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 
-- El README presenta primero el arranque de desarrollo nativo en Windows con `Abrir-GeoCattle.cmd` y `localhost:8084`. Docker y Vite se documentan como flujos alternativos.
+- El README presenta primero los arranques de desarrollo en `localhost:8084`. Windows usa `Abrir-GeoCattle.cmd` y Linux usa `Abrir-GeoCattle.sh` con Docker Compose y `.env.docker`. Vite se documenta para la recarga en caliente.
 
 ## Child DOX Index
 

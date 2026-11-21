@@ -4,6 +4,10 @@ GeoCattle es una aplicación de supervisión bovina con mapas, geocercas, teleme
 
 ## Desarrollo local en el puerto 8084
 
+Clona el repositorio y ejecuta los comandos desde su raíz. [Repositorio GeoCattle](https://github.com/noagame/GeoCattle)
+
+### Windows con el prototipo nativo
+
 En Windows, abre [`Abrir-GeoCattle.cmd`](Abrir-GeoCattle.cmd) desde la raíz del repositorio. El lanzador inicia PostgreSQL/PostGIS, la API y el proceso de alertas, y abre [GeoCattle en localhost:8084](http://localhost:8084/).
 
 El prototipo nativo usa el entorno `development`, la configuración privada `.env.academic`, PostgreSQL/PostGIS local en `127.0.0.1:55434`, un entorno Python `.venv` y el frontend compilado en `frontend/dist`. Si la instalación ya está preparada y necesitas compilar la interfaz, ejecuta desde PowerShell en la raíz:
@@ -16,9 +20,36 @@ Set-Location ..
 .\Abrir-GeoCattle.cmd
 ```
 
-Para el primer arranque, usa la configuración y los binarios locales preparados para el equipo. Docker ofrece un arranque alternativo para instalaciones nuevas. [Desarrollo local](docs/DESARROLLO_LOCAL.md) · [Docker en Windows y Linux](#docker-en-windows-y-linux)
+Para el primer arranque nativo, usa la configuración y los binarios locales preparados para el equipo. Cuando el prototipo crea la cuenta inicial, guarda el acceso en el archivo privado `.runtime/acceso_prototipo.json`. [Desarrollo local en Windows](docs/DESARROLLO_LOCAL.md)
 
-Comprueba la [salud de la API en el puerto 8084](http://localhost:8084/api/v1/health). Usa las credenciales de tu instalación. Cuando el prototipo crea la cuenta inicial, guarda el acceso en el archivo privado `.runtime/acceso_prototipo.json`.
+### Linux con Docker Compose
+
+Necesitas Python 3.11 o posterior, Docker Engine activo y Docker Compose 2 o posterior. Compose construye la interfaz y levanta PostgreSQL/PostGIS, la API y el proceso de alertas en contenedores. [Instalación de Docker Compose](https://docs.docker.com/compose/install/)
+
+Desde la raíz del repositorio, ejecuta el iniciador [`Abrir-GeoCattle.sh`](Abrir-GeoCattle.sh):
+
+```bash
+./Abrir-GeoCattle.sh
+```
+
+También puedes ejecutar `bash Abrir-GeoCattle.sh` o abrirlo desde un gestor de archivos configurado para ejecutar scripts.
+
+El iniciador crea `.env.docker` si falta y configura el acceso en [localhost:8084](http://localhost:8084/). Si hay escritorio, intenta abrir el navegador. El correo inicial es `desarrollo@geocattle.local` y la contraseña se consulta en `ADMIN_PASSWORD` del archivo privado `.env.docker`. Puedes elegir otro correo y nombre para el primer arranque:
+
+```bash
+./Abrir-GeoCattle.sh propietario@example.com "Mi predio"
+```
+
+Si ya usas `.env.docker`, el iniciador reutiliza la base y las credenciales. Para entrar con una cuenta existente, usa su contraseña habitual. La base nueva empieza sin bovinos de demostración y PostgreSQL usa el puerto local `55436` por defecto.
+
+Para consultar el estado o detener los contenedores conservando la base:
+
+```bash
+python3 scripts/docker_project.py status --environment development
+python3 scripts/docker_project.py stop --environment development
+```
+
+En ambos sistemas, [localhost:8084/api/v1/health](http://localhost:8084/api/v1/health) debe responder con `status: ok` y `environment: development`.
 
 ## Estado del sistema
 
@@ -65,8 +96,9 @@ Usa la raíz del repositorio como directorio de trabajo. Para una instalación n
 | Entorno | Archivo privado | Web por defecto | Puerto PostgreSQL |
 |---|---|---|---|
 | Desarrollo nativo en Windows | `.env.academic` | `8084` | `55434` |
+| Desarrollo en Linux con `Abrir-GeoCattle.sh` | `.env.docker` | `8084` | `55436` |
 | Docker con datos de demostración | `.env` | `8080` | `55432` |
-| Docker con hardware físico | `.env.docker` | `8086` | `55436` |
+| Docker de desarrollo con configuración predeterminada | `.env.docker` | `8086` | `55436` |
 
 ### Docker en Windows y Linux
 
@@ -90,6 +122,14 @@ py -3 -m venv .venv-capture
 ```
 
 En Linux usa `python3` y `.venv-capture/bin/python`. Sustituye el correo y el nombre del predio. Para una cuenta nueva, consulta `ADMIN_PASSWORD` en `.env.docker`. Abre [GeoCattle en el puerto 8086](http://localhost:8086/) y registra el collar con su identidad y transporte. Crea la asociación vigente con el bovino para atribuir sus lecturas.
+
+Para capturar por USB en el entorno Linux ya iniciado en el puerto 8084, conecta la receptora y ejecuta desde la raíz:
+
+```bash
+python3 -m venv .venv-capture
+.venv-capture/bin/python -m pip install -r adapters/requirements.txt
+.venv-capture/bin/python scripts/start_capture.py --backend docker --select-mode
+```
 
 Conecta la T3 receptora al anfitrión por USB de datos, enciende el collar y cierra Monitor Serie y Plotter. El capturador detecta la receptora por identidad USB y utiliza `.runtime/docker-capture/`. En Linux el usuario necesita permisos sobre el dispositivo serial. En la primera vinculación, deja conectada una sola receptora y espera un paquete LoRa válido.
 
@@ -116,7 +156,7 @@ El engranaje junto a «Cerrar sesión» abre el perfil personal. La barra latera
 
 En desarrollo y simulación, el administrador entra con **correo y contraseña**. Usa las credenciales de administrador de tu instalación. En el prototipo existente, abre [GeoCattle local](http://localhost:8084/) tras ejecutar `Abrir-GeoCattle.cmd`.
 
-En una instancia Docker nueva, levanta primero los servicios. Define `V3_ADMIN_PASSWORD` en `.env.docker` y crea el administrador con este comando:
+En una instancia Docker nueva, levanta primero los servicios. Define `V3_ADMIN_PASSWORD` en el archivo privado con el que arrancaste y úsalo en `--env-file`. El ejemplo usa `.env.docker`, el mismo archivo del iniciador de Linux:
 
 ```text
 docker compose --env-file .env.docker -f compose.yaml -f compose.usb.yaml --profile tools run --rm --no-deps seed python -m geocattle.seed_v3 --admin-email administrador@example.com

@@ -579,3 +579,5 @@ app.include_router(v3_router)
 
 from .hardware_api import router as hardware_router
 app.include_router(hardware_router)
+from .v3_animal_reports import router as animal_reports_router
+app.include_router(animal_reports_router)

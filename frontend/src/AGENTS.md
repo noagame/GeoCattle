@@ -7,6 +7,9 @@
 ## Contratos locales
 
 - Reutiliza `api.ts` al llamar al backend y actualiza `types.ts` o `v3types.ts` junto con el contrato. Conserva el contexto del predio al cambiar consultas o acciones y apóyate en la autorización del backend.
+- El formulario sanitario obtiene las reglas de productos y vías de `/v3/health/product-policies` y adapta los campos al evento. Al corregir un evento que admite productos, conserva los datos ya registrados, incluidos el registro del producto, el lote y el fundamento del resguardo. Si una vacuna histórica figura con vía oral, deja su selector vacío para que se indique la vía usada. La agenda de vacunación y antibiótico ofrece eventos efectivos compatibles y conserva el tipo planificado al completar la atención.
+- **Reportes del rebaño** (`#reports`) consulta y descarga registros con los filtros aplicados a la vista previa. La ficha sanitaria puede abrir esa página con el bovino preseleccionado mediante `#reports?animal=<id>`.
+- Para dueño y administrador, **Reportes del rebaño** abre los totales del predio y ofrece alertas agrupadas y rankings con evidencia de cobertura. La descarga conserva el período, la agrupación y el tipo de alerta de la vista previa.
 - En geocercas, conserva la sincronización entre vértices y coordenadas y la función de deshacer. En telemetría, conserva la diferencia entre una posición ausente, un dato previo y una lectura nueva. [Geocercas y alertas](../../docs/CORRECCIONES_GEOCERCAS_ALERTAS_2026-10-29.md) · [Telemetría](../../docs/VISUALIZACION_TELEMETRIA.md)
 - Estructura y navegación de la barra lateral:
   - La barra lateral ocupa la altura completa del viewport (`100vh`) sin scroll general. La cabecera (marca y selector de predio) y el pie (estado y usuario) permanecen fijos.

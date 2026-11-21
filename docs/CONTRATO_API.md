@@ -121,6 +121,30 @@ Las pruebas de referencia están en `qa/test_lora_json.py`, `qa/test_lora_usb.py
 
 Invitación manual, válida durante 48 horas y de un uso. Sin registro público libre ni envío automático de correo. Guía: [USUARIOS_Y_REGISTRO.md](USUARIOS_Y_REGISTRO.md).
 
+## Ficha y agenda sanitaria
+
+- `GET /v3/health/product-policies` devuelve las reglas para el formulario autenticado. Cada tipo que admite productos indica si son obligatorios (`required`) y las vías disponibles (`routes`). En un procedimiento las vías son texto libre (`routes: null`).
+- `POST /v3/changes` exige al menos un producto para vacuna y antibiótico. La vía oral figura en el catálogo de antibiótico. Procedimiento permite registrar productos cuando hubo una aplicación. Los demás eventos y las anulaciones deben omitir `treatments` o enviarlo vacío. Al corregir, se puede conservar una vía histórica del mismo producto y tipo de evento, salvo la vía oral para vacuna.
+- La aprobación vuelve a validar las reglas. Las propuestas históricas incompatibles se pueden consultar y rechazar desde la bandeja del dueño.
+- Al completar una atención se conserva el tipo del plan vigente. `completed_event_id` identifica un evento efectivo de la misma permanencia. Para vacunación y antibiótico, el evento debe coincidir con el tipo planificado.
+- `GET /v3/animals/{id}/record` devuelve los productos completos de cada evento sanitario incluido en la ficha, con los campos de lote, registro del producto y fundamento del resguardo cuando constan.
+
+## Reportes del rebaño
+
+- `GET /v3/animal-reports/{kind}` consulta el predio activo para dueño, administrador con predio, veterinario o trabajador. `kind` admite `inventario`, `sanidad`, `agenda`, `mediciones`, `observaciones`, `asignaciones`, `alertas` y `actividad`. `animal_id` es opcional y se valida dentro del predio.
+- `start` y `end` son fechas inclusivas en la zona horaria del predio. Una fecha consulta ese día. Sin fechas se usa el día actual del predio. El período admite hasta 366 días. El inventario muestra el estado actual.
+- El JSON devuelve `columns`, hasta 25 filas en `items`, `total`, `timezone`, `start` y `end`. `format=csv` descarga las filas del mismo filtro en UTF-8 con BOM. Si el resultado supera 50.000 filas, la API responde 422 para acotar el filtro. Un resultado vacío devuelve columnas y cero filas.
+- Sanidad incluye únicamente eventos efectivos. Cada producto tiene una fila con el mismo identificador del evento. Los eventos sin producto ocupan una fila. Agenda muestra la última versión de cada atención, incluidas completadas y canceladas, por fecha planificada. Asignaciones muestra vigencias que intersectan el período. Alertas usa fecha de apertura. Actividad agrupa por día, bovino y origen. Las cifras de movimiento indican muestras.
+
+### Indicadores del predio
+
+Los reportes `totales`, `serie-alertas`, `ranking-movimiento` y `ranking-salidas` usan la misma URL y formatos que los registros. Requieren sesión de dueño o administrador con un predio activo. El filtro `animal_id` se reserva para los reportes de registros.
+
+- `totales` devuelve el corte actual con bovinos activos de permanencia vigente, collares inventariados y asignados, y el número y nombre de los módulos habilitados.
+- `serie-alertas` admite `grain=day|week|month` y `alert_type=all` o un tipo de alerta. Cuenta aperturas por hora local, con semanas desde el lunes e intervalos recortados al rango solicitado. Incluye intervalos con cero aperturas y días con lecturas ligadas a una asignación.
+- `ranking-movimiento` usa la proporción de muestras en movimiento entre las clasificadas como movimiento o reposo. `ranking-salidas` cuenta alertas `escape` abiertas en el período e indica sus geocercas. Para la cobertura de salidas usa posiciones GNSS válidas durante una asignación de pastoreo.
+- Para asignar un puesto, los rankings de la primera versión exigen 10 muestras válidas para su métrica y cobertura de al menos la mitad de los días transcurridos del período. El ranking de salidas además exige una alerta registrada. Los empates comparten puesto y las filas con cobertura insuficiente muestran sus cifras observadas sin puesto.
+
 ## Solicitudes y avisos
 
 - `POST /auth/account/close-request` con `{password,code?,reason}` reautentica al titular y devuelve `{requested,request_id,status}`. Si hay una solicitud de cierre pendiente, devuelve su folio.

@@ -1,6 +1,7 @@
 """Integración V3: roles, aislamiento, MFA y cambios atómicos sobre PostgreSQL.
 Los datos y las métricas de cada prueba se revierten en una transacción externa.
 """
+import json
 import os
 import secrets
 from contextlib import ExitStack, contextmanager
@@ -18,11 +19,17 @@ from geocattle.main import app
 from geocattle.models import Animal, AnimalHolding, Farm, FarmMembership, OwnerAccount, RuleSettings, User, utcnow
 from geocattle.security import hash_password, token_hash
 from geocattle.settings import settings
+from geocattle.v3_api import HEALTH_PRODUCT_POLICIES
 from geocattle.v3_security import totp
 
 pytestmark=pytest.mark.skipif(not os.environ.get('TEST_DATABASE_URL'),reason='Requiere PostgreSQL/PostGIS V3 de prueba')
 PASSWORD='test-only-v3-strong-password'
 PASSWORD_HASH=hash_password(PASSWORD)
+VACCINE_TREATMENT = {
+    'product_name': 'Producto ficticio QA', 'dose_value': 1, 'dose_unit': 'mL',
+    'route': 'Subcutánea', 'product_registration': 'REG-QA', 'batch_number': 'LOTE-QA',
+    'withdrawal_basis': 'Documento QA',
+}
 
 
 @pytest.fixture
@@ -176,7 +183,8 @@ def test_worker_pending_health_does_not_mutate_until_owner_approval(v3):
     worker=v3.client('worker');owner=v3.client('owner')
     other_owner=v3.client('other_owner');vet=v3.client('vet')
     counts='/api/v1/v3/activity-counts'
-    payload={'event_type':'vaccination','description':'Vacuna aplicada y reportada por trabajador'}
+    payload={'event_type':'vaccination','description':'Vacuna aplicada y reportada por trabajador',
+             'treatments':[VACCINE_TREATMENT]}
     submitted=worker.post('/api/v1/v3/changes',json=body(v3,'health_record',payload))
     assert submitted.status_code==201,submitted.text
     assert submitted.json()['status']=='pending'
@@ -206,6 +214,7 @@ def test_worker_pending_health_does_not_mutate_until_owner_approval(v3):
     after=owner.get(f"/api/v1/v3/animals/{v3.animals['owner'].id}/record")
     assert after.status_code==200
     assert len(after.json()['health_events'])==1 and after.json()['health_events'][0]['effective'] is True
+    assert after.json()['health_events'][0]['treatments'][0]['batch_number'] == 'LOTE-QA'
     assert after.json()['pending_health_warning'] is False
     assert v3.animals['owner'].version==2
     repeat=owner.post(f'/api/v1/v3/changes/{req}/decision',json={'decision':'approved'})
@@ -452,7 +461,8 @@ def test_worker_can_propose_own_health_correction_but_not_veterinary_report(v3):
     owner = v3.client('owner')
     vet = v3.client('vet')
     submitted = worker.post('/api/v1/v3/changes', json=body(v3, 'health_record', {
-        'event_type': 'vaccination', 'description': 'Reporte propio de vacuna administrada'}))
+        'event_type': 'vaccination', 'description': 'Reporte propio de vacuna administrada',
+        'treatments': [VACCINE_TREATMENT]}))
     assert submitted.status_code == 201 and submitted.json()['status'] == 'pending'
     approved = owner.post(f"/api/v1/v3/changes/{submitted.json()['id']}/decision", json={'decision': 'approved'})
     assert approved.status_code == 200, approved.text
@@ -463,16 +473,154 @@ def test_worker_can_propose_own_health_correction_but_not_veterinary_report(v3):
     assert own['recorded_by'] == str(v3.users['worker'].id)
     correction = worker.post('/api/v1/v3/changes', json=body(v3, 'health_record', {
         'event_type': 'vaccination', 'operation': 'correct', 'target_event_id': own_event,
-        'description': 'Corrección de mi propio reporte'}))
+        'description': 'Corrección de mi propio reporte', 'treatments': [VACCINE_TREATMENT]}))
     assert correction.status_code == 201 and correction.json()['status'] == 'pending', correction.text
     veterinary = vet.post('/api/v1/v3/changes', json=body(v3, 'health_record', {
-        'event_type': 'vaccination', 'description': 'Vacunación registrada por veterinario'}))
+        'event_type': 'vaccination', 'description': 'Vacunación registrada por veterinario',
+        'treatments': [VACCINE_TREATMENT]}))
     assert veterinary.status_code == 201 and veterinary.json()['status'] == 'applied'
     for operation in ('correct', 'void'):
         denied = worker.post('/api/v1/v3/changes', json=body(v3, 'health_record', {
             'event_type': 'vaccination', 'operation': operation,
             'target_event_id': veterinary.json()['entity_id'], 'description': 'Intento sobre reporte ajeno'}))
         assert denied.status_code == 403, denied.text
+
+
+@pytest.mark.parametrize('role', ['vet', 'worker'])
+def test_vaccination_requires_a_named_product(v3, role):
+    client = v3.client(role)
+    path = '/api/v1/v3/changes'
+    vaccination = {'event_type': 'vaccination', 'description': 'Vacuna de QA'}
+    assert client.post(path, json=body(v3, 'health_record', vaccination)).status_code == 422
+    vaccination['treatments'] = [{**VACCINE_TREATMENT, 'product_name': '   '}]
+    assert client.post(path, json=body(v3, 'health_record', vaccination)).status_code == 422
+    assert client.get(path).json()['total'] == 0
+
+
+@pytest.mark.parametrize(('kind', 'route'), [('vaccination', 'Intramamaria'), ('vaccination', 'Oral'), ('antibiotic', 'Intranasal')])
+def test_health_event_uses_its_own_product_routes(v3, kind, route):
+    vet = v3.client('vet')
+    policy = vet.get('/api/v1/v3/health/product-policies').json()
+    assert policy[kind]['required']
+    assert route not in policy[kind]['routes']
+    event = {'event_type': kind, 'description': 'Administración QA'}
+    path = '/api/v1/v3/changes'
+    assert vet.post(path, json=body(v3, 'health_record', event)).status_code == 422
+    event['treatments'] = [{**VACCINE_TREATMENT, 'route': route}]
+    assert vet.post(path, json=body(v3, 'health_record', event)).status_code == 422
+    valid_route = 'Oral' if kind == 'antibiotic' else 'Subcutánea'
+    assert valid_route in policy[kind]['routes']
+    event['treatments'] = [{**VACCINE_TREATMENT, 'route': valid_route}]
+    assert vet.post(path, json=body(v3, 'health_record', event)).status_code == 201
+
+
+@pytest.mark.parametrize('kind', ['examination', 'pathology', 'diagnosis', 'injury', 'death', 'observation'])
+def test_health_events_without_products_reject_treatments(v3, kind):
+    vet = v3.client('vet')
+    event = {'event_type': kind, 'description': 'Registro QA'}
+    path = '/api/v1/v3/changes'
+    assert vet.post(path, json=body(v3, 'health_record', {**event, 'treatments': [VACCINE_TREATMENT]})).status_code == 422
+    assert vet.post(path, json=body(v3, 'health_record', event)).status_code == 201
+
+
+def test_procedure_allows_optional_product_but_void_rejects_it(v3):
+    vet = v3.client('vet')
+    event = {'event_type': 'procedure', 'description': 'Procedimiento QA'}
+    path = '/api/v1/v3/changes'
+    assert vet.post(path, json=body(v3, 'health_record', event)).status_code == 201
+    treatment = {**VACCINE_TREATMENT, 'route': 'Tópica'}
+    result = vet.post(path, json=body(v3, 'health_record', {**event, 'treatments': [treatment]}))
+    assert result.status_code == 201, result.text
+    voided = {**event, 'operation': 'void', 'target_event_id': result.json()['entity_id']}
+    assert vet.post(path, json=body(v3, 'health_record', {**voided, 'treatments': [treatment]})).status_code == 422
+    assert vet.post(path, json=body(v3, 'health_record', voided)).status_code == 201
+
+
+@pytest.mark.parametrize(('route', 'correction_status'), [('S.C.', 201), ('Oral', 422)])
+def test_correction_checks_historical_route_of_the_same_product(v3, monkeypatch, route, correction_status):
+    vet = v3.client('vet')
+    path = '/api/v1/v3/changes'
+    event = {'event_type': 'vaccination', 'description': 'Vacunación QA', 'treatments': [VACCINE_TREATMENT]}
+    historical = {**VACCINE_TREATMENT, 'route': route}
+    vaccine_policy = HEALTH_PRODUCT_POLICIES['vaccination']
+    with monkeypatch.context() as old_policy:
+        old_policy.setitem(vaccine_policy, 'routes', (*vaccine_policy['routes'], historical['route']))
+        result = vet.post(path, json=body(v3, 'health_record', {**event, 'treatments': [historical]}))
+    assert result.status_code == 201, result.text
+    original = result.json()['entity_id']
+
+    correction = {**event, 'operation': 'correct', 'target_event_id': original, 'description': 'Corrección QA'}
+    changed_name = {**historical, 'product_name': 'Otro producto'}
+    assert vet.post(path, json=body(v3, 'health_record', {**correction, 'treatments': [changed_name]})).status_code == 422
+    result = vet.post(path, json=body(v3, 'health_record', {**correction, 'treatments': [historical]}))
+    assert result.status_code == correction_status, result.text
+    if correction_status == 422:
+        corrected = vet.post(path, json=body(v3, 'health_record', {**correction, 'treatments': [VACCINE_TREATMENT]}))
+        assert corrected.status_code == 201, corrected.text
+    record = vet.get(f"/api/v1/v3/animals/{v3.animals['owner'].id}/record").json()
+    assert sorted(t['route'] for t in record['treatments']) == sorted([route, route if correction_status == 201 else VACCINE_TREATMENT['route']])
+
+
+def test_health_record_returns_all_products_of_listed_events(v3):
+    vet = v3.client('vet')
+    path = '/api/v1/v3/changes'
+    for _ in range(11):
+        event = vet.post(path, json=body(v3, 'health_record', {
+            'event_type': 'vaccination', 'description': 'Tratamientos ficticios QA',
+            'treatments': [VACCINE_TREATMENT] * 20,
+        }))
+        assert event.status_code == 201, event.text
+    record = vet.get(f"/api/v1/v3/animals/{v3.animals['owner'].id}/record").json()
+    assert len(record['health_events']) == 11
+    assert len(record['treatments']) == 220
+    assert all(len(event['treatments']) == 20 for event in record['health_events'])
+
+
+def test_legacy_vaccination_without_product_remains_reviewable_but_cannot_apply(v3):
+    owner = v3.client('owner')
+    worker = v3.client('worker')
+    animal = v3.animals['owner']
+    payload = body(v3, 'health_record', {'event_type': 'vaccination', 'description': 'Propuesta antigua'})
+    ident = v3.db.execute(text("""INSERT INTO change_requests(
+        farm_id,requested_by,membership_id,action,animal_holding_id,animal_id,expected_version,payload,idempotency_key
+        ) SELECT h.farm_id,:u,:m,'health_record',h.id,h.animal_id,:v,cast(:p AS jsonb),:k
+        FROM animal_holdings h WHERE h.animal_id=:a RETURNING id"""), {
+        'u': v3.users['worker'].id, 'm': v3.members['worker'].id, 'a': animal.id,
+        'v': animal.version, 'p': json.dumps(payload['payload']), 'k': UUID(payload['idempotency_key']),
+    }).scalar_one()
+    v3.db.commit()
+
+    retry = worker.post('/api/v1/v3/changes', json=payload)
+    assert retry.json() == {'id': str(ident), 'status': 'pending'}
+    path = f'/api/v1/v3/changes/{ident}/decision'
+    assert owner.post(path, json={'decision': 'approved'}).status_code == 422
+    rejected = owner.post(path, json={'decision': 'rejected', 'reason': 'Completar el producto en un nuevo reporte'})
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()['status'] == 'rejected'
+
+
+@pytest.mark.parametrize('kind', ['vaccination', 'antibiotic'])
+def test_complete_schedule_uses_original_kind_and_matching_evidence(v3, kind):
+    vet = v3.client('vet')
+    path = '/api/v1/v3/changes'
+    planned = {'kind': kind, 'description': 'Atención QA', 'due_at': (utcnow() + timedelta(days=1)).isoformat()}
+    created = vet.post(path, json=body(v3, 'health_schedule', planned))
+    assert created.status_code == 201, created.text
+    scheduled = {**planned, 'operation': 'complete', 'target_schedule_id': created.json()['entity_id']}
+    observation = vet.post(path, json=body(v3, 'health_record', {'event_type': 'observation', 'description': 'Control QA'}))
+    assert observation.status_code == 201, observation.text
+    evidence = {**scheduled, 'completed_event_id': observation.json()['entity_id']}
+    assert vet.post(path, json=body(v3, 'health_schedule', evidence)).status_code == 422
+    assert vet.post(path, json=body(v3, 'health_schedule', {**evidence, 'kind': 'checkup'})).status_code == 422
+
+    matching = vet.post(path, json=body(v3, 'health_record', {
+        'event_type': kind, 'description': 'Administración QA', 'treatments': [VACCINE_TREATMENT]}))
+    assert matching.status_code == 201, matching.text
+    completed = vet.post(path, json=body(v3, 'health_schedule', {**evidence, 'completed_event_id': matching.json()['entity_id']}))
+    assert completed.status_code == 201, completed.text
+    record = vet.get(f"/api/v1/v3/animals/{v3.animals['owner'].id}/record").json()
+    assert sum(s['operation'] == 'complete' for s in record['schedules']) == 1
+    assert not any(s['effective'] for s in record['schedules'])
 
 
 def test_veterinarian_cannot_change_lifecycle_or_battery_or_allocate_collars(v3):

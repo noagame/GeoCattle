@@ -486,6 +486,51 @@ def lock_change(db,key):
     execute(db,'SELECT pg_advisory_xact_lock(hashtextextended(:key,0))',key=key)
 
 
+HEALTH_PRODUCT_POLICIES = {
+    'vaccination': {'required': True, 'routes': ('Intramuscular', 'Subcutánea', 'Intranasal')},
+    'antibiotic': {'required': True, 'routes': ('Intramuscular', 'Subcutánea', 'Intravenosa', 'Intramamaria', 'Oral')},
+    'procedure': {'required': False, 'routes': None},
+}
+
+
+@router.get('/health/product-policies')
+def health_product_policies(_user=Depends(current_user)):
+    return HEALTH_PRODUCT_POLICIES
+
+
+def validate_health_products(db, payload, farm_id, holding_id):
+    event_type = payload['event_type']
+    treatments = payload.get('treatments', [])
+    policy = HEALTH_PRODUCT_POLICIES.get(event_type) if payload.get('operation') != 'void' else None
+    if policy is None:
+        if treatments:
+            raise HTTPException(422, 'Este registro sanitario no admite productos administrados')
+        return
+    if policy['required'] and not treatments:
+        raise HTTPException(422, 'Registra al menos un producto aplicado para este tipo de evento')
+    if any(not t['product_name'].strip() or not t['route'].strip() or not t['dose_unit'].strip() for t in treatments):
+        raise HTTPException(422, 'Completa el nombre, la unidad de dosis y la vía de cada producto')
+    if not policy['routes']:
+        return
+
+    allowed_routes = {route.casefold() for route in policy['routes']}
+    unlisted = {(t['product_name'], t['route']) for t in treatments if t['route'].strip().casefold() not in allowed_routes}
+    if not unlisted:
+        return
+    if event_type == 'vaccination' and any(route.strip().casefold() == 'oral' for _, route in unlisted):
+        raise HTTPException(422, 'Selecciona una vía de administración de la lista para la vacunación')
+    # Keep an unchanged historical product route when correcting the same event type.
+    target = payload.get('target_event_id')
+    if payload.get('operation') == 'correct' and target:
+        original = rows(db, """SELECT t.product_name,t.route FROM health_treatments t
+            JOIN health_events e ON t.health_event_id=e.id AND t.farm_id=e.farm_id
+            WHERE e.id=:e AND e.farm_id=:f AND e.animal_holding_id=:h AND e.event_type=:kind""",
+            e=target,f=farm_id,h=holding_id,kind=event_type)
+        unlisted.difference_update((t['product_name'], t['route']) for t in original)
+    if unlisted:
+        raise HTTPException(422, 'Selecciona una vía de administración de la lista para este tipo de evento')
+
+
 def apply_change(db,r,actor,decision,reason=None,trust_id=None):
     # Parent animal lock serializes all clinical/profile updates and optimistic versions.
     animal=None
@@ -536,10 +581,21 @@ def apply_change(db,r,actor,decision,reason=None,trust_id=None):
         entity_type='health_events'
     elif r['action']=='health_schedule':
         target=p.get('target_schedule_id');completed=p.get('completed_event_id')
+        plan = None
         if target:
-            old=one(db,'SELECT * FROM health_schedules WHERE id=:i AND farm_id=:f AND animal_holding_id=:h',i=target,f=r['farm_id'],h=r['animal_holding_id'])
-            if not old or one(db,'SELECT id FROM health_schedules WHERE target_schedule_id=:i',i=target):raise HTTPException(409,'Plan ajeno o ya sustituido')
-        if completed and not one(db,"SELECT id FROM health_events e WHERE e.id=:i AND e.animal_holding_id=:h AND e.operation<>'void' AND NOT EXISTS(SELECT 1 FROM health_events n WHERE n.target_event_id=e.id)",i=completed,h=r['animal_holding_id']):raise HTTPException(422,'Selecciona evento efectivo del mismo animal')
+            plan=one(db,'SELECT * FROM health_schedules WHERE id=:i AND farm_id=:f AND animal_holding_id=:h',i=target,f=r['farm_id'],h=r['animal_holding_id'])
+            if not plan or plan['operation'] not in ('plan','replace') or one(db,'SELECT id FROM health_schedules WHERE target_schedule_id=:i',i=target):
+                raise HTTPException(409,'Selecciona una atención vigente del mismo bovino')
+        if completed:
+            if not plan or p['kind'] != plan['kind']:
+                raise HTTPException(422, 'Conserva el tipo de la atención al completarla')
+            evidence = one(db, """SELECT event_type FROM effective_health_events
+                WHERE id=:i AND farm_id=:f AND animal_holding_id=:h""",
+                i=completed, f=r['farm_id'], h=r['animal_holding_id'])
+            if not evidence:
+                raise HTTPException(422, 'Selecciona un evento sanitario efectivo del mismo bovino')
+            if plan['kind'] in ('vaccination', 'antibiotic') and evidence['event_type'] != plan['kind']:
+                raise HTTPException(422, 'El evento sanitario debe corresponder al tipo de atención planificada')
         execute(db,'INSERT INTO health_schedules(id,farm_id,animal_holding_id,request_id,kind,description,due_at,operation,target_schedule_id,completed_event_id,created_by) VALUES(:i,:f,:h,:r,:k,:d,:at,:o,:t,:e,:u)',**common,k=p['kind'],d=p['description'],at=datetime.fromisoformat(p['due_at']),o=p.get('operation','plan'),t=target,e=completed)
         entity_type='health_schedules'
     if animal:animal.version+=1;db.flush()
@@ -582,6 +638,8 @@ def submit(body:ChangeIn,user=Depends(current_user),db=Depends(get_db,scope='fun
         if not original or original['event_type'] not in ('vaccination','antibiotic','observation') or original['recorded_by']!=user.id:raise HTTPException(403,'El trabajador solo puede corregir sus propios reportes sanitarios permitidos')
     m=membership(db,user) if user.role not in ('owner','admin') else None
     if user.role not in ('owner','admin') and not m:raise HTTPException(403,'Membresía no vigente')
+    if body.action == 'health_record':
+        validate_health_products(db, p, farm_id, holding['id'])
     ident=uuid4()
     execute(db,'INSERT INTO change_requests(id,farm_id,requested_by,membership_id,action,animal_holding_id,animal_id,device_id,expected_version,payload,idempotency_key) VALUES(:i,:f,:u,:m,:a,:h,:animal,:d,:v,CAST(:p AS jsonb),:k)',i=ident,f=farm_id,u=user.id,m=m['id'] if m else None,a=body.action,h=holding['id'] if holding else None,animal=body.animal_id if holding else None,d=body.device_id,v=body.expected_version,p=json.dumps(p),k=body.idempotency_key)
     r=one(db,'SELECT * FROM change_requests WHERE id=:i',i=ident)
@@ -604,6 +662,8 @@ def decide(ident:UUID,body:DecisionIn,user=Depends(owner),db=Depends(get_db,scop
         author=one(db,'SELECT active FROM users WHERE id=:u',u=r['requested_by'])
         if not author or not author['active']:raise HTTPException(409,'El solicitante fue desactivado; rechaza o regulariza la solicitud')
         if r['membership_id'] and not one(db,'SELECT id FROM farm_memberships WHERE id=:i AND valid_from<=now() AND (valid_to IS NULL OR valid_to>now())',i=r['membership_id']):raise HTTPException(409,'La membresía del solicitante ya no está vigente')
+        if r['action'] == 'health_record':
+            validate_health_products(db, r['payload'], r['farm_id'], r['animal_holding_id'])
         return apply_change(db,r,user,'approved',body.reason)
     if not body.reason or not body.reason.strip():raise HTTPException(422,'Rechazar requiere motivo')
     execute(db,"INSERT INTO change_decisions(request_id,decided_by,decision,reason) VALUES(:r,:u,'rejected',:n)",r=ident,u=user.id,n=body.reason)
@@ -618,8 +678,13 @@ def record(ident:UUID,user=Depends(current_user),db=Depends(get_db,scope='functi
     ids=[x['id'] for x in h]
     if not ids:return {'animal':a,'health_events':[],'treatments':[],'schedules':[],'measurements':[],'reports':[],'pending':[]}
     events=rows(db,"SELECT e.*,coalesce(nullif(u.full_name,''),u.username) AS author_name,NOT EXISTS(SELECT 1 FROM health_events n WHERE n.target_event_id=e.id) AND e.operation<>'void' AS effective FROM health_events e JOIN users u ON u.id=e.recorded_by WHERE e.animal_holding_id=ANY(:ids) ORDER BY e.occurred_at DESC LIMIT 100",ids=ids)
-    treatments=rows(db,'SELECT t.* FROM health_treatments t JOIN health_events e ON e.id=t.health_event_id WHERE e.animal_holding_id=ANY(:ids) ORDER BY t.administered_at DESC LIMIT 200',ids=ids)
-    for event in events:event['treatments']=[t for t in treatments if t['health_event_id']==event['id']]
+    treatments=rows(db,'SELECT * FROM health_treatments WHERE health_event_id=ANY(:ids) ORDER BY administered_at DESC,id',
+        ids=[event['id'] for event in events]) if events else []
+    treatments_by_event = {}
+    for item in treatments:
+        treatments_by_event.setdefault(item['health_event_id'], []).append(item)
+    for event in events:
+        event['treatments'] = treatments_by_event.get(event['id'], [])
     schedules=rows(db,'SELECT s.*,NOT EXISTS(SELECT 1 FROM health_schedules n WHERE n.target_schedule_id=s.id) AND s.operation IN (\'plan\',\'replace\') AS effective FROM health_schedules s WHERE s.animal_holding_id=ANY(:ids) ORDER BY effective DESC,due_at LIMIT 100',ids=ids)
     pending=rows(db,"SELECT r.id,r.action,r.payload,r.created_at FROM change_requests r WHERE r.animal_id=:a AND r.farm_id=:f AND NOT EXISTS(SELECT 1 FROM change_decisions d WHERE d.request_id=r.id) ORDER BY r.created_at DESC LIMIT 100",a=ident,f=user.farm_id)
     return {'animal':a,'health_events':events,'treatments':treatments,'schedules':schedules,

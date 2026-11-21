@@ -9,7 +9,12 @@ export type Change = { id: string; action: string; animal_id?: string | null; de
 export type Gateway = { id: string; name: string; gateway_eui: string; status: 'installed' | 'maintenance' | 'retired'; version: number; longitude?: number | null; latitude?: number | null; last_seen_at?: string | null; installed_at?: string | null; archived_at?: string | null; archived_by?: string | null; reception_count?: number };
 export type GatewayReception = { telemetry_id: string; gateway_id: string; hardware_id: string; observed_at: string; reception_at: string; server_received_at: string; rssi_dbm: number | string | null; snr_db: number | string | null; device_id: string; animal_id: string | null; source: string };
 export type ClinicalEvent = { id: string; effective?: boolean; recorded_by?: string; author_name?: string; treatments?: Treatment[]; event_type: string; description?: string; diagnosis?: string | null; operation?: string; target_event_id?: string | null; occurred_at?: string; created_at?: string; created_by?: string };
-export type Treatment = { id: string; health_event_id: string; product_name: string; dose_value?: number | string; dose_unit?: string; route?: string; administered_at?: string; withdrawal_meat_until?: string | null; withdrawal_milk_until?: string | null };
+export type Treatment = {
+  id: string; health_event_id: string; product_name: string; dose_value?: number | string;
+  dose_unit?: string; route?: string; administered_at?: string;
+  withdrawal_meat_until?: string | null; withdrawal_milk_until?: string | null;
+  product_registration?: string | null; batch_number?: string | null; withdrawal_basis?: string | null;
+};
 export type Schedule = { id: string; effective?: boolean; kind: string; description: string; due_at: string; operation?: string; target_schedule_id?: string | null; completed_event_id?: string | null; created_at?: string };
 export type Measurement = { id: string; measured_at?: string; observed_at?: string; weight_kg?: number | null; height_cm?: number | null };
 export type AnimalRecord = { animal: Omit<Animal, 'status'> & { status: string; breed?: string; color?: string; sex?: string; birth_date?: string | null; lifecycle_status?: string; version?: number; row_version?: number }; health_events: ClinicalEvent[]; treatments: Treatment[]; schedules: Schedule[]; measurements: Measurement[]; reports: { id: string; description: string; reported_at?: string; occurred_at?: string; created_at?: string }[]; pending: Change[] };

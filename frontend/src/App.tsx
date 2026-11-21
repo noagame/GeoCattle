@@ -1,6 +1,6 @@
 import { HardwarePage } from './HardwarePage';
 import { useEffect, useState, lazy, Suspense, type FormEvent } from 'react';
-import { Activity, ArrowDownLeft, ArrowRight, Bell, Building2, Check, ChevronDown, ChevronRight, CircleHelp, ClipboardList, Fence, FileHeart, Inbox, LayoutDashboard, LogOut, MapPin, Menu, Radio, RefreshCw, Search, Settings, Settings2, ShieldCheck, Sprout, Users, Wifi, WifiOff, X, type LucideIcon } from 'lucide-react';
+import { Activity, ArrowDownLeft, ArrowRight, Bell, Building2, Check, ChevronDown, ChevronRight, CircleHelp, ClipboardList, Fence, FileHeart, FileSpreadsheet, Inbox, LayoutDashboard, LogOut, MapPin, Menu, Radio, RefreshCw, Search, Settings, Settings2, ShieldCheck, Sprout, Users, Wifi, WifiOff, X, type LucideIcon } from 'lucide-react';
 import { api, ApiError, age, date, message, setSession, useData, write } from './api';
 import type { Animal, List, Geofence, Overview, Session } from './types';
 import { Badge, Empty, ErrorNotice, Loading, Panel, PanelTitle, PageTitle, eventLabels } from './ui';
@@ -26,9 +26,10 @@ const TeamPage = lazy(() => import('./V3Farm').then(module => ({ default: module
 const UserNotifications = lazy(() => import('./V3Farm').then(module => ({ default: module.UserNotifications })));
 const ChangesPage = lazy(() => import('./V3Health').then(module => ({ default: module.ChangesPage })));
 const HealthPage = lazy(() => import('./V3Health').then(module => ({ default: module.HealthPage })));
+const AnimalReportsPage = lazy(() => import('./V3Reports').then(module => ({ default: module.AnimalReportsPage })));
 const SupportPage = lazy(() => import('./V3Support').then(module => ({ default: module.SupportPage })));
 
-type Page = 'hardware' | 'overview' | 'animals' | 'devices' | 'geofences' | 'events' | 'operations' | 'settings' | 'admin' | 'owners' | 'users' | 'farms' | 'team' | 'changes' | 'health' | 'gateways' | 'profile' | 'notices' | 'audit' | 'support' | 'support-admin';
+type Page = 'hardware' | 'overview' | 'animals' | 'devices' | 'geofences' | 'events' | 'operations' | 'settings' | 'admin' | 'owners' | 'users' | 'farms' | 'team' | 'changes' | 'health' | 'reports' | 'gateways' | 'profile' | 'notices' | 'audit' | 'support' | 'support-admin';
 export type Notify = (message: string) => void;
 const allNavigation = [
   { id: 'hardware' as Page, title: 'Recepción de collares', icon: Radio },
@@ -41,6 +42,7 @@ const allNavigation = [
   { id: 'farms' as Page, title: 'Mis predios', icon: Building2 },
   { id: 'animals' as Page, title: 'Bovinos y monitoreo', icon: Sprout },
   { id: 'health' as Page, title: 'Fichas y agenda sanitaria', icon: FileHeart },
+  { id: 'reports' as Page, title: 'Reportes del rebaño', icon: FileSpreadsheet },
   { id: 'changes' as Page, title: 'Aprobaciones', icon: ClipboardList },
   { id: 'team' as Page, title: 'Equipo y permisos', icon: Users },
   { id: 'devices' as Page, title: 'Collares y dispositivos', icon: Radio },
@@ -59,7 +61,7 @@ type NavigationGroup = { id: string; title: string; icon: LucideIcon; pages: Pag
 const sidebarLayout: (Page | NavigationGroup)[] = [
   'admin',
   'overview',
-  { id: 'herd', title: 'Rebaño y salud', icon: Sprout, pages: ['animals', 'health'] },
+  { id: 'herd', title: 'Rebaño y salud', icon: Sprout, pages: ['animals', 'health', 'reports'] },
   { id: 'land', title: 'Territorio', icon: MapPin, pages: ['farms', 'geofences'] },
   { id: 'equipment', title: 'Dispositivos', icon: Radio, pages: ['hardware', 'devices', 'gateways'] },
   { id: 'management', title: 'Gestión del predio', icon: Activity, pages: ['team', 'changes', 'operations', 'settings', 'audit'] },
@@ -158,6 +160,7 @@ export default function App() {
   const [pageName, routeParams] = route.split('?', 2);
   const page = allNavigation.find(nav => nav.id === pageName)?.id ?? 'overview';
   const requestId = new URLSearchParams(routeParams).get('request');
+  const reportAnimal = new URLSearchParams(routeParams).get('animal') ?? '';
   const [mobileMenu, setMobileMenu] = useState(false); const [connected, setConnected] = useState(true); const [contextBusy, setContextBusy] = useState(false); const [contextError, setContextError] = useState(''); const [search, setSearch] = useState(''); const [toast, setToast] = useState('');
   const admin = session?.user.role === 'admin'; const hasFarm = !!session?.user.farm_id;
   const role = session?.user.role; const owner = role === 'owner' || admin; const worker = role === 'worker' || role === 'operator';
@@ -172,7 +175,7 @@ export default function App() {
   if (role === 'owner') allowed.add('farms');
   if (hasFarm) {
     ['overview', 'animals', 'events'].forEach(p => allowed.add(p as Page));
-    if (role !== 'viewer') allowed.add('health');
+    if (role !== 'viewer') { allowed.add('health'); allowed.add('reports'); }
     if (owner) ['hardware', 'devices', 'gateways', 'geofences', 'team', 'changes', 'operations', 'settings', 'audit'].forEach(p => allowed.add(p as Page));
     if (worker || role === 'veterinarian') allowed.add('changes');
   }
@@ -253,6 +256,7 @@ export default function App() {
         {activePage === 'farms' && <FarmsPage admin={admin} notify={setToast} onUpdated={refreshSession} />}
         {activePage === 'animals' && <AnimalsPage search={search} setSearch={setSearch} canWrite={owner} notify={setToast} />}
         {activePage === 'health' && <HealthPage worker={worker} actorId={session.user.id} notify={setToast} />}
+        {activePage === 'reports' && <AnimalReportsPage key={`${session.user.farm_id}:${reportAnimal}`} initialAnimal={reportAnimal} canSeeIndicators={owner} />}
         {activePage === 'changes' && <ChangesPage key={requestId ?? 'list'} worker={worker} canReview={owner} requestId={requestId} notify={setToast} onChange={activity.reload} />}
         {activePage === 'team' && <TeamPage key={session.user.farm_id ?? ''} admin={admin} notify={setToast} />}
         {activePage === 'gateways' && <GatewaysPage notify={setToast} />}

@@ -7,7 +7,7 @@ export class ApiError extends Error {
   constructor(message: string, status: number) { super(message); this.status = status; }
 }
 export function setSession(session: Session | null) { csrf = session?.csrf_token ?? ''; }
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function apiResponse(path: string, init: RequestInit = {}): Promise<Response> {
   const isWrite = init.method && !['GET', 'HEAD'].includes(init.method);
   let response: Response;
   try {
@@ -32,8 +32,23 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (response.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('session-expired'));
     throw new ApiError(detail, response.status);
   }
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  return response;
+}
+export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await apiResponse(path, init);
+  return response.status === 204 ? undefined as T : response.json() as Promise<T>;
+}
+export async function downloadCsv(path: string) {
+  const response = await apiResponse(path);
+  const filename = response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] ?? 'geocattle-reporte.csv';
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export const write = <T,>(path: string, body: unknown, method = 'POST') => api<T>(path, { method, body: JSON.stringify(body) });
 export function useData<T>(path: string | null, interval = 0, contextKey = '') {

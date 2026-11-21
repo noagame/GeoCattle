@@ -2,10 +2,14 @@
 import argparse
 from datetime import datetime, timedelta, timezone
 from ipaddress import IPv4Address, IPv4Network
+import json
 import os
 from pathlib import Path
 import socket
+import ssl
+import subprocess
 import sys
+from urllib.request import HTTPSHandler, ProxyHandler, build_opener
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -19,10 +23,56 @@ PORT = 8445
 LOCAL_NETWORKS = tuple(IPv4Network(cidr) for cidr in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'))
 
 
+def is_local(address):
+    return any(address in network for network in LOCAL_NETWORKS)
+
+
 def default_address():
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
-        route.connect(('1.1.1.1', 443))  # Select the outgoing interface without sending data.
-        return IPv4Address(route.getsockname()[0])
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
+            route.connect(('1.1.1.1', 443))  # Inspect the route without contacting the Internet.
+            address = IPv4Address(route.getsockname()[0])
+            if is_local(address):
+                return address
+    except OSError:
+        pass
+
+    # A Wi-Fi or hotspot can still host the app after its default route disappears.
+    result = subprocess.run(
+        ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
+         "Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred | "
+         "Where-Object { $_.InterfaceAlias -notlike 'vEthernet*' } | Select-Object -ExpandProperty IPAddress"],
+        capture_output=True, text=True, check=True, timeout=15,
+    )
+    candidates = {IPv4Address(line.strip()) for line in result.stdout.splitlines() if line.strip()}
+    candidates = sorted(address for address in candidates if is_local(address))
+    if len(candidates) == 1:
+        return candidates[0]
+    if candidates:
+        raise ValueError('Hay varias IPv4 locales. Usa --bind con la de tu red: ' + ', '.join(map(str, candidates)))
+    raise ValueError('Conecta el PC al Wi-Fi o hotspot y vuelve a abrir el iniciador. Puedes indicar la IPv4 con --bind.')
+
+
+def lan_is_running(url, ca_file):
+    if not ca_file.is_file():
+        return False
+    try:
+        context = ssl.create_default_context(cadata=ca_file.read_bytes())
+        client = build_opener(ProxyHandler({}), HTTPSHandler(context=context))
+        with client.open(url + '/api/v1/health', timeout=2) as response:
+            health = json.load(response)
+            return health == {'status': 'ok', 'environment': 'development', 'database': 'postgresql-postgis'}
+    except (ValueError, OSError):
+        return False
+
+
+def show_lan_url(url, ca_file):
+    public_ca = ROOT / '.runtime' / 'GeoCattle-LAN-CA.cer'
+    public_ca.parent.mkdir(parents=True, exist_ok=True)
+    public_ca.write_bytes(ca_file.read_bytes())
+    (public_ca.parent / 'GeoCattle-LAN-URL.txt').write_text(url + '/\n', encoding='utf-8')
+    print(f'GeoCattle en la red local: {url}/', flush=True)
+    print(f'Certificado público para los clientes: {public_ca}', flush=True)
 
 
 def name(label):
@@ -92,10 +142,21 @@ def main():
         parser.error('Este iniciador usa el prototipo nativo de Windows.')
     try:
         address = args.bind or default_address()
-    except OSError:
-        parser.error('Indica con --bind la IPv4 del adaptador conectado a la red local.')
-    if not any(address in network for network in LOCAL_NETWORKS):
+    except ValueError as error:
+        parser.error(str(error))
+    except (OSError, subprocess.SubprocessError):
+        parser.error('No se pudo detectar la red local. Indica su IPv4 con --bind.')
+    if not is_local(address):
         parser.error('Elige una IPv4 privada del equipo con --bind.')
+
+    url = f'https://{address}:{PORT}'
+    tls_directory = Path(os.environ['LOCALAPPDATA']) / 'GeoCattle' / 'lan-tls'
+    ca_file = tls_directory / 'GeoCattle-LAN-CA.cer'
+    if lan_is_running(url, ca_file):
+        show_lan_url(url, ca_file)
+        print('El servidor HTTPS ya está iniciado.', flush=True)
+        return
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         try:
             probe.bind((str(address), PORT))
@@ -107,8 +168,6 @@ def main():
         parser.error('Inicia primero el prototipo de desarrollo con Abrir-GeoCattle.cmd.')
     if not (ROOT / 'frontend' / 'dist' / 'index.html').is_file():
         parser.error('Falta compilar la interfaz. Ejecuta npm run build desde frontend.')
-    url = f'https://{address}:{PORT}'
-    tls_directory = Path(os.environ['LOCALAPPDATA']) / 'GeoCattle' / 'lan-tls'
     try:
         ca_file, cert_file, key_file = tls_files(tls_directory, address)
     except (ValueError, OSError) as error:
@@ -118,13 +177,18 @@ def main():
     sys.path.insert(0, str(ROOT / 'backend'))
     import uvicorn
 
-    print(f'GeoCattle en la red local: {url}/', flush=True)
-    public_ca = ROOT / '.runtime' / 'GeoCattle-LAN-CA.cer'
-    public_ca.parent.mkdir(parents=True, exist_ok=True)
-    public_ca.write_bytes(ca_file.read_bytes())
-    print(f'Certificado público para los clientes: {public_ca}', flush=True)
-    uvicorn.run('geocattle.local_app:app', host=str(address), port=PORT, proxy_headers=False,
-                ssl_certfile=str(cert_file), ssl_keyfile=str(key_file))
+    class LanServer(uvicorn.Server):
+        async def startup(self, sockets=None):
+            await super().startup(sockets=sockets)
+            if self.started:
+                show_lan_url(url, ca_file)
+
+    config = uvicorn.Config('geocattle.local_app:app', host=str(address), port=PORT, proxy_headers=False,
+                            ssl_certfile=str(cert_file), ssl_keyfile=str(key_file))
+    server = LanServer(config)
+    server.run()
+    if not server.started:
+        sys.exit(1)
 
 
 if __name__ == '__main__':

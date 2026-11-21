@@ -9,5 +9,5 @@ if not exist "%GEOCATTLE_PYTHON%" (
 )
 "%GEOCATTLE_PYTHON%" -u "%~dp0scripts\serve_lan_windows.py" %*
 set "GEOCATTLE_RESULT=%ERRORLEVEL%"
-if not "%GEOCATTLE_RESULT%"=="0" pause
+pause
 exit /b %GEOCATTLE_RESULT%

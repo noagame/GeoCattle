@@ -20,7 +20,7 @@ Conecta el PC servidor y el otro dispositivo al mismo Wi-Fi. Puedes usar el punt
 2. Comparte únicamente el certificado público `.runtime/GeoCattle-LAN-CA.cer` con los dispositivos autorizados. Verifica su huella SHA-256 con `Get-FileHash .runtime/GeoCattle-LAN-CA.cer` e importa el certificado como autoridad de confianza según el sistema o el navegador. Los archivos de clave permanecen en `%LOCALAPPDATA%\GeoCattle\lan-tls` en el servidor.
 3. Abre la URL HTTPS impresa e ingresa con una cuenta de GeoCattle. Los administradores usan MFA en este acceso. Para comprobar conexión y confianza del certificado, abre `/api/v1/health` en la misma URL.
 
-Si cambias de Wi-Fi o el punto de acceso asigna otra IP al PC, reinicia el iniciador LAN. Emite un certificado para la nueva IP con la misma autoridad local. Comparte el nuevo enlace.
+Si solo se corta Internet y ambos equipos siguen en el mismo Wi-Fi, el enlace local sigue funcionando mientras el servidor conserve su IP. Si el PC se reconecta y recibe otra dirección, vuelve a abrir `Abrir-GeoCattle-LAN.cmd`. El iniciador detecta la IP en cada apertura, muestra la URL incluso cuando el servidor ya está activo y guarda el último enlace verificado en `.runtime/GeoCattle-LAN-URL.txt`. Para una IP nueva emite un certificado firmado por la misma autoridad local. Comparte el nuevo enlace con los clientes.
 
 Si el cliente recibe un tiempo de espera, revisa que el punto de acceso permita comunicación entre dispositivos y que el firewall de Windows permita TCP `8445` desde la subred del servidor. Para autorizarlo de forma acotada, abre PowerShell como administrador y reemplaza `IP_DEL_SERVIDOR` y `SUBRED_CIDR` por los valores de esa conexión:
 

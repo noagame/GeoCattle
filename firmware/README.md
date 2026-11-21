@@ -12,4 +12,10 @@ Abre el archivo `.ino` desde su carpeta en Arduino IDE. Cada carpeta incluye los
 
 Instala el apoyo de placas ESP32 para Arduino. El collar usa ArduinoJson, LoRa, OneWire, DallasTemperature, TinyGPSPlus, Adafruit GFX, Adafruit SSD1306 y XPowersLib. La receptora directa usa ArduinoJson, LoRa, Adafruit GFX y Adafruit SSD1306. Los repetidores y la base usan ArduinoJson y RadioLib. Para los XIAO selecciona `XIAO_ESP32S3` con USB CDC On Boot habilitado.
 
-El prototipo usa LoRa P2P en 915,5 MHz, SF7, BW125 y CR4/5. Para usar el modo Gateways, conecta solamente la T3 base al capturador USB. Para el modo Directo, conecta la T3 con su sketch correspondiente. Usa el selector de `Iniciar-Captura.cmd` para elegir. Ver [el contrato de integración](../docs/CONTRATO_API.md) y [el arranque](../README.md#cómo-levantar-geocattle).
+El prototipo usa LoRa P2P en 915,5 MHz, SF7, BW125 y CR4/5. Para usar el modo Gateways, conecta solamente la T3 base al capturador USB. Para el modo Directo, conecta la T3 con su sketch correspondiente. Usa el selector de `Iniciar-Captura.cmd` para elegir. Ver [el contrato de integración](../docs/CONTRATO_API.md) y [el arranque](../README.md#desarrollo-local-en-el-puerto-8084).
+
+## Identidad y alta por USB
+
+Para unidades nuevas, el emisor genera `GC-<12 dígitos hexadecimales>` a partir de la identidad de fábrica del ESP32. Usa el mismo valor como `id` en los paquetes LoRa. A 115200 baudios, responde a `GEOCATTLE_IDENTIFY_V1` seguido de salto de línea con un descriptor JSON `geocattle_collar`, versión 1, que indica identificador, transporte e intervalo.
+
+Para actualizar únicamente el collar histórico registrado como `REAL01`, define `GEOCATTLE_LEGACY_COLLAR_ID` como `"REAL01"` antes de compilarlo. En Arduino IDE puedes agregar `#define GEOCATTLE_LEGACY_COLLAR_ID "REAL01"` justo antes del bloque `#ifndef GEOCATTLE_LEGACY_COLLAR_ID`. Compila las unidades nuevas con el valor vacío del repositorio.

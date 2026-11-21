@@ -47,6 +47,14 @@ Desde una consola, el mismo iniciador acepta `--receiver-mode direct` o `--recei
 
 El estado local registra `last_line_at` para cualquier línea serial, `last_packet_at` para el último paquete válido de la ejecución y `last_capture` para la última lectura única archivada. Estos campos ayudan a distinguir actividad USB, recepción y persistencia.
 
+## Registrar un collar por USB
+
+1. Inicia el prototipo con `Abrir-GeoCattle.cmd`. Abre [`Registrar-Collar-USB.cmd`](../Registrar-Collar-USB.cmd) en el PC Windows servidor y sigue las indicaciones para conectar el collar con un cable USB de datos. La receptora T3 puede quedar conectada. Cierra el Monitor Serie del collar.
+2. En **Alta de collar por USB**, entra con una cuenta de dueño o administrador, verifica el predio activo, escribe un nombre y guarda. El asistente completa el identificador y el intervalo a partir del firmware. Si el collar ya existe en ese predio, se puede usar su registro.
+3. En **Collares y dispositivos**, asigna el collar a un bovino cuando esté listo. Después del alta, las lecturas llegan por la T3 mediante LoRa. El inventario y las asignaciones se consultan también desde HTTPS por la red local.
+
+El asistente necesita el [firmware con identificación USB](../firmware/README.md#identidad-y-alta-por-usb). Los collares con firmware anterior pueden registrarse desde el formulario manual con su identificador LoRa conocido.
+
 ## Dónde agregar funcionalidades
 
 | Área | Ubicación |

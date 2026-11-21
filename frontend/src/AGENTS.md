@@ -7,6 +7,7 @@
 ## Contratos locales
 
 - Reutiliza `api.ts` al llamar al backend y actualiza `types.ts` o `v3types.ts` junto con el contrato. Conserva el contexto del predio al cambiar consultas o acciones y apóyate en la autorización del backend.
+- El enlace de alta USB abre un borrador en el inventario. El dueño o administrador confirma el registro mediante `/devices` y asigna el collar por separado. Si el identificador ya está en el predio, el formulario ofrece usar el registro existente.
 - El formulario sanitario obtiene las reglas de productos y vías de `/v3/health/product-policies` y adapta los campos al evento. Al corregir un evento que admite productos, conserva los datos ya registrados, incluidos el registro del producto, el lote y el fundamento del resguardo. Si una vacuna histórica figura con vía oral, deja su selector vacío para que se indique la vía usada. La agenda de vacunación y antibiótico ofrece eventos efectivos compatibles y conserva el tipo planificado al completar la atención.
 - **Reportes del rebaño** (`#reports`) consulta y descarga registros con los filtros aplicados a la vista previa. La ficha sanitaria puede abrir esa página con el bovino preseleccionado mediante `#reports?animal=<id>`.
 - Para dueño y administrador, **Reportes del rebaño** abre los totales del predio y ofrece alertas agrupadas y rankings con evidencia de cobertura. La descarga conserva el período, la agrupación y el tipo de alerta de la vista previa.

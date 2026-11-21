@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { ArrowRight, Clock, Fence, Link2, Pencil, Plus, Radio, Settings2, ShieldCheck } from 'lucide-react';
-import type { Animal, Device, Geofence, List, Sector } from './types';
+import type { Animal, Device, Geofence, List, Sector, UsbCollar } from './types';
 import { ApiError, date, useData, write } from './api';
 import { Badge, Empty, ErrorNotice, Loading, Modal, PageTitle, Panel, PanelTitle, Submit } from './ui';
 import { CattleMap, type CollarLocation } from './Map';
@@ -8,17 +8,78 @@ import type { Notify } from './App';
 import { AlertSettingsPanel } from './AlertSettings';
 import { GeofenceForm } from './GeofenceForm';
 
-export function DevicesPage({ canWrite, notify }: { canWrite: boolean; notify: Notify }) {
+export function DevicesPage({ canWrite, notify, usbCollar, clearUsbCollar }: {
+  canWrite: boolean; notify: Notify; usbCollar?: UsbCollar; clearUsbCollar: () => void;
+}) {
   const devices = useData<List<Device>>('/devices'); const animals = useData<List<Animal>>('/animals?limit=100');
   const [adding, setAdding] = useState(false); const [assigning, setAssigning] = useState<Device | null>(null); const [configuring, setConfiguring] = useState<Device | null>(null);
+  const existingCollar = usbCollar && devices.data?.items.find(d => d.hardware_id === usbCollar.hardware_id);
   const ready = devices.data?.items.filter(d => d.enabled).length ?? 0;
-  return <><PageTitle eyebrow="HARDWARE Y ASOCIACIONES" title="Collares y dispositivos" description="Asocia los módulos y consulta su configuración aplicada." actions={canWrite && <button className="button primary" onClick={() => setAdding(true)}><Plus size={17} />Registrar dispositivo</button>} /><div className="summary-strip"><div><Radio size={19} /><strong>{devices.data?.total ?? '—'}</strong><span>dispositivos registrados</span></div><div><ShieldCheck size={19} /><strong>{ready}</strong><span>habilitados</span></div><div><Clock size={19} /><strong>{devices.data?.items.filter(d => !!d.pending_config).length ?? '—'}</strong><span>configuraciones pendientes</span></div></div><Panel><PanelTitle title="Inventario de dispositivos" subtitle="El intervalo activo cambia únicamente al recibir confirmación del nodo." /><ErrorNotice error={devices.error} retry={devices.reload} /><ErrorNotice error={animals.error} retry={animals.reload} />{devices.loading && <Loading />}{!devices.loading && devices.data && (devices.data.items.length ? <div className="table-scroll"><table><thead><tr><th>Dispositivo</th><th>Transporte</th><th>Animal asociado</th><th>Intervalo aplicado</th><th>Configuración pendiente</th><th>Última recepción</th>{canWrite && <th>Acciones</th>}</tr></thead><tbody>{devices.data.items.map(device => { const animal = animals.data?.items.find(a => a.id === device.animal_id || a.device_id === device.id); return <tr key={device.id}><td><div className="animal-cell"><span className="animal-avatar"><Radio size={18} /></span><div><strong>{device.name}</strong><small>{device.hardware_id}</small>{!device.enabled && <small>Deshabilitado</small>}</div></div></td><td>{device.transport === 'academic' ? 'Académico' : 'LoRaWAN'}{device.dev_eui && <small>{device.dev_eui}</small>}</td><td>{animal ? <>{animal.name}<small>DIIO {animal.diio}</small></> : device.animal_id ? 'Animal asociado' : <span className="muted">Sin asignar</span>}</td><td><strong>{device.interval_seconds} s</strong><small>Versión {device.config_version}</small></td><td>{device.pending_config ? <><Badge status="warning">{device.pending_config.status === 'requested' ? 'Solicitada' : device.pending_config.status === 'sent' ? 'Enviada' : device.pending_config.status === 'pending' ? 'Pendiente' : device.pending_config.status}</Badge><small>{device.pending_config.interval_seconds} s · v{device.pending_config.version}</small></> : <span className="muted">Sin cambios pendientes</span>}</td><td>{date(device.last_received_at)}</td>{canWrite && <td><div className="row-actions"><button className="icon-button" aria-label={`Asignar ${device.name}`} title="Asignar o reasignar" onClick={() => setAssigning(device)} disabled={!device.enabled}><Link2 size={17} /></button><button className="icon-button" aria-label={`Configurar ${device.name}`} title="Solicitar configuración" onClick={() => setConfiguring(device)} disabled={!!device.pending_config || !device.enabled}><Settings2 size={17} /></button></div></td>}</tr>; })}</tbody></table></div> : <Empty title="Sin dispositivos registrados" description="Da de alta un módulo e identifica su transporte antes de asociarlo a un animal." />)}</Panel>{adding && <DeviceForm onClose={() => setAdding(false)} onSaved={() => { setAdding(false); devices.reload(); notify('Dispositivo registrado.'); }} />}{assigning && <AssignmentForm device={assigning} animals={animals.data?.items ?? []} onClose={() => setAssigning(null)} onSaved={() => { setAssigning(null); devices.reload(); animals.reload(); notify('Asignación guardada con vigencia histórica.'); }} />}{configuring && <DeviceConfigForm device={configuring} onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); devices.reload(); notify('Configuración solicitada. Pendiente de confirmación del nodo.'); }} />}</>;
+  return <><PageTitle eyebrow="HARDWARE Y ASOCIACIONES" title="Collares y dispositivos" description="Asocia los módulos y consulta su configuración aplicada." actions={canWrite && <button className="button primary" onClick={() => setAdding(true)}><Plus size={17} />Registrar dispositivo</button>} /><div className="summary-strip"><div><Radio size={19} /><strong>{devices.data?.total ?? '—'}</strong><span>dispositivos registrados</span></div><div><ShieldCheck size={19} /><strong>{ready}</strong><span>habilitados</span></div><div><Clock size={19} /><strong>{devices.data?.items.filter(d => !!d.pending_config).length ?? '—'}</strong><span>configuraciones pendientes</span></div></div><Panel><PanelTitle title="Inventario de dispositivos" subtitle="El intervalo activo cambia únicamente al recibir confirmación del nodo." /><ErrorNotice error={devices.error} retry={devices.reload} /><ErrorNotice error={animals.error} retry={animals.reload} />{devices.loading && <Loading />}{!devices.loading && devices.data && (devices.data.items.length ? <div className="table-scroll"><table><thead><tr><th>Dispositivo</th><th>Transporte</th><th>Animal asociado</th><th>Intervalo aplicado</th><th>Configuración pendiente</th><th>Última recepción</th>{canWrite && <th>Acciones</th>}</tr></thead><tbody>{devices.data.items.map(device => { const animal = animals.data?.items.find(a => a.id === device.animal_id || a.device_id === device.id); return <tr key={device.id}><td><div className="animal-cell"><span className="animal-avatar"><Radio size={18} /></span><div><strong>{device.name}</strong><small>{device.hardware_id}</small>{!device.enabled && <small>Deshabilitado</small>}</div></div></td><td>{device.transport === 'academic' ? 'Académico' : 'LoRaWAN'}{device.dev_eui && <small>{device.dev_eui}</small>}</td><td>{animal ? <>{animal.name}<small>DIIO {animal.diio}</small></> : device.animal_id ? 'Animal asociado' : <span className="muted">Sin asignar</span>}</td><td><strong>{device.interval_seconds} s</strong><small>Versión {device.config_version}</small></td><td>{device.pending_config ? <><Badge status="warning">{device.pending_config.status === 'requested' ? 'Solicitada' : device.pending_config.status === 'sent' ? 'Enviada' : device.pending_config.status === 'pending' ? 'Pendiente' : device.pending_config.status}</Badge><small>{device.pending_config.interval_seconds} s · v{device.pending_config.version}</small></> : <span className="muted">Sin cambios pendientes</span>}</td><td>{date(device.last_received_at)}</td>{canWrite && <td><div className="row-actions"><button className="icon-button" aria-label={`Asignar ${device.name}`} title="Asignar o reasignar" onClick={() => setAssigning(device)} disabled={!device.enabled}><Link2 size={17} /></button><button className="icon-button" aria-label={`Configurar ${device.name}`} title="Solicitar configuración" onClick={() => setConfiguring(device)} disabled={!!device.pending_config || !device.enabled}><Settings2 size={17} /></button></div></td>}</tr>; })}</tbody></table></div> : <Empty title="Sin dispositivos registrados" description="Da de alta un módulo e identifica su transporte antes de asociarlo a un animal." />)}</Panel>{canWrite && usbCollar && <Modal title="Alta de collar por USB" onClose={clearUsbCollar}>
+      <div className="form-body">
+        {!devices.data && (devices.error ? <ErrorNotice error={devices.error} retry={devices.reload} /> : <Loading />)}
+        {existingCollar && <>
+          <p>El collar <strong>{existingCollar.name}</strong> ({existingCollar.hardware_id}) ya está en el inventario de este predio.</p>
+          <div className="form-actions">
+            <button className="button secondary" onClick={clearUsbCollar}>Cerrar</button>
+            <button className="button primary" disabled={!existingCollar.enabled || !animals.data}
+              onClick={() => { clearUsbCollar(); setAssigning(existingCollar); }}>Asignar a un bovino</button>
+          </div>
+        </>}
+        {devices.data && !existingCollar && <DeviceFields key={usbCollar.hardware_id} usbCollar={usbCollar}
+          onClose={clearUsbCollar} onSaved={() => { clearUsbCollar(); devices.reload(); notify('Collar registrado. Ya puedes asignarlo a un bovino.'); }} />}
+      </div>
+    </Modal>}
+    {adding && <Modal title="Registrar dispositivo" onClose={() => setAdding(false)}><DeviceFields
+      onClose={() => setAdding(false)}
+      onSaved={() => { setAdding(false); devices.reload(); notify('Dispositivo registrado.'); }} /></Modal>}{assigning && <AssignmentForm device={assigning} animals={animals.data?.items ?? []} onClose={() => setAssigning(null)} onSaved={() => { setAssigning(null); devices.reload(); animals.reload(); notify('Asignación guardada con vigencia histórica.'); }} />}{configuring && <DeviceConfigForm device={configuring} onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); devices.reload(); notify('Configuración solicitada. Pendiente de confirmación del nodo.'); }} />}</>;
 }
-function DeviceForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [name, setName] = useState(''); const [hardware, setHardware] = useState(''); const [devEui, setDevEui] = useState(''); const [transport, setTransport] = useState('academic');
-  const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
-  async function submit(event: FormEvent) { event.preventDefault(); setBusy(true); setError(''); try { await write('/devices', { name, hardware_id: hardware, ...(devEui ? { dev_eui: devEui } : {}), transport, interval_seconds: 300 }); onSaved(); } catch (err) { setError(err instanceof Error ? err.message : 'No se pudo registrar.'); } finally { setBusy(false); } }
-  return <Modal title="Registrar dispositivo" onClose={onClose}><form className="form-body" onSubmit={submit}><label>Nombre<input value={name} onChange={e => setName(e.target.value)} required maxLength={120} placeholder="Collar / módulo" /></label><label>Identificador de hardware<input value={hardware} onChange={e => setHardware(e.target.value)} required maxLength={128} placeholder="Identificador único del nodo" /></label><label>Transporte<select value={transport} onChange={e => setTransport(e.target.value)}><option value="academic">Prototipo · LoRa punto a punto / USB</option><option value="lorawan">Cliente · LoRaWAN</option></select></label><label>DevEUI {transport === 'lorawan' ? '(requerido para LoRaWAN)' : '(opcional)'}<input value={devEui} onChange={e => setDevEui(e.target.value)} required={transport === 'lorawan'} pattern="[0-9a-fA-F]{16}" placeholder="16 caracteres hexadecimales" /><small>Las claves de radio se configuran en el servicio LoRaWAN.</small></label><div className="notice"><Clock size={17} /><span>Intervalo inicial: 300 segundos. Los cambios se solicitan y requieren confirmación del nodo.</span></div><ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" onClick={onClose} disabled={busy}>Cancelar</button><Submit busy={busy}>Registrar dispositivo</Submit></div></form></Modal>;
+function DeviceFields({ usbCollar, onClose, onSaved }: {
+  usbCollar?: UsbCollar; onClose: () => void; onSaved: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [hardware, setHardware] = useState(usbCollar?.hardware_id ?? '');
+  const [devEui, setDevEui] = useState('');
+  const [transport, setTransport] = useState('academic');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const intervalSeconds = usbCollar?.interval_seconds ?? 300;
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!name.trim()) { setError('Ingresa un nombre para el collar.'); return; }
+    setBusy(true);
+    setError('');
+    try {
+      await write('/devices', { name: name.trim(), hardware_id: hardware.trim(),
+        ...(!usbCollar && devEui.trim() ? { dev_eui: devEui.trim() } : {}),
+        transport, interval_seconds: intervalSeconds });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo registrar.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <form className="form-body" onSubmit={submit}>
+    <label>Nombre<input value={name} onChange={e => setName(e.target.value)} required maxLength={100} placeholder="Collar / módulo" /></label>
+    <label>Identificador de hardware<input value={hardware} onChange={e => setHardware(e.target.value)} required
+      readOnly={!!usbCollar} maxLength={100} placeholder="Identificador único del nodo" /></label>
+    {usbCollar ? <p className="form-intro">Transporte LoRa punto a punto. El collar quedará en inventario, listo para asignarlo a un bovino.</p> :
+      <label>Transporte<select value={transport} onChange={e => setTransport(e.target.value)}>
+        <option value="academic">Prototipo · LoRa punto a punto</option><option value="lorawan">Cliente · LoRaWAN</option>
+      </select></label>}
+    {!usbCollar && <label>DevEUI {transport === 'academic' && '(opcional)'}<input value={devEui} onChange={e => setDevEui(e.target.value)} required={transport === 'lorawan'}
+      pattern="[0-9a-fA-F]{16}" placeholder="16 caracteres hexadecimales" />
+      <small>Las claves de radio se configuran en el servicio LoRaWAN.</small></label>}
+    <div className="notice"><Clock size={17} /><span>Intervalo inicial de {intervalSeconds} segundos.</span></div>
+    <ErrorNotice error={error} />
+    <div className="form-actions">
+      <button type="button" className="button secondary" onClick={onClose} disabled={busy}>Cancelar</button>
+      <Submit busy={busy}>{usbCollar ? 'Guardar collar' : 'Registrar dispositivo'}</Submit>
+    </div>
+  </form>;
 }
 function AssignmentForm({ device, animals, onClose, onSaved }: { device: Device; animals: Animal[]; onClose: () => void; onSaved: () => void }) {
   const [animal, setAnimal] = useState(''); const [replace, setReplace] = useState(false); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);

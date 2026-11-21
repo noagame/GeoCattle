@@ -24,6 +24,7 @@ export type Device = {
   pending_config: { version: number; interval_seconds: number; status: string } | null;
   animal_id?: string | null; last_received_at?: string | null;
 };
+export type UsbCollar = { hardware_id: string; interval_seconds: number };
 export type Sector = { id: string; name: string; land_use?: 'grazing' | 'available' | 'cropped' | 'restricted' | 'other'; description?: string | null; active?: boolean };
 export type Polygon = { type: 'Polygon'; coordinates: number[][][] };
 export type Geofence = { id: string; geofence_key: string; sector_ids: string[]; sector_id: string; name: string; version: number; active: boolean; geometry: Polygon; created_at: string };

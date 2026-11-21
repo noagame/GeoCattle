@@ -128,6 +128,7 @@ La raíz contiene los archivos de Compose, los lanzadores de Windows y Linux, la
 - [database/AGENTS.md](database/AGENTS.md) — migraciones y comprobaciones PostgreSQL/PostGIS.
 - [docs/AGENTS.md](docs/AGENTS.md) — operación, especificaciones, planificación y evidencias.
 - [frontend/AGENTS.md](frontend/AGENTS.md) — aplicación web, mapas, recursos y pruebas.
+- [firmware/AGENTS.md](firmware/AGENTS.md) — sketches, identidad del collar y contratos de radio y USB.
 - [infrastructure/AGENTS.md](infrastructure/AGENTS.md) — proxy, MQTT y LoRaWAN.
 - [qa/AGENTS.md](qa/AGENTS.md) — pruebas transversales y evidencias de QA.
 - [scripts/AGENTS.md](scripts/AGENTS.md) — arranque, configuración, respaldos y utilidades.

@@ -60,7 +60,12 @@
 // CONFIGURACION
 // ============================================================
 
-const char COLLAR_ID[] = "REAL01";
+// Define GEOCATTLE_LEGACY_COLLAR_ID como "REAL01" al actualizar solo el collar histórico.
+#ifndef GEOCATTLE_LEGACY_COLLAR_ID
+#define GEOCATTLE_LEGACY_COLLAR_ID ""
+#endif
+// La red de repetidores y JSON V5 admiten hasta 16 caracteres.
+char COLLAR_ID[sizeof("GC-FFFFFFFFFFFF")] = {};
 
 const long FRECUENCIA = 915500000L;
 
@@ -89,6 +94,39 @@ constexpr uint32_t PERIODO_PANTALLA_MS = 1000;
 
 // Separacion minima de 45 segundos, tambien ante movimiento.
 constexpr uint32_t MINIMO_ENTRE_ENVIOS_MS = 45000UL;
+
+void inicializarIdentidadCollar() {
+  constexpr char alias[] = GEOCATTLE_LEGACY_COLLAR_ID;
+  static_assert(sizeof(alias) <= sizeof(COLLAR_ID), "Identificador histórico demasiado largo");
+  if (alias[0]) {
+    snprintf(COLLAR_ID, sizeof(COLLAR_ID), "%s", alias);
+  } else {
+    snprintf(COLLAR_ID, sizeof(COLLAR_ID), "GC-%012llX",
+             (unsigned long long)(ESP.getEfuseMac() & 0xFFFFFFFFFFFFULL));
+  }
+}
+
+void atenderIdentificacionUSB() {
+  static char comando[32];
+  static size_t longitud = 0;
+  static bool excedido = false;
+  for (uint8_t i = 0; i < 32 && Serial.available(); ++i) {
+    const char caracter = static_cast<char>(Serial.read());
+    if (caracter == '\n') {
+      comando[longitud] = '\0';
+      if (!excedido && strcmp(comando, "GEOCATTLE_IDENTIFY_V1") == 0) {
+        Serial.printf("{\"type\":\"geocattle_collar\",\"version\":1,\"hardware_id\":\"%s\","
+                      "\"transport\":\"academic\",\"interval_seconds\":%lu}\n",
+                      COLLAR_ID, (unsigned long)(MINIMO_ENTRE_ENVIOS_MS / 1000));
+      }
+      longitud = 0;
+      excedido = false;
+    } else if (caracter != '\r') {
+      if (longitud < sizeof(comando) - 1) comando[longitud++] = caracter;
+      else excedido = true;
+    }
+  }
+}
 
 const int PIN_TEMPERATURA = 13;
 
@@ -426,7 +464,8 @@ void detenerConError(const char* mensaje) {
   }
 
   while (true) {
-    delay(1000);
+    atenderIdentificacionUSB();
+    delay(25);
   }
 }
 
@@ -1334,6 +1373,7 @@ void mostrarPantalla(uint32_t ahora) {
 
 void setup() {
   Serial.begin(115200);
+  inicializarIdentidadCollar();
   delay(500);
 
   Serial.println();
@@ -1417,6 +1457,7 @@ void setup() {
 // ============================================================
 
 void loop() {
+  atenderIdentificacionUSB();
   procesarGPS();
 
   uint32_t ahora = millis();

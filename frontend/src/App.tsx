@@ -161,6 +161,13 @@ export default function App() {
   const page = allNavigation.find(nav => nav.id === pageName)?.id ?? 'overview';
   const requestId = new URLSearchParams(routeParams).get('request');
   const reportAnimal = new URLSearchParams(routeParams).get('animal') ?? '';
+  const devicesParams = new URLSearchParams(routeParams);
+  const usbHardware = devicesParams.get('usb_collar') ?? '';
+  const usbInterval = Number(devicesParams.get('interval'));
+  const usbCollar = /^[A-Za-z0-9_-]{1,16}$/.test(usbHardware) && Number.isInteger(usbInterval) &&
+    usbInterval >= 30 && usbInterval <= 86400
+    ? { hardware_id: usbHardware, interval_seconds: usbInterval }
+    : undefined;
   const [mobileMenu, setMobileMenu] = useState(false); const [connected, setConnected] = useState(true); const [contextBusy, setContextBusy] = useState(false); const [contextError, setContextError] = useState(''); const [search, setSearch] = useState(''); const [toast, setToast] = useState('');
   const admin = session?.user.role === 'admin'; const hasFarm = !!session?.user.farm_id;
   const role = session?.user.role; const owner = role === 'owner' || admin; const worker = role === 'worker' || role === 'operator';
@@ -260,7 +267,9 @@ export default function App() {
         {activePage === 'changes' && <ChangesPage key={requestId ?? 'list'} worker={worker} canReview={owner} requestId={requestId} notify={setToast} onChange={activity.reload} />}
         {activePage === 'team' && <TeamPage key={session.user.farm_id ?? ''} admin={admin} notify={setToast} />}
         {activePage === 'gateways' && <GatewaysPage notify={setToast} />}
-        {activePage === 'hardware' && <HardwarePage farmId={session.user.farm_id ?? ''} />}{activePage === 'devices' && <DevicesPage canWrite={owner} notify={setToast} />}
+        {activePage === 'hardware' && <HardwarePage farmId={session.user.farm_id ?? ''} />}
+        {activePage === 'devices' && <DevicesPage key={session.user.farm_id} canWrite={owner} notify={setToast}
+          usbCollar={usbCollar} clearUsbCollar={() => navigate('devices')} />}
         {activePage === 'geofences' && <GeofencesPage canWrite={owner} notify={setToast} />}
         {activePage === 'events' && <EventsPage canWrite={role !== 'viewer'} canConfigure={owner} simulation={overview.data?.farm.environment === 'simulation'} farmName={farmName} notify={setToast} />}
         {activePage === 'operations' && <OperationsPage canWrite={owner} canAudit={owner} notify={setToast} simulation={overview.data?.farm.environment === 'simulation'} onChange={overview.reload} />}

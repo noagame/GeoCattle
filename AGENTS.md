@@ -116,6 +116,8 @@ Default section order:
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 
+- El README presenta primero el arranque de desarrollo nativo en Windows con `Abrir-GeoCattle.cmd` y `localhost:8084`. Docker y Vite se documentan como flujos alternativos.
+
 ## Child DOX Index
 
 La raíz contiene los archivos de Compose, los lanzadores de Windows, las reglas de colaboración y los contratos que cruzan áreas. Los índices enlazan los ámbitos hijos directos.

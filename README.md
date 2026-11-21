@@ -2,9 +2,27 @@
 
 GeoCattle es una aplicación de supervisión bovina con mapas, geocercas, telemetría de collares y gestión sanitaria por predio. Usa **React, TypeScript y Leaflet** en la interfaz, **FastAPI** en el servidor y **PostgreSQL/PostGIS** para guardar datos y evaluar geometrías.
 
+## Desarrollo local en el puerto 8084
+
+En Windows, abre [`Abrir-GeoCattle.cmd`](Abrir-GeoCattle.cmd) desde la raíz del repositorio. El lanzador inicia PostgreSQL/PostGIS, la API y el proceso de alertas, y abre [GeoCattle en localhost:8084](http://localhost:8084/).
+
+El prototipo nativo usa el entorno `development`, la configuración privada `.env.academic`, PostgreSQL/PostGIS local en `127.0.0.1:55434`, un entorno Python `.venv` y el frontend compilado en `frontend/dist`. Si la instalación ya está preparada y necesitas compilar la interfaz, ejecuta desde PowerShell en la raíz:
+
+```powershell
+Set-Location frontend
+npm ci
+npm run build
+Set-Location ..
+.\Abrir-GeoCattle.cmd
+```
+
+Para el primer arranque, usa la configuración y los binarios locales preparados para el equipo. Docker ofrece un arranque alternativo para instalaciones nuevas. [Desarrollo local](docs/DESARROLLO_LOCAL.md) · [Docker en Windows y Linux](#docker-en-windows-y-linux)
+
+Comprueba la [salud de la API en el puerto 8084](http://localhost:8084/api/v1/health). Usa las credenciales de tu instalación. Cuando el prototipo crea la cuenta inicial, guarda el acceso en el archivo privado `.runtime/acceso_prototipo.json`.
+
 ## Estado del sistema
 
-Revisión del **18 de noviembre de 2026**.
+Funciones disponibles en `main`.
 
 | Área | Estado |
 |---|---|
@@ -13,7 +31,10 @@ Revisión del **18 de noviembre de 2026**.
 | Mapa sin Internet | Imagen satelital de Temuco incluida, escala métrica y soporte para ortofotos y caminos locales. |
 | Inventario de gateways | Registro, ubicación, edición, archivado e historial de recepciones, con migración `005`. [Detalle](docs/CRUD_GATEWAYS.md). |
 | Captura USB | Selector **Directo** o **Gateways**, detección por identidad USB, lotes JSON, cola local y reintentos ante fallos de entrega o bloqueos breves del archivo de estado. [Operación](docs/DESARROLLO_LOCAL.md). |
-| Registro veterinario | Ficha técnica, mediciones y cambios sanitarios con historial protegido. La migración `006` adapta el guardado al rol restringido de PostgreSQL. |
+| Registro sanitario | Ficha técnica, mediciones y agenda con historial y autoría. El formulario adapta sus campos al tipo de evento. |
+| Reportes del rebaño | Vista previa y CSV de inventario, sanidad, agenda, mediciones, observaciones, asignaciones, alertas y actividad diaria. |
+| Indicadores del predio | Totales, serie de alertas y rankings de movimiento y salidas para dueño y administrador con predio seleccionado. |
+| Solicitudes y auditoría | Propuestas al dueño con seguimiento de la decisión, y solicitudes privadas de soporte atendidas por el administrador desde el panel global. |
 | Alertas de sensores | Umbral térmico, mínimo de actividad y duración configurables por predio. El simulador permite probar cambios antes de guardarlos. |
 | Acceso de administrador | Usuario y contraseña en desarrollo y simulación. El TOTP es configurable para ese inicio de sesión. [Configuración](#acceso-de-administrador). |
 | Hardware | Código Arduino del collar, las dos receptoras y los dos repetidores. [Firmware](firmware/README.md). |
@@ -26,6 +47,8 @@ El código de la aplicación y de la captura se mantiene en `main`. Para contrib
 - Sesiones HttpOnly, CSRF, permisos por predio y roles de administrador, dueño, trabajador y veterinario. TOTP configurable para el inicio de sesión de administrador y verificación adicional para operaciones sensibles.
 - Contexto multipredio, gestión de clientes, invitaciones, membresías, confianza por acción y aprobación de propuestas del trabajador. Las invitaciones vencidas se consultan mediante el filtro correspondiente.
 - Bovinos con DIIO, ficha técnica y sanitaria, historial, tratamientos y agenda con autoría.
+- **Registro sanitario** exige producto y vía para vacuna y antibiótico. Vacuna ofrece vías intramuscular, subcutánea e intranasal. La vía oral aparece en el selector de antibiótico. Procedimiento admite productos opcionales y Muerte muestra las circunstancias y la causa si se conoce. La API valida estas reglas al guardar y al aprobar propuestas.
+- **Rebaño y salud → Reportes del rebaño** permite consultar registros del predio o de un bovino y descargar el filtro aplicado en CSV. Dueño y administrador pueden exportar los totales de bovinos, collares y módulos, agrupar alertas por día, semana o mes en la zona horaria del predio y consultar los rankings por porcentaje de muestras en movimiento o por aperturas de alertas de salida de geocerca. Los rankings muestran la cobertura que sustenta cada puesto. [Contrato de reportes](docs/CONTRATO_API.md#reportes-del-rebaño)
 - Mapa Leaflet con imagen satelital y cartografía vial locales, OpenStreetMap opcional, escala métrica, recentrado y dibujo de geocercas versionadas.
 - Asociaciones históricas entre collar y animal, sector y geocerca, con vigencias que preservan las lecturas anteriores. En **Territorio → Sectores y geocercas** se puede trasladar un animal con su collar a otro potrero.
 - Recepción académica LoRa directo mediante una T3 USB con CSV V4 y JSON V5, y captura de lotes JSON mediante una T3 base. La cola local deduplica y reintenta la entrega a la API.
@@ -35,15 +58,15 @@ El código de la aplicación y de la captura se mantiene en `main`. Para contrib
 - Condición técnica de las alertas separada de su atención humana; supervisión de ausencia de comunicación y vigencia GPS.
 - Gateways, KPI, mantenimiento, auditoría, avisos externos en cola y simulación identificada y separada del hardware real.
 
-## Cómo levantar GeoCattle
+## Entornos y captura de hardware
 
 Usa la raíz del repositorio como directorio de trabajo. Para una instalación nueva, clona `main` con `git clone --branch main https://github.com/noagame/GeoCattle.git` y entra en `GeoCattle`.
 
 | Entorno | Archivo privado | Web por defecto | Puerto PostgreSQL |
 |---|---|---|---|
+| Desarrollo nativo en Windows | `.env.academic` | `8084` | `55434` |
 | Docker con datos de demostración | `.env` | `8080` | `55432` |
 | Docker con hardware físico | `.env.docker` | `8086` | `55436` |
-| Prototipo nativo de Windows ya preparado | `.env.academic` | `8084` | `55434` |
 
 ### Docker en Windows y Linux
 
@@ -74,11 +97,9 @@ Para MQTT, añade `--profile iot` al arranque. `--profile lorawan` añade ChirpS
 
 Comprueba la [salud de la API de Docker](http://localhost:8086/api/v1/health) o el mismo endpoint en `8080` para simulación. Consulta `status` y `logs` con `scripts/docker_project.py`. Usa `backup` para generar un respaldo y `stop` para detener contenedores conservando los volúmenes. Repite `--environment development` y los perfiles que hayas activado al administrar ese entorno. El arranque en Linux x86_64 se comprobó en Docker Desktop sobre Windows. [Evidencia de portabilidad](docs/REVISION_DOCKER_PORTABILIDAD.md).
 
-### Prototipo nativo en Windows
+### Captura USB en desarrollo nativo
 
-La instalación ya preparada necesita `.env.academic`, PostgreSQL/PostGIS local, `.venv` y el frontend compilado. Sus datos y credenciales se configuran en cada PC. Para una instalación nueva, utiliza los pasos de Docker o consulta la [guía de desarrollo local](docs/DESARROLLO_LOCAL.md).
-
-1. Abre [`Abrir-GeoCattle.cmd`](Abrir-GeoCattle.cmd) para levantar la base, la API y el proceso de alertas. La web abre en [localhost:8084](http://localhost:8084/).
+1. Inicia GeoCattle siguiendo el [arranque de desarrollo en el puerto 8084](#desarrollo-local-en-el-puerto-8084).
 2. Conecta la receptora T3 con un cable USB de datos, enciende el collar y cierra Monitor Serie y Plotter.
 3. Abre [`Iniciar-Captura.cmd`](Iniciar-Captura.cmd). Elige **Directo** para la T3 que recibe del collar o **Gateways** para la T3 base de los repetidores. Se detectará el USB del modo seleccionado.
 4. Deja abierta la consola de captura. Comprueba una lectura nueva en [Recepción de collares](http://localhost:8084/#hardware) y confirma la persistencia en PostgreSQL antes de dar por verificada la integración.
@@ -150,7 +171,7 @@ npm test
 npm run build
 ```
 
-Para trabajar sin contenedores en la aplicación, usa PostgreSQL/PostGIS y `uv sync --extra test` dentro de `backend/`. `scripts/local_backend.py` ofrece `migrate`, `seed` y `serve` desde la raíz; Vite usa `http://localhost:5173` con proxy hacia la API en el puerto 8000. Ver [Operación](docs/OPERACION.md) y [Verificación](docs/VERIFICACION.md).
+Para editar con recarga en caliente, usa PostgreSQL/PostGIS y `uv sync --extra test` dentro de `backend/`. `scripts/local_backend.py` ofrece `migrate`, `seed` y `serve` desde la raíz. El servidor de Vite usa `http://localhost:5173` y redirige las solicitudes de API al puerto 8000. [Operación](docs/OPERACION.md) · [Verificación](docs/VERIFICACION.md)
 
 Las pruebas de integración deben apuntar a una base aislada mediante la configuración documentada. Las pruebas de hardware API requieren además `GEOCATTLE_TEST_DATABASE=1` y fixtures preparados; no deben ejecutarse indiscriminadamente sobre la base física.
 
@@ -176,6 +197,7 @@ docs/                   Arquitectura, operación, informes y evidencias
 - [Gestión e historial de gateways](docs/CRUD_GATEWAYS.md).
 - [Desarrollo local](docs/DESARROLLO_LOCAL.md) y [visualización de telemetría](docs/VISUALIZACION_TELEMETRIA.md).
 - [Contrato API y radio JSON V5](docs/CONTRATO_API.md#captura-radio-json-v5).
+- [Plan de evolución y criterios de aceptación](docs/planificacion/PLAN_EVOLUCION_TRAZABILIDAD.md).
 - [Mapas, asociaciones y perfiles](docs/REVISION_MAPAS_ASOCIACIONES_PERFILES.md).
 - [Usuarios y registro mediante el dueño](docs/USUARIOS_Y_REGISTRO.md).
 - [Configuración de alertas](docs/CONFIGURACION_ALERTAS.md).

@@ -10,7 +10,7 @@ GeoCattle supervisa ganado por predio. Integra gestión bovina y sanitaria, mapa
 | Interfaz | `frontend/src/`. Revisar `api.ts`, `types.ts` y `v3types.ts` al cambiar contratos que consume la interfaz. |
 | Esquema | `database/migrations/`. `backend/geocattle/migrate.py` aplica los SQL en orden y registra cada migración. |
 | Captura | `adapters/` contiene lectores, parsers y cola de entrega. `scripts/start_capture.py` inicia la captura en el anfitrión. |
-| Arranque | `Abrir-GeoCattle.cmd` inicia el prototipo nativo en Windows. `Abrir-GeoCattle.sh` inicia desarrollo en Linux mediante `scripts/docker_project.py`, `compose.yaml` y `compose.usb.yaml`. |
+| Arranque | `Abrir-GeoCattle.cmd` inicia el prototipo nativo en Windows. `Abrir-GeoCattle-LAN.cmd` añade acceso HTTPS por la red local. `Abrir-GeoCattle.sh` inicia desarrollo en Linux mediante Docker Compose. |
 | Pruebas | `backend/tests/`, `frontend/tests/` y `qa/`. Los comandos de CI están en [validacion.yml](.github/workflows/validacion.yml). |
 
 ## Contratos que se deben preservar
@@ -120,7 +120,7 @@ When the user requests a durable behavior change, record it here or in the relev
 
 ## Child DOX Index
 
-La raíz contiene los archivos de Compose, los lanzadores de Windows, las reglas de colaboración y los contratos que cruzan áreas. Los índices enlazan los ámbitos hijos directos.
+La raíz contiene los archivos de Compose, los lanzadores de Windows y Linux, las reglas de colaboración y los contratos que cruzan áreas. Los índices enlazan los ámbitos hijos directos.
 
 - [.github/AGENTS.md](.github/AGENTS.md) — CI, revisión y plantillas de GitHub.
 - [adapters/AGENTS.md](adapters/AGENTS.md) — protocolos, recepción serial y entrega de telemetría.

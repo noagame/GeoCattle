@@ -1,9 +1,9 @@
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $projectPath = [IO.Path]::GetFullPath($PSScriptRoot)
-$markers = 'adapters\.lora_usb|geocattle\.local_app|geocattle\.worker|prototype_windows\.py'
+$markers = 'adapters\.lora_usb|geocattle\.local_app|geocattle\.worker|prototype_windows\.py|serve_lan_windows\.py'
 
-# Solo procesos Python de este proyecto y de sus cuatro servicios conocidos.
+# Solo procesos Python con el lanzador o módulo de este proyecto.
 $processes = @(Get-CimInstance Win32_Process | Where-Object {
     $_.Name -match '^python(w)?\.exe$' -and
     $_.CommandLine -match $markers -and
@@ -46,5 +46,10 @@ foreach ($port in @(8084,55434)) {
         $stillOpen += $port
     } catch { } finally { $client.Dispose() }
 }
+if (Get-NetTCPConnection -LocalPort 8445 -State Listen -ErrorAction SilentlyContinue | Where-Object {
+    $listener = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.OwningProcess)"
+    $listener.CommandLine -match 'serve_lan_windows\.py' -and
+    $listener.CommandLine.IndexOf($projectPath, [StringComparison]::OrdinalIgnoreCase) -ge 0
+}) { $stillOpen += 8445 }
 if ($stillOpen.Count) { throw "Siguen activos estos puertos: $($stillOpen -join ', ')." }
 Write-Host 'GeoCattle y PostgreSQL cerrados. Datos conservados. Puedes desconectar las placas.'

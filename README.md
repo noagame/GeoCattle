@@ -51,6 +51,8 @@ python3 scripts/docker_project.py stop --environment development
 
 En ambos sistemas, [localhost:8084/api/v1/health](http://localhost:8084/api/v1/health) debe responder con `status: ok` y `environment: development`.
 
+Para usar el PC Windows como servidor para otros dispositivos de la misma red, inicia el prototipo y luego abre [`Abrir-GeoCattle-LAN.cmd`](Abrir-GeoCattle-LAN.cmd). El iniciador imprime una URL HTTPS en el puerto `8445`. Un punto de acceso del celular puede proporcionar la red local. [Configuración de acceso desde otro dispositivo](docs/DESARROLLO_LOCAL.md#acceso-https-desde-otro-dispositivo)
+
 ## Estado del sistema
 
 Funciones disponibles en `main`.

@@ -12,6 +12,31 @@ Desde la raíz del proyecto, abre con doble clic:
 
 La configuración local está en `.env.academic` y el acceso del prototipo en `.runtime/acceso_prototipo.json`. Conserva ambos archivos fuera de Git. Para un reinicio completo ejecuta `Detener-Prototipo.ps1` en PowerShell y vuelve a abrir los iniciadores que necesites.
 
+## Acceso HTTPS desde otro dispositivo
+
+Conecta el PC servidor y el otro dispositivo al mismo Wi-Fi. Puedes usar el punto de acceso de un celular o la **Zona con cobertura inalámbrica móvil** de Windows si es compatible con el adaptador. La conexión a Internet móvil sirve para compartir la red. GeoCattle usa la dirección privada del PC dentro de esa red.
+
+1. Inicia [`Abrir-GeoCattle.cmd`](../Abrir-GeoCattle.cmd) y después [`Abrir-GeoCattle-LAN.cmd`](../Abrir-GeoCattle-LAN.cmd). Deja abierta la segunda consola. Imprime una URL como `https://192.168.43.20:8445/`. Si hay varias interfaces, ejecuta `.\Abrir-GeoCattle-LAN.cmd --bind IP_DEL_SERVIDOR` desde PowerShell y usa la IPv4 que muestra `ipconfig` para esa red.
+2. Comparte únicamente el certificado público `.runtime/GeoCattle-LAN-CA.cer` con los dispositivos autorizados. Verifica su huella SHA-256 con `Get-FileHash .runtime/GeoCattle-LAN-CA.cer` e importa el certificado como autoridad de confianza según el sistema o el navegador. Los archivos de clave permanecen en `%LOCALAPPDATA%\GeoCattle\lan-tls` en el servidor.
+3. Abre la URL HTTPS impresa e ingresa con una cuenta de GeoCattle. Los administradores usan MFA en este acceso. Para comprobar conexión y confianza del certificado, abre `/api/v1/health` en la misma URL.
+
+Si cambias de Wi-Fi o el punto de acceso asigna otra IP al PC, reinicia el iniciador LAN. Emite un certificado para la nueva IP con la misma autoridad local. Comparte el nuevo enlace.
+
+Si el cliente recibe un tiempo de espera, revisa que el punto de acceso permita comunicación entre dispositivos y que el firewall de Windows permita TCP `8445` desde la subred del servidor. Para autorizarlo de forma acotada, abre PowerShell como administrador y reemplaza `IP_DEL_SERVIDOR` y `SUBRED_CIDR` por los valores de esa conexión:
+
+```powershell
+New-NetFirewallRule -DisplayName 'GeoCattle HTTPS LAN' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8445 -LocalAddress IP_DEL_SERVIDOR -RemoteAddress SUBRED_CIDR
+```
+
+Si cambia la red, actualiza o retira esa regla. Ctrl+C en la consola LAN detiene el acceso HTTPS. El prototipo local sigue en `localhost:8084` y PostgreSQL conserva su puerto en loopback.
+
+En Ubuntu o Debian, puedes comprobar el certificado sin instalarlo en el almacén del sistema. Copia el archivo público y ejecuta:
+
+```bash
+openssl x509 -inform DER -in GeoCattle-LAN-CA.cer -out GeoCattle-LAN-CA.pem
+curl --cacert GeoCattle-LAN-CA.pem https://IP_DEL_SERVIDOR:8445/api/v1/health
+```
+
 ## Captura con doble clic e identidad USB
 
 Cierra el Monitor Serie y el Plotter de Arduino. Conecta la T3 receptora por USB de datos y enciende el emisor. En el primer enlace, el perfil del modo se guarda al recibir un mensaje válido con información de radio. Usa VID/PID y número de serie USB cuando está disponible. Si Windows cambia el COM, el capturador busca la misma identidad.

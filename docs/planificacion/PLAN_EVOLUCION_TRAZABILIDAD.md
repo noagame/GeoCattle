@@ -10,7 +10,7 @@ El objetivo es que cada alta de bovino, asociación de collar, registro sanitari
 | Irregularidades sanitarias | El formulario exige un producto con una vía de su lista para vacuna y antibiótico. Permite productos opcionales en procedimientos y adapta los campos a los demás eventos. Completar una atención de vacunación o antibiótico exige un evento efectivo del mismo tipo. Una corrección conserva los datos históricos del producto cuando corresponde. | Confirmar el catálogo con el veterinario y validar los tres flujos desde el teléfono. |
 | CSV | **Reportes del rebaño** incorpora vista previa y CSV para inventario, sanidad, agenda, mediciones, observaciones, asignaciones, alertas y actividad diaria. La ficha sanitaria abre los reportes con su bovino seleccionado. | Verificar las descargas desde Android e iOS durante la validación móvil. |
 | Indicadores del dueño | **Reportes del rebaño** ofrece totales, alertas por período y rankings con evidencia de cobertura. El dueño y el administrador pueden consultar y exportar los cuatro reportes del predio activo. | Validar los umbrales de cobertura con varios collares en terreno. |
-| Móvil y operación | React tiene menú móvil y estilos responsivos. El prototipo nativo y Caddy escuchan inicialmente en loopback. El lanzador de captura USB exige que el backend de destino esté en desarrollo. | Validar primero un entorno de pruebas por HTTPS. Diseñar la conexión del puente Windows a la instancia remota como una tarea de integración con pruebas de reintento y aislamiento. |
+| Móvil y operación | React tiene menú móvil y estilos responsivos. El prototipo Windows ofrece un lanzador HTTPS para la red local y conserva el 8084 para operación en el servidor. | Validar desde un segundo equipo y ejecutar la matriz móvil con cuentas de prueba. La publicación remota y las pruebas de reconexión del puente pertenecen al despliegue piloto. |
 
 Fuentes de los hallazgos. [Ficha sanitaria](../../frontend/src/V3Health.tsx) · [API de cambios e indicadores](../../backend/geocattle/v3_api.py) · [Registro diario](../../frontend/src/HardwarePage.tsx) · [CSV y resumen actuales](../../backend/geocattle/main.py) · [Captura](../../scripts/start_capture.py) · [Operación](../OPERACION.md)
 
@@ -58,6 +58,8 @@ La primera entrega móvil se plantea sobre la web responsiva. Un entorno de prue
 [Esquema y documentación de base de datos](../MODELO_BASE_DATOS.md) · [Contratos de API](../CONTRATO_API.md)
 
 ## Inicio del despliegue
+
+Para las pruebas de la parte 4 en el mismo lugar, conecta los dispositivos a un Wi-Fi compartido y usa el [acceso HTTPS local de Windows](../DESARROLLO_LOCAL.md#acceso-https-desde-otro-dispositivo). Las pruebas con un segundo dispositivo y los recorridos por perfil de la matriz móvil se verifican por separado.
 
 1. Levantar **staging** en Docker Compose con PostgreSQL/PostGIS, API, worker, web y TLS. Usar una base ficticia o una copia autorizada y depurada. Configurar un dominio o nombre de pruebas alcanzable desde los celulares.
 2. Verificar las cuatro sesiones y el acceso por predio. Registrar versión, migraciones, estado de servicios y resultado de las pruebas. En la revisión del 19 de noviembre se confirmó la migración `007` en la instancia nativa. La `008` de Gmail se encuentra preparada en la copia de trabajo y la activación del envío requiere un remitente y la configuración de entrega.

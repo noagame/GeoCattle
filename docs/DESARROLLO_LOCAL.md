@@ -53,7 +53,7 @@ El estado local registra `last_line_at` para cualquier línea serial, `last_pack
 2. En **Alta de collar por USB**, entra con una cuenta de dueño o administrador, verifica el predio activo, escribe un nombre y guarda. El asistente completa el identificador y el intervalo a partir del firmware. Si el collar ya existe en ese predio, se puede usar su registro.
 3. En **Collares y dispositivos**, asigna el collar a un bovino cuando esté listo. Después del alta, las lecturas llegan por la T3 mediante LoRa. El inventario y las asignaciones se consultan también desde HTTPS por la red local.
 
-El asistente necesita el [firmware con identificación USB](../firmware/README.md#identidad-y-alta-por-usb). Los collares con firmware anterior pueden registrarse desde el formulario manual con su identificador LoRa conocido.
+El [firmware con identificación USB](../firmware/README.md#identidad-y-alta-por-usb) responde a una consulta del asistente. Con el firmware anterior que imprime JSON V5 en el puerto serie, el asistente espera hasta 55 segundos y toma el identificador y el intervalo del primer paquete válido. Para el collar histórico, el resultado es `REAL01` con un intervalo de 45 segundos. Si Windows indica que el puerto está ocupado, cierra el Monitor Serie o el Plotter de Arduino y vuelve a ejecutar el asistente.
 
 ## Dónde agregar funcionalidades
 

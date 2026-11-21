@@ -1,4 +1,5 @@
 """Identify a newly connected GeoCattle collar and open its inventory form."""
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
@@ -11,6 +12,7 @@ import webbrowser
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from adapters.lora_json import decode_json
 from adapters.receiver_profiles import MODES, load_profile
 from adapters.serial_receiver import ReceiverSelectionError, choose_receiver, enumerate_ports
 
@@ -34,27 +36,52 @@ def collar_descriptor(line):
     return {'hardware_id': hardware_id, 'interval_seconds': interval}
 
 
+def legacy_collar_descriptor(line):
+    if not line.lstrip().startswith(b'{'):
+        return None
+    try:
+        payload, _ = decode_json(line.decode('utf-8').strip(), datetime.now(timezone.utc))
+    except (ValueError, OverflowError):
+        return None
+    quality = payload['quality']
+    if 'radio' in quality:
+        # A receiver envelope identifies a collar heard over the air.
+        return None
+    return {
+        'hardware_id': payload['hardware_id'],
+        'interval_seconds': (quality['period_ms'] + 999) // 1000,
+    }
+
+
 def read_collar(port):
     import serial
 
     with serial.Serial(port, baudrate=115200, timeout=.25, write_timeout=1) as link:
-        deadline = time.monotonic() + 12
-        next_query = 0
+        started = time.monotonic()
+        # The legacy sketch prints every 45 s and does not answer queries.
+        deadline = started + 55
+        next_query = started
         pending = bytearray()
+        discard_line = False
         while (now := time.monotonic()) < deadline:
-            if now >= next_query:
+            if next_query <= now < started + 12:
                 link.write(b'\nGEOCATTLE_IDENTIFY_V1\n')
                 next_query = now + 1
-            pending.extend(link.read_until(size=1024))
-            if pending.endswith(b'\n'):
-                # The serial stream may also contain diagnostics and radio packets.
-                descriptor = collar_descriptor(bytes(pending))
-                if descriptor:
-                    return descriptor
+            chunk = link.read_until(size=1024)
+            if not discard_line:
+                pending.extend(chunk)
+                discard_line = len(pending) > 1024
+                if discard_line:
+                    pending.clear()
+            if chunk.endswith(b'\n'):
+                if not discard_line:
+                    descriptor = collar_descriptor(pending) or legacy_collar_descriptor(pending)
+                    if descriptor:
+                        return descriptor
                 pending.clear()
-            elif len(pending) > 2048:
-                pending.clear()
-    raise ValueError('El dispositivo no respondió como collar GeoCattle. Revisa el cable de datos y el firmware de alta USB.')
+                discard_line = False
+    raise ValueError('No se recibió la identificación USB ni un paquete JSON V5 del collar. '
+                     'Revisa que esté encendido y pueda completar un envío LoRa.')
 
 
 def main():
@@ -72,13 +99,16 @@ def main():
             if new_ports or time.monotonic() >= deadline:
                 break
             time.sleep(.25)
-        if len(new_ports) != 1:
-            raise ValueError('Debe aparecer exactamente un dispositivo USB nuevo. Desconecta el collar y vuelve a intentar.')
+        if not new_ports:
+            raise ValueError('Windows no detectó un puerto serie USB nuevo. Revisa el cable de datos y vuelve a conectar el collar.')
+        if len(new_ports) > 1:
+            raise ValueError('Apareció más de un puerto USB nuevo. Conecta solo el collar durante la detección.')
         selected = new_ports[0]
         for mode in MODES:
             profile = load_profile(ROOT / '.runtime' / 'capture', mode)
             if profile and choose_receiver([selected], profile):
                 raise ValueError('El USB identificado pertenece a una receptora registrada. Conecta el collar.')
+        print(f'Leyendo {selected.device}. Un collar con firmware anterior puede tardar hasta 55 segundos.')
         descriptor = read_collar(selected.device)
     except (OSError, ValueError, ReceiverSelectionError, EOFError) as error:
         print(f'No se pudo preparar el alta USB: {error}', file=sys.stderr)

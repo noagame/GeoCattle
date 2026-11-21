@@ -13,7 +13,7 @@
 - Para dueño y administrador, **Reportes del rebaño** abre los totales del predio y ofrece alertas agrupadas y rankings con evidencia de cobertura. La descarga conserva el período, la agrupación y el tipo de alerta de la vista previa.
 - En geocercas, conserva la sincronización entre vértices y coordenadas y la función de deshacer. En telemetría, conserva la diferencia entre una posición ausente, un dato previo y una lectura nueva. [Geocercas y alertas](../../docs/CORRECCIONES_GEOCERCAS_ALERTAS_2026-10-29.md) · [Telemetría](../../docs/VISUALIZACION_TELEMETRIA.md)
 - Estructura y navegación de la barra lateral:
-  - La barra lateral ocupa la altura completa del viewport (`100vh`) sin scroll general. La cabecera (marca y selector de predio) y el pie (estado y usuario) permanecen fijos.
+  - En escritorio la barra lateral ocupa `100vh`. En móvil usa la altura dinámica visible y respeta el margen seguro inferior para mantener el perfil y el botón con texto «Cerrar sesión» al alcance. La cabecera y el pie permanecen fijos.
   - Solo la navegación central (`.sidebar-nav`) es desplazable, utilizando scrollbar discreto adaptado a la paleta verde.
   - El selector de predio (`FarmSelector.tsx`) es personalizado y accesible (soporte de teclado con flechas, Escape, Enter, tab, foco, cierre al hacer clic fuera, truncamiento de nombres largos y estado de carga durante `/auth/context`), coherente con la paleta verde del prototipo sin depender de menús nativos del navegador. La opción "Panel global" se reserva a administradores.
   - El engranaje de perfil se ubica a la izquierda de «Cerrar sesión» y abre `#profile` (`ProfilePage`) para datos y seguridad. «Reglas del predio» (`#settings`) se encuentra en «Gestión del predio» para los roles autorizados.

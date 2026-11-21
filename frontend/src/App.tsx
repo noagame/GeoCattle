@@ -211,7 +211,7 @@ export default function App() {
   useEffect(() => { if (!toast) return; const timeout = setTimeout(() => setToast(''), 6000); return () => clearTimeout(timeout); }, [toast]);
   function navigate(next: Page) { location.hash = next; setRoute(next); setMobileMenu(false); }
   async function switchFarm(farmId: string) { if ((!farmId && !admin) || farmId === (session?.user.farm_id ?? '')) return; setContextBusy(true); setContextError(''); try { const result = await write<Session>('/auth/context', { farm_id: farmId || null }); setSession(result); updateSession(result); setSearch(''); navigate('overview'); } catch (err) { setContextError(message(err)); } finally { setContextBusy(false); } }
-  async function logout() { try { await api('/auth/logout', { method: 'POST' }); setSession(null); updateSession(null); setAuthError(''); } catch (err) { setToast(message(err)); } }
+  async function logout() { try { await api('/auth/logout', { method: 'POST' }); setSession(null); updateSession(null); setMobileMenu(false); setAuthError(''); } catch (err) { setToast(message(err)); } }
   if (checking) return <div className="app-start"><Brand /><Loading label="Conectando con GeoCattle…" /></div>;
   if (resetToken) return <ResetPasswordPage token={resetToken} onBack={() => { setSession(null); updateSession(null); setAuthError(''); setAuthNotice(''); location.hash = ''; setResetToken(''); }} />;
   if (enrolToken) return <EnrolPage token={enrolToken} onBack={() => { location.hash = ''; setEnrolToken(''); }} />;
@@ -234,7 +234,9 @@ export default function App() {
             aria-current={activePage === 'profile' ? 'page' : undefined} aria-label="Perfil y configuración personal" title="Perfil y configuración personal">
             <Settings size={17} aria-hidden="true" />
           </button>
-          <button type="button" className="icon-button" onClick={logout} aria-label="Cerrar sesión" title="Cerrar sesión"><LogOut size={17} aria-hidden="true" /></button>
+          <button type="button" className="icon-button sidebar-logout" onClick={logout} aria-label="Cerrar sesión" title="Cerrar sesión">
+            <LogOut size={17} aria-hidden="true" /><span className="sidebar-logout-label">Cerrar sesión</span>
+          </button>
         </div>
       </div>
     </aside>

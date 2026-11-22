@@ -7,6 +7,7 @@ Este directorio contiene el paquete FastAPI, el contenedor, las dependencias y p
 ## Guía de trabajo
 
 - Revisa qué flujos consumen cada archivo de dependencias al cambiar una versión. CI instala `requirements.lock` y el desarrollo con uv usa `uv.lock`.
+- XlsxWriter genera las exportaciones en ejecución. openpyxl pertenece al extra `test` y comprueba los archivos en la integración de CI.
 - Los cambios en esquema se coordinan con [database](../database/AGENTS.md) y los cambios de arranque con [scripts](../scripts/AGENTS.md).
 
 ## Verificación

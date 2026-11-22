@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Activity, Battery, Download, Radio, RefreshCw, Satellite, Thermometer } from 'lucide-react';
-import { useData, date, age } from './api';
+import { useData, date, age, query } from './api';
 import { Badge, Empty, ErrorNotice, Loading, Modal, Panel, PanelTitle, PageTitle } from './ui';
 import { CattleMap, type CollarLocation } from './Map';
 import type { Telemetry } from './types';
 import { battery, movement, number, quality, reason, TelemetryDetails } from './TelemetryView';
+import { ReportDownloads } from './ReportDownloads';
 
 type Sample = Telemetry & { hardware_id: string; animal_name: string | null };
 type Samples = { items: Sample[]; total: number; timezone: string; devices: { hardware_id: string; name: string }[] };
@@ -93,7 +94,11 @@ export function HardwarePage({ farmId }: { farmId: string }) {
       <CattleMap collars={positions} history={history} height="small" />
       <p className="sensor-caption">{positions.length} collares con posición registrada. {collar ? 'La trayectoria corresponde solo a las lecturas de la página del historial seleccionada.' : 'Selecciona un collar para ver su trayectoria sin unir recorridos de animales distintos.'} La última posición puede ser anterior al último paquete.</p>
     </Panel>
-    <Panel><PanelTitle title="Historial de telemetría" subtitle="Hora aproximada de observación según recepción del PC. Se conservan los valores ausentes y los paquetes de cada sesión." action={<button className="button secondary small" disabled={!rows.length} onClick={() => exportPage(rows, day)}><Download size={15} />Exportar página JSONL</button>} />
+    <Panel><PanelTitle title="Historial de telemetría" subtitle="Hora aproximada de observación según recepción del PC. Excel y CSV exportan el día y collar seleccionados (hasta 50.000 lecturas)." action={
+      <ReportDownloads key={JSON.stringify([farmId, day, collar])} disabled={!!samples.error || !samples.data?.total}
+        path={format => `/reports/telemetry.${format}${query({ day, hardware_id: collar })}`}>
+        <button type="button" className="button secondary small" disabled={!rows.length} onClick={() => exportPage(rows, day)}><Download size={15} />Exportar página JSONL</button>
+      </ReportDownloads>} />
       <ErrorNotice error={samples.error} retry={samples.reload} />
       {!samples.data && !samples.error && <Loading />}
       {samples.data?.total === 0 && <Empty title="Sin lecturas para esta fecha" description="Cambia la fecha o el collar. El resumen superior conserva la última lectura disponible." />}

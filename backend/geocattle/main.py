@@ -1,11 +1,10 @@
-import csv
-import io
 import json
 import secrets
 import time
 from collections import defaultdict, deque
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 from contextlib import asynccontextmanager
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
@@ -16,7 +15,9 @@ from sqlalchemy.exc import IntegrityError, OperationalError, TimeoutError as Dat
 from sqlalchemy.orm import aliased
 from .db import get_db
 from .device_inventory import create_inventory_device, device_json
+from .hardware_api import period as farm_day_period
 from .models import *
+from .report_exports import CsvDelimiter, EXPORT_LIMIT, ExportFormat, export_response
 from .schemas import *
 from .security import admin_login_requires_mfa, current_user, owner, operator, service_auth, create_session, token_hash, verify_password, hash_password
 from .domain import ingest, append_audit, freshness, at_time, check_timeouts, clear_animal_monitoring, resolve_assignment_events, reset_pasture_monitoring, temperature_alert, low_activity_alert
@@ -502,20 +503,64 @@ def telemetry(body:TelemetryIn,db=Depends(get_db, scope="function"),
               farm_id:UUID|None=Header(default=None,alias="X-Farm-ID")):
     return ingest(db, body, detect_candidates=True, capture_farm_id=farm_id)
 
-@api.get("/reports/telemetry.csv")
-def export_history(start:datetime|None=None,end:datetime|None=None,animal_id:UUID|None=None,user=Depends(current_user),db=Depends(get_db, scope="function")):
-    period(start,end)
-    if animal_id:accessible(db,Animal,animal_id,user)
-    query=select(Telemetry).where(Telemetry.farm_id==user.farm_id)
-    if start:query=query.where(Telemetry.observed_at>=start)
-    if end:query=query.where(Telemetry.observed_at<end)
-    if animal_id:query=query.where(Telemetry.animal_id==animal_id)
-    rows=db.scalars(query.order_by(Telemetry.observed_at).limit(50000)).all()
-    out=io.StringIO();writer=csv.writer(out)
-    keys=["animal_id","device_id","observed_at","received_at","longitude","latitude","gnss_valid","surface_temperature_c","activity_index","battery_mv","source"]
-    writer.writerow(keys)
-    for row in rows:writer.writerow([getattr(row,k) for k in keys])
-    return Response(out.getvalue(),media_type="text/csv",headers={"Content-Disposition":"attachment; filename=geocattle-telemetria.csv","X-Export-Limit":"50000"})
+@api.get("/reports/telemetry.{format}")
+def export_history(format: ExportFormat, start: datetime | None = None, end: datetime | None = None,
+                   animal_id: UUID | None = None, day: date | None = None, hardware_id: str | None = None,
+                   delimiter: CsvDelimiter = 'comma', user=Depends(current_user), db=Depends(get_db, scope='function')):
+    farm = db.get(Farm, user.farm_id) if user.farm_id else None
+    if not farm:
+        raise HTTPException(403, 'Seleccione un predio autorizado')
+    if day is not None:
+        if start is not None or end is not None or day == date.max:
+            raise HTTPException(422, 'Selecciona un día válido o un intervalo, no ambos')
+        start, end = farm_day_period(day, farm.timezone)
+    period(start, end)
+    if animal_id:
+        accessible(db, Animal, animal_id, user)
+    keys = ('animal_id', 'device_id', 'observed_at', 'received_at', 'longitude', 'latitude', 'gnss_valid',
+            'surface_temperature_c', 'activity_index', 'battery_mv', 'source')
+    statement = select(*(getattr(Telemetry, key) for key in keys)).where(Telemetry.farm_id == farm.id)
+    if start:
+        statement = statement.where(Telemetry.observed_at >= start)
+    if end:
+        statement = statement.where(Telemetry.observed_at < end)
+    if animal_id:
+        statement = statement.where(Telemetry.animal_id == animal_id)
+    if hardware_id:
+        statement = statement.where(Telemetry.device_id.in_(
+            select(Device.id).where(Device.farm_id == farm.id, Device.hardware_id == hardware_id)))
+    zone = ZoneInfo(farm.timezone)
+    metadata = [('Predio', farm.name), ('ID del predio', farm.id), ('Zona horaria', farm.timezone),
+                ('Generado', utcnow()), ('Período', day or ('Intervalo' if start or end else 'Todo el historial')),
+                ('Desde (inclusive)', start or 'Sin límite'), ('Hasta (exclusivo)', end or 'Sin límite'),
+                ('Bovino (ID)', animal_id or 'Todos'), ('Collar', hardware_id or 'Todos'),
+                ('Máximo de filas', EXPORT_LIMIT)]
+    filename = 'geocattle-telemetria'
+    if day:
+        filename += f'-{day}'
+    elif start or end:
+        first = start.astimezone(zone).date() if start else 'sin-inicio'
+        last = end.astimezone(zone).date() if end else 'sin-fin'
+        filename += f'-{first}_{last}'
+    columns, formats, rows = keys, None, None
+    if format == 'xlsx':
+        # El libro es para personas: DIIO, bovino y collar en vez de identificadores internos.
+        columns = ('DIIO', 'Bovino', 'Collar', 'Observado', 'Recibido', 'Latitud', 'Longitud', 'Posición GPS válida',
+                   'Temperatura superficial (°C)', 'Índice de actividad', 'Batería (mV)', 'Origen')
+        formats = {5: '0.000000', 6: '0.000000', 8: '0.0', 9: '0.000', 10: '0'}
+        statement = (select(Animal.diio, Animal.name, Device.hardware_id, Telemetry.observed_at, Telemetry.received_at,
+                            Telemetry.latitude, Telemetry.longitude, Telemetry.gnss_valid, Telemetry.surface_temperature_c,
+                            Telemetry.activity_index, Telemetry.battery_mv, Telemetry.source)
+                     .select_from(Telemetry).join(Device, Device.id == Telemetry.device_id)
+                     .outerjoin(Animal, Animal.id == Telemetry.animal_id)
+                     .where(Telemetry.id.in_(statement.with_only_columns(Telemetry.id))))
+    statement = statement.order_by(Telemetry.observed_at, Telemetry.id).limit(EXPORT_LIMIT)
+    sources = {'academic': 'Collar del prototipo', 'lorawan': 'LoRaWAN', 'sim': 'Simulado'}
+    with db.execute(statement.execution_options(yield_per=1000)) as result:
+        rows = result if format != 'xlsx' else ((*row[:-1], sources.get(row[-1], row[-1])) for row in result)
+        return export_response(columns, rows, format=format, filename=filename, title='Telemetría', zone=zone,
+                               metadata=metadata, delimiter=delimiter, legacy_telemetry=True,
+                               headers={'X-Export-Limit': str(EXPORT_LIMIT)}, formats=formats)
 @api.get("/reports")
 def report(start:datetime|None=None,end:datetime|None=None,user=Depends(current_user),db=Depends(get_db, scope="function")):
     period(start,end)

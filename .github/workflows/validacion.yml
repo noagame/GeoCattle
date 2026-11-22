@@ -157,7 +157,7 @@ jobs:
       - name: Instalar dependencias del backend
         run: |
           python -m pip install -r backend/requirements.lock
-          python -m pip install 'pytest>=8,<10'
+          python -m pip install 'pytest>=8,<10' 'openpyxl>=3.1,<4'
       - name: Migrar la base temporal desde cero
         run: python -m geocattle.migrate
       - name: Comprobar segunda ejecución de migraciones

@@ -1,17 +1,16 @@
 """Read-only reports over the selected farm and its animals."""
-import csv
-import io
-from datetime import date, datetime
+from datetime import date
 from typing import Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 
 from .db import get_db
 from .hardware_api import period
 from .models import Farm, utcnow
+from .report_exports import CsvDelimiter, EXPORT_LIMIT, display_value, export_response
 from .security import current_user
 from .v3_api import farm_scope, scoped
 from .v3_farm_indicators import ALERT_LABELS, INDICATORS, MIN_SAMPLES, Report
@@ -25,7 +24,39 @@ AlertType = Literal['all', 'escape', 'communication_timeout', 'low_battery', 'hi
 Grain = Literal['day', 'week', 'month']
 GRAINS = {'day': '1 day', 'week': '1 week', 'month': '1 month'}
 PREVIEW_ROWS = 25
-CSV_LIMIT = 50_000
+# Los reportes son para personas: los códigos internos se muestran con su etiqueta en español.
+EVENT_TYPES = {'examination': 'Examen', 'vaccination': 'Vacunación', 'antibiotic': 'Antibiótico', 'pathology': 'Patología',
+               'diagnosis': 'Diagnóstico', 'procedure': 'Procedimiento', 'injury': 'Lesión', 'death': 'Muerte',
+               'observation': 'Observación'}
+VALUE_LABELS = {
+    'inventario': {'Estado vital': {'active': 'Activo', 'missing': 'Extraviado', 'dead': 'Muerto', 'slaughtered': 'Faenado',
+                                    'retired': 'Retirado'},
+                   'Orientación': {'meat': 'Carne', 'milk': 'Leche'},
+                   'Sexo': {'female': 'Hembra', 'male': 'Macho', 'unknown': 'Sin registrar'}},
+    'sanidad': {'Tipo': EVENT_TYPES, 'Operación': {'record': 'Registro', 'correct': 'Corrección', 'void': 'Anulación'}},
+    'agenda': {'Tipo': {'vaccination': 'Vacunación', 'antibiotic': 'Antibiótico', 'checkup': 'Control'}},
+    'alertas': {'Tipo': {key: label for key, label in ALERT_LABELS.items() if key != 'all'},
+                'Severidad': {'warning': 'Precaución', 'critical': 'Crítica'},
+                'Condición': {'active': 'Activa', 'resolved': 'Resuelta'},
+                'Atención': {'pending': 'Pendiente', 'acknowledged': 'Reconocida', 'in_review': 'En revisión',
+                             'concluded': 'Concluida'}},
+    'actividad': {'Origen': {'academic': 'Collar del prototipo', 'lorawan': 'LoRaWAN', 'sim': 'Simulado'}},
+}
+
+
+def labelled(kind, columns, row):
+    labels = VALUE_LABELS.get(kind)
+    if not labels:
+        return row
+    return [labels.get(column, {}).get(value, value) if isinstance(value, str) else value
+            for column, value in zip(columns, row)]
+REPORT_TITLES = {
+    'inventario': 'Inventario actual', 'sanidad': 'Ficha sanitaria', 'agenda': 'Agenda sanitaria',
+    'mediciones': 'Mediciones', 'observaciones': 'Observaciones del rebaño',
+    'asignaciones': 'Asignaciones de collares', 'alertas': 'Alertas por bovino', 'actividad': 'Actividad diaria',
+    'totales': 'Totales del predio', 'serie-alertas': 'Alertas por período',
+    'ranking-movimiento': 'Ranking de movimiento', 'ranking-salidas': 'Ranking de salidas de geocerca',
+}
 
 
 REPORTS: dict[ReportKind, Report] = {
@@ -118,25 +149,9 @@ REPORTS: dict[ReportKind, Report] = {
 }
 
 
-def display_value(value, zone):
-    if value is None:
-        return ''
-    if isinstance(value, datetime):
-        return value.astimezone(zone).isoformat(timespec='seconds')
-    if isinstance(value, bool):
-        return 'Sí' if value else 'No'
-    return str(value)
-
-
-def csv_cell(raw, formatted):
-    if isinstance(raw, str) and (raw.startswith(('\t', '\r', '\n')) or raw.lstrip().startswith(('=', '+', '-', '@'))):
-        return "'" + formatted
-    return formatted
-
-
 @router.get('/{kind}')
 def animal_report(kind: ReportKind, animal_id: UUID | None = None, start: date | None = None,
-        end: date | None = None, format: Literal['json', 'csv'] = 'json',
+        end: date | None = None, format: Literal['json', 'csv', 'xlsx'] = 'json', delimiter: CsvDelimiter = 'comma',
         grain: Grain = 'day', alert_type: AlertType = 'all',
         user=Depends(current_user), db=Depends(get_db, scope='function')):
     if user.role not in ('owner', 'admin', 'worker', 'veterinarian'):
@@ -159,27 +174,41 @@ def animal_report(kind: ReportKind, animal_id: UUID | None = None, start: date |
     report = REPORTS[kind]
     preview = format == 'json'
     projection = 'report.*, count(*) OVER ()' if preview else 'report.*'
-    results = db.execute(text(f"""
+    statement = text(f"""
         WITH selected AS (
             SELECT * FROM animals WHERE farm_id=:farm AND (CAST(:animal AS uuid) IS NULL OR id=CAST(:animal AS uuid))
         ), report AS ({report.select})
         SELECT {projection} FROM report ORDER BY {report.order} LIMIT :limit
-    """), {'farm': farm.id, 'animal': animal_id, 'start_at': start_at, 'end_at': end_at,
-           'zone': farm.timezone, 'as_of': as_of, 'limit': PREVIEW_ROWS if preview else CSV_LIMIT + 1,
+    """)
+    params = {'farm': farm.id, 'animal': animal_id, 'start_at': start_at, 'end_at': end_at,
+           'zone': farm.timezone, 'as_of': as_of, 'limit': PREVIEW_ROWS if preview else EXPORT_LIMIT + 1,
            'start_day': start, 'end_day': end, 'grain': grain, 'step': GRAINS[grain], 'alert_type': alert_type,
            'alert_label': ALERT_LABELS[alert_type],
-           'simulation': farm.environment == 'simulation', 'minimum': MIN_SAMPLES}).fetchall()
+           'simulation': farm.environment == 'simulation', 'minimum': MIN_SAMPLES}
     current = kind in ('inventario', 'totales')
     if preview:
-        return {'columns': report.columns, 'items': [[display_value(value, zone) for value in row[:-1]] for row in results],
+        results = db.execute(statement, params).all()
+        return {'columns': report.columns,
+                'items': [[display_value(value, zone) for value in labelled(kind, report.columns, row[:-1])] for row in results],
                 'total': results[0][-1] if results else 0, 'timezone': farm.timezone,
                 'start': None if current else start, 'end': None if current else end}
-    if len(results) > CSV_LIMIT:
-        raise HTTPException(422, 'El reporte supera las 50.000 filas. Acorta el período o selecciona un bovino.')
-    output = io.StringIO(newline='')
-    writer = csv.writer(output)
-    writer.writerow(report.columns)
-    writer.writerows([csv_cell(value, display_value(value, zone)) for value in row] for row in results)
+    metadata = [('Predio', farm.name), ('ID del predio', farm.id), ('Zona horaria', farm.timezone),
+                ('Generado', as_of), ('Período', 'Corte actual' if current else 'Fechas inclusivas'),
+                ('Bovino (ID)', animal_id or 'Todos')]
+    if not current:
+        metadata.extend([('Desde', start), ('Hasta', end)])
+    if kind == 'serie-alertas':
+        metadata.extend([('Agrupación', {'day': 'Día', 'week': 'Semana', 'month': 'Mes'}[grain]),
+                         ('Tipo de alerta', ALERT_LABELS[alert_type])])
+
+    def limited_rows(results):
+        for row_index, row in enumerate(results):
+            if row_index == EXPORT_LIMIT:
+                raise HTTPException(422, 'El reporte supera las 50.000 filas. Acorta el período o selecciona un bovino.')
+            yield labelled(kind, report.columns, row)
+
     suffix = 'actual' if current else f'{start}_{end}'
-    return Response('\ufeff' + output.getvalue(), media_type='text/csv',
-                    headers={'Content-Disposition': f'attachment; filename="geocattle-{kind}-{suffix}.csv"'})
+    with db.execute(statement.execution_options(yield_per=1000), params) as results:
+        return export_response(report.columns, limited_rows(results), format=format,
+                               filename=f'geocattle-{kind}-{suffix}', title=REPORT_TITLES[kind],
+                               zone=zone, metadata=metadata, delimiter=delimiter)

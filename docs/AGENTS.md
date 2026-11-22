@@ -12,6 +12,7 @@ Este ámbito contiene operación, contratos, arquitectura, diseño V3, planifica
 - Mantén alineados el [contrato de detecciones de collares](CONTRATO_API.md#detección-y-alta-de-collares), los pasos de [incorporación](DESARROLLO_LOCAL.md#incorporar-un-collar-por-usb-o-lora) y la [guía de captura](USB_COM5.md).
 - Documenta el uso del perfil y las invitaciones en [Usuarios y registro](USUARIOS_Y_REGISTRO.md), las rutas y estados en [Contrato de API](CONTRATO_API.md) y los pasos de consola y configuración privada en [Operación](OPERACION.md).
 - Mantén en [Verificación](VERIFICACION.md#carga-de-un-rebaño-de-validación) los comandos de carga ficticia, respaldo vinculado al destino y restauración en otra base.
+- Conserva en [Exportaciones tabulares](CONTRATO_API.md#exportaciones-tabulares) los filtros, límites y diferencias de representación entre Excel y las variantes CSV.
 
 ## Child DOX Index
 

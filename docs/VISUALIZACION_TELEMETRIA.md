@@ -14,7 +14,7 @@ Esa lectura informa batería ausente y USB presente. La interfaz conserva ese es
 2. El resumen superior muestra la última lectura de cada collar del predio, independiente de la fecha del historial.
 3. Seleccionar REAL01 para ver sus gráficas y trayectoria. La fecha limita el historial; hay 100 lecturas por página.
 4. Pulsar «Ver todos los datos» o «Ver datos» en una fila para revisar sensores, diagnóstico y JSON almacenado.
-5. «Exportar página JSONL» descarga los registros normalizados visibles. No exporta automáticamente todo el día.
+5. «Descargar Excel» y «Descargar CSV» exportan las lecturas del día y collar seleccionados (hasta 50.000). «Exportar página JSONL» conserva solo los registros normalizados visibles en la página. [Formatos y filtros](CONTRATO_API.md#exportaciones-tabulares)
 6. El registro diario muestra los últimos 30 días. Pulsar un día cambia la fecha y el collar del historial.
 
 ## Campos utilizados

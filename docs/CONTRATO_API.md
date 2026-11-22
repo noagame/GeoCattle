@@ -24,7 +24,7 @@ Base `/api/v1`. Fechas ISO 8601 con zona horaria y UUID textuales. GeoJSON WGS84
 - `GET /settings` → objeto de reglas versionado.
 - `GET /maintenance?device_id=&limit=100&offset=0` → `{items:[{id,device_id,device_name,battery_id,kind,at,responsible_id,responsible_name,result}],total}`.
 - `GET /reports` → indicadores locales medidos sin afirmar SLA de campo.
-- `GET /reports/telemetry.csv` → exportación autorizada de lecturas.
+- `GET /reports/telemetry.csv` y `GET /reports/telemetry.xlsx` → exportación autorizada de lecturas. Véase [Exportaciones tabulares](#exportaciones-tabulares).
 - `GET /health` sin sesión → estado sin datos del predio.
 
 ## Escrituras
@@ -146,7 +146,7 @@ La invitación dura 48 horas y se utiliza una sola vez. `POST /v3/invitations` d
 
 - `GET /v3/animal-reports/{kind}` consulta el predio activo para dueño, administrador con predio, veterinario o trabajador. `kind` admite `inventario`, `sanidad`, `agenda`, `mediciones`, `observaciones`, `asignaciones`, `alertas` y `actividad`. `animal_id` es opcional y se valida dentro del predio.
 - `start` y `end` son fechas inclusivas en la zona horaria del predio. Una fecha consulta ese día. Sin fechas se usa el día actual del predio. El período admite hasta 366 días. El inventario muestra el estado actual.
-- El JSON devuelve `columns`, hasta 25 filas en `items`, `total`, `timezone`, `start` y `end`. `format=csv` descarga las filas del mismo filtro en UTF-8 con BOM. Si el resultado supera 50.000 filas, la API responde 422 para acotar el filtro. Un resultado vacío devuelve columnas y cero filas.
+- El JSON devuelve `columns`, hasta 25 filas en `items`, `total`, `timezone`, `start` y `end`. `format=xlsx` y `format=csv` descargan todas las filas del mismo filtro. Si el resultado supera 50.000 filas, ambos formatos responden 422 para acotar el filtro. Un resultado vacío conserva los encabezados.
 - Sanidad incluye únicamente eventos efectivos. Cada producto tiene una fila con el mismo identificador del evento. Los eventos sin producto ocupan una fila. Agenda muestra la última versión de cada atención, incluidas completadas y canceladas, por fecha planificada. Asignaciones muestra vigencias que intersectan el período. Alertas usa fecha de apertura. Actividad agrupa por día, bovino y origen. Las cifras de movimiento indican muestras.
 
 ### Indicadores del predio
@@ -157,6 +157,13 @@ Los reportes `totales`, `serie-alertas`, `ranking-movimiento` y `ranking-salidas
 - `serie-alertas` admite `grain=day|week|month` y `alert_type=all` o un tipo de alerta. Cuenta aperturas por hora local, con semanas desde el lunes e intervalos recortados al rango solicitado. Incluye intervalos con cero aperturas y días con lecturas ligadas a una asignación.
 - `ranking-movimiento` usa la proporción de muestras en movimiento entre las clasificadas como movimiento o reposo. `ranking-salidas` cuenta alertas `escape` abiertas en el período e indica sus geocercas. Para la cobertura de salidas usa posiciones GNSS válidas durante una asignación de pastoreo.
 - Para asignar un puesto, los rankings de la primera versión exigen 10 muestras válidas para su métrica y cobertura de al menos la mitad de los días transcurridos del período. El ranking de salidas además exige una alerta registrada. Los empates comparten puesto y las filas con cobertura insuficiente muestran sus cifras observadas sin puesto.
+
+### Exportaciones tabulares
+
+- **Excel (`.xlsx`)**: incluye la hoja del reporte con encabezados inmovilizados y autofiltro, y la hoja `Metadatos` con predio, período, filtros, zona horaria y momento de generación. Conserva identificadores como texto (incluidos ceros iniciales), medidas y conteos como números, fechas y horas como celdas de fecha en la zona del predio, y booleanos como `Sí`/`No`. Los textos no se evalúan como fórmulas.
+- **Etiquetas**: la vista previa, el CSV y el Excel de Reportes del rebaño muestran en español los valores codificados (tipo y operación sanitaria, tipo de atención, estado vital, orientación, sexo, tipo, severidad, condición y atención de alertas, y origen de la actividad). El libro de telemetría usa encabezados en español, identifica DIIO, bovino y collar en lugar de los identificadores internos, y aplica formatos numéricos a coordenadas, temperatura, actividad y batería; el CSV de telemetría conserva sus columnas y códigos para integraciones.
+- **CSV (`.csv`)**: los endpoints conservan el separador `,` y el punto decimal por defecto para integraciones. Ambos emiten UTF-8 con BOM y fechas ISO 8601 (con desplazamiento para marcas de tiempo). Telemetría conserva sus columnas y sus booleanos `True`/`False` por defecto; ahora separa fecha y hora con `T`. Si se solicita `delimiter=semicolon`, emite `;`, coma decimal y booleanos `Sí`/`No`; las horas usan la zona del predio. Los valores de texto que podrían interpretarse como fórmulas se escapan con apóstrofo. La interfaz ofrece Excel primero y solicita el CSV con `delimiter=semicolon` como alternativa regional. Excel nativo es el formato recomendado para conservar los tipos sin depender de cómo se importe el CSV.
+- **Telemetría**: ambos endpoints requieren sesión y predio activo. `start` (inclusivo) y `end` (exclusivo) admiten marcas de tiempo con zona; como alternativa se admite `day=AAAA-MM-DD` en la zona del predio. `animal_id` se valida en el predio; `hardware_id` filtra el collar solamente dentro del mismo predio. Ambos formatos conservan las primeras 50.000 lecturas ordenadas por observación y anuncian el tope en `X-Export-Limit`. Las descargas de historial en la interfaz cubren todo el filtro aplicado, no solo la página visible. La exportación JSONL de recepción sigue limitada a la página visible y no cambia.
 
 ## Solicitudes y avisos
 

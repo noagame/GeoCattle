@@ -852,3 +852,7 @@ websockets==17.2 \
     --hash=sha256:fb78fb4158c12f77a934a003006784108a27a6553cfc0c6f10483c9c02e94f48 \
     --hash=sha256:fcce735ffd72ac4056db05325d9f0232382b74826f0196eb6a15ca903abdaa0f
     # via uvicorn
+xlsxwriter==3.3.4 \
+    --hash=sha256:3512f4210622d4040e0f2882e2caf7263a3fd8be876704304314f0e275377fea \
+    --hash=sha256:da62fecb24fdd0f003c874c86109b9e1245ae89533052745ab85a085eb2b04d7
+    # via geocattle-backend

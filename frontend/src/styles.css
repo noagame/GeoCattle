@@ -53,6 +53,7 @@
 .gateway-row-actions .button { white-space: nowrap; }
 .pasture-transfer{margin-bottom:18px}
 .pasture-transfer .panel-heading{padding-bottom:0}
+.report-downloads{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .pasture-transfer .form-body{padding-block:12px;gap:8px}
 .pasture-transfer .inline-assignment{margin-bottom:0}
 

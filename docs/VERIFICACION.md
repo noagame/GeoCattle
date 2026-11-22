@@ -42,6 +42,10 @@ El wrapper conserva la prohibición de probar mediante esa ruta sobre developmen
 
 `qa/test_hardware_api.py` es una suite adicional de cinco comprobaciones que se omite por defecto. Requiere `GEOCATTLE_TEST_DATABASE=1` y `TEST_DATABASE_URL` apuntando a PostgreSQL/PostGIS de QA con el esquema migrado. La suite crea y revierte sus propias cuentas, predios y lecturas ficticias. Sus verificaciones anteriores están documentadas en [Visualización de telemetría](VISUALIZACION_TELEMETRIA.md).
 
+### Exportaciones de Excel y CSV
+
+En el entorno del backend con el extra `test`, `python -m pytest backend/tests/test_report_exports.py -q` desde la raíz comprueba los tipos y el escape con openpyxl y el lector CSV. En QA, `backend/tests/test_v3_animal_reports.py` comprueba además filtros de predio y zona horaria, roles, límites y concordancia con la vista previa. Para una revisión manual con el rebaño ficticio, descarga sanidad y telemetría (esta última requiere el seed de simulación o lecturas sintéticas) y abre el `.xlsx` en Excel. Comprueba las columnas, los tipos y la hoja `Metadatos`. El CSV de la interfaz usa `;` y coma decimal; el de integración usa `,` por defecto y puede requerir importación manual. [Contrato](CONTRATO_API.md#exportaciones-tabulares)
+
 ## Carga de un rebaño de validación
 
 `scripts/seed_validation_data.py` carga 40 bovinos ficticios de Temuco con aretes `VAL-09-…`, 120 pesajes, 96 eventos sanitarios, 88 productos aplicados, 40 atenciones futuras y 50 observaciones. Entre los eventos hay 40 vacunaciones, 40 procedimientos antiparasitarios, 8 tratamientos antibióticos y 8 exámenes. Las fichas de productos, los lotes, las dosis y los resguardos son ficticios. El script registra la categoría y 10 pares madre–cría por nombre y DIIO en las observaciones. Los pesajes, las observaciones y los eventos sanitarios usan fechas de los últimos 18 meses.

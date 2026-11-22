@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { Download } from 'lucide-react';
-import { downloadCsv, message, query, useData } from './api';
+import { query, useData } from './api';
+import { ReportDownloads } from './ReportDownloads';
 import type { Animal, List } from './types';
 import { Empty, ErrorNotice, eventLabels, Loading, PageTitle, Panel, PanelTitle } from './ui';
 
@@ -43,8 +43,6 @@ export function AnimalReportsPage({ initialAnimal, canSeeIndicators }: { initial
   });
   const [applied, setApplied] = useState(filters);
   const [search, setSearch] = useState('');
-  const [downloading, setDownloading] = useState(false);
-  const [downloadError, setDownloadError] = useState('');
   const chooseAnimal = !(filters.kind in indicators);
   const animals = useData<List<Animal>>(chooseAnimal ? `/animals${query({ limit: '100', q: search })}` : null);
   const result = useData<Report>(reportPath(applied));
@@ -53,22 +51,8 @@ export function AnimalReportsPage({ initialAnimal, canSeeIndicators }: { initial
 
   function generate(event: FormEvent) {
     event.preventDefault();
-    setDownloadError('');
     setApplied(filters);
     result.reload();
-  }
-
-  async function download() {
-    if (!data) return;
-    setDownloading(true);
-    setDownloadError('');
-    try {
-      await downloadCsv(reportPath({ ...applied, start: data.start ?? '', end: data.end ?? '' }, 'csv'));
-    } catch (error) {
-      setDownloadError(message(error));
-    } finally {
-      setDownloading(false);
-    }
   }
 
   return <>
@@ -116,16 +100,15 @@ export function AnimalReportsPage({ initialAnimal, canSeeIndicators }: { initial
         </div>
         {hasDates(filters.kind) && <p className="form-intro">Selecciona una fecha o un período. Sin fechas se consulta el día actual del predio.</p>}
         <ErrorNotice error={animals.error} retry={animals.reload} />
-        <div className="form-actions"><button className="button primary" disabled={result.loading || downloading}>Generar reporte</button></div>
+        <div className="form-actions"><button className="button primary" disabled={result.loading}>Generar reporte</button></div>
       </form>
     </Panel>
     <Panel>
       <PanelTitle title={reports[applied.kind]}
         subtitle={data && data.start && data.end ? `${data.start} a ${data.end} · ${data.timezone}` : undefined}
-        action={<button type="button" className="button secondary" onClick={download} disabled={result.loading || !data?.total || downloading}>
-          <Download size={16} />{downloading ? 'Preparando CSV…' : 'Descargar CSV'}
-        </button>} />
-      <ErrorNotice error={result.error || downloadError} retry={result.error ? result.reload : undefined} />
+        action={<ReportDownloads key={reportPath(applied)} disabled={result.loading || !!result.error || !data?.total}
+          path={format => reportPath({ ...applied, start: data?.start ?? '', end: data?.end ?? '' }, format)} />} />
+      <ErrorNotice error={result.error} retry={result.reload} />
       {applied.kind === 'ranking-movimiento' && <p className="form-intro">El porcentaje usa las muestras clasificadas como movimiento o reposo. Para obtener un puesto se requieren 10 muestras clasificadas y datos en al menos la mitad de los días transcurridos del período.</p>}
       {applied.kind === 'ranking-salidas' && <p className="form-intro">Cada alerta de salida se cuenta una vez, al abrirse. Para obtener un puesto se requiere al menos una alerta y 10 posiciones válidas durante una asignación de pastoreo en al menos la mitad de los días transcurridos del período.</p>}
       {applied.kind === 'serie-alertas' && <p className="form-intro">Las alertas se cuentan por fecha de apertura. Los días con lecturas asignadas indican cuánta observación hubo durante cada intervalo.</p>}

@@ -38,9 +38,9 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await apiResponse(path, init);
   return response.status === 204 ? undefined as T : response.json() as Promise<T>;
 }
-export async function downloadCsv(path: string) {
+export async function downloadFile(path: string, fallbackFilename: string) {
   const response = await apiResponse(path);
-  const filename = response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] ?? 'geocattle-reporte.csv';
+  const filename = response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] ?? fallbackFilename;
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement('a');
   link.href = url;

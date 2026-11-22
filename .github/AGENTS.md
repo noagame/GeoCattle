@@ -7,6 +7,7 @@
 ## Contratos locales
 
 - Mantén las comprobaciones de captura y dominio independientes de una base operativa. Las extensiones de captura se prueban cuando sus módulos existen en la rama.
+- El trabajo de integración PostGIS instala openpyxl para comprobar los libros devueltos por la API.
 - Coordina cualquier renombre de un trabajo con las comprobaciones requeridas de GitHub. Conserva los permisos de lectura y las referencias fijadas por SHA de las acciones al actualizar el flujo.
 
 ## Verificación

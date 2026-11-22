@@ -37,13 +37,50 @@ def listening(port):
         return sock.connect_ex(('127.0.0.1', port)) == 0
 
 
+PG_HOME = ROOT / '.runtime/postgres16/pgsql'
+PG_DATA = ROOT / '.runtime/pgdata-academic'
+CONFIG = ROOT / '.env.academic'
+
+
+def require_installation(database=True):
+    """Explain the missing first-install step instead of failing with a traceback."""
+    if not CONFIG.exists():
+        raise SystemExit('Falta .env.academic. Ejecuta: .venv\\Scripts\\python.exe scripts\\configure.py --environment development')
+    if not (PG_HOME / 'bin/pg_ctl.exe').exists():
+        raise SystemExit('Faltan los binarios de PostgreSQL 16 en .runtime\\postgres16\\pgsql. Consulta la instalación desde cero del README.')
+    if not (PG_HOME / 'share/extension/postgis.control').exists():
+        raise SystemExit('Falta PostGIS en .runtime\\postgres16\\pgsql. Copia el paquete PostGIS para PostgreSQL 16 sobre esa carpeta.')
+    if database and not (PG_DATA / 'PG_VERSION').exists():
+        raise SystemExit('La base local no está inicializada. Ejecuta: .venv\\Scripts\\python.exe scripts\\prototype_windows.py init')
+
+
+def initialize_database():
+    require_installation(database=False)
+    if (PG_DATA / 'PG_VERSION').exists():
+        print('La base local ya está inicializada. Se conserva sin cambios.')
+        return
+    values = load_env(CONFIG)
+    temporary = ROOT / '.runtime/tmp'
+    temporary.mkdir(parents=True, exist_ok=True)
+    password_file = temporary / f'initdb-{os.getpid()}.txt'
+    password_file.write_text(values['POSTGRES_PASSWORD'] + '\n', encoding='utf-8')
+    try:
+        subprocess.run([str(PG_HOME / 'bin/initdb.exe'), '-D', str(PG_DATA), '-U', values['POSTGRES_USER'],
+                        f'--pwfile={password_file}', '--auth=scram-sha-256', '--encoding=UTF8', '--locale=C'],
+                       check=True)
+    finally:
+        password_file.unlink(missing_ok=True)
+    print('Base local inicializada en .runtime\\pgdata-academic. Abre Abrir-GeoCattle.cmd.')
+
+
 def start_database():
-    values = load_env(ROOT / '.env.academic')
+    require_installation()
+    values = load_env(CONFIG)
     port = int(values['DB_PORT'])
     if listening(port):
         return
-    subprocess.run([str(ROOT / '.runtime/postgres16/pgsql/bin/pg_ctl.exe'),
-        '-D', str(ROOT / '.runtime/pgdata-academic'),
+    subprocess.run([str(PG_HOME / 'bin/pg_ctl.exe'),
+        '-D', str(PG_DATA),
         '-l', str(ROOT / '.runtime/postgres-academic.log'),
         '-o', f'-p {port} -h 127.0.0.1', '-w', 'start'], check=True,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
@@ -121,7 +158,7 @@ def spawn(name, arguments, env):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['start', 'prepare', 'capture', 'status'])
+    parser.add_argument('action', choices=['init', 'start', 'prepare', 'capture', 'status'])
     parser.add_argument('--stay', action='store_true', help='Mantener supervisor en primer plano')
     parser.add_argument('--no-usb', action='store_true', help='Captura iniciada aparte con el usuario Windows')
     args = parser.parse_args()
@@ -132,12 +169,15 @@ def main():
         path = ROOT / '.runtime/capture/status.json'
         print(path.read_text() if path.exists() else 'Sin estado del capturador')
         return
+    if args.action == 'init':
+        initialize_database()
+        return
     if args.action in ('prepare', 'start'):
         start_database()
         provision()
     if args.action == 'start':
         if not (ROOT / 'frontend/dist/index.html').exists():
-            raise SystemExit('Falta compilar frontend: consultar docs/USB_COM5.md')
+            raise SystemExit('Falta compilar la interfaz. Ejecuta en frontend: npm ci y npm run build')
         env = environment()
         if not listening(8084):
             spawn('prototype-api', [sys.executable, '-m', 'uvicorn', 'geocattle.local_app:app',

@@ -7,6 +7,7 @@
 ## Contratos locales
 
 - Al cambiar arranque o captura revisa los lanzadores de la raíz y sus argumentos. Mantén alineados entorno, archivo de configuración, URL de API y directorio de captura.
+- `prototype_windows.py init` inicializa `.runtime/pgdata-academic` con el usuario y la contraseña de `.env.academic` usando los binarios portátiles de `.runtime/postgres16/pgsql`. Nunca reinicializa una base existente. `start` y `prepare` explican el paso faltante si falta la configuración, PostgreSQL, PostGIS o la base. Mantén alineados estos mensajes con la instalación desde cero del [README](../README.md).
 - Conserva los volúmenes, respaldos y colas al detener o reiniciar servicios. Mantén las pruebas con efectos sobre datos en una instancia QA.
 - `serve_lan_windows.py` sirve el prototipo por HTTPS en el puerto `8445` de una IPv4 privada. Reutiliza PostgreSQL local y la interfaz compilada. Aplica cookie segura y MFA para administrador. Guarda las claves en `%LOCALAPPDATA%\GeoCattle\lan-tls` y exporta solo el certificado público a `.runtime/`.
 - El iniciador LAN detecta la IPv4 al abrirse y muestra el enlace aunque GeoCattle ya esté escuchando en ella. Guarda el último enlace verificado en `.runtime/GeoCattle-LAN-URL.txt`. Si hay varias direcciones sin una ruta preferida, la opción `--bind` selecciona la red.

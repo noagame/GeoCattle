@@ -10,6 +10,8 @@ Desde la raíz del proyecto, abre con doble clic:
 1. [`Abrir-GeoCattle.cmd`](../Abrir-GeoCattle.cmd) para levantar PostgreSQL, la API y el proceso de alertas. La aplicación abre en http://localhost:8084/ y PostgreSQL usa el puerto 55434.
 2. [`Iniciar-Captura.cmd`](../Iniciar-Captura.cmd) para recibir lecturas. Elige **Directo** para la T3 que recibe del collar o **Gateways** para la T3 base de los repetidores. El iniciador levanta los servicios preparados si la API está detenida.
 
+Para preparar un equipo nuevo, sigue la [instalación desde cero en Windows](../README.md#instalación-desde-cero-en-windows). `scripts\prototype_windows.py init` crea la base local con las credenciales de `.env.academic`.
+
 La configuración local está en `.env.academic` y el acceso del prototipo en `.runtime/acceso_prototipo.json`. Conserva ambos archivos fuera de Git. Para un reinicio completo ejecuta `Detener-Prototipo.ps1` en PowerShell y vuelve a abrir los iniciadores que necesites.
 
 ## Acceso HTTPS desde otro dispositivo

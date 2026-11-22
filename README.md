@@ -4,45 +4,29 @@ GeoCattle es una aplicación de supervisión bovina con mapas, geocercas, teleme
 
 ## Desarrollo local en el puerto 8084
 
-Clona el repositorio y ejecuta los comandos desde su raíz. [Repositorio GeoCattle](https://github.com/noagame/GeoCattle)
+Ejecuta los comandos desde la raíz del repositorio. [Repositorio GeoCattle](https://github.com/noagame/GeoCattle)
 
-### Windows con el prototipo nativo
+### Inicio rápido en Windows
 
-En Windows, abre [`Abrir-GeoCattle.cmd`](Abrir-GeoCattle.cmd) desde la raíz del repositorio. El lanzador inicia PostgreSQL/PostGIS, la API y el proceso de alertas, y abre [GeoCattle en localhost:8084](http://localhost:8084/).
+Con la instalación ya preparada, abre [`Abrir-GeoCattle.cmd`](Abrir-GeoCattle.cmd). El lanzador inicia PostgreSQL/PostGIS, aplica las migraciones pendientes, levanta la API y el proceso de alertas, y abre [GeoCattle en localhost:8084](http://localhost:8084/). El acceso inicial está en el archivo privado `.runtime/acceso_prototipo.json`.
 
-El prototipo nativo usa el entorno `development`, la configuración privada `.env.academic`, PostgreSQL/PostGIS local en `127.0.0.1:55434`, un entorno Python `.venv` y el frontend compilado en `frontend/dist`. Si la instalación ya está preparada y necesitas compilar la interfaz, ejecuta desde PowerShell en la raíz:
+El prototipo nativo usa el entorno `development`, la configuración privada `.env.academic`, PostgreSQL/PostGIS local en `127.0.0.1:55434`, el entorno Python `.venv` y la interfaz compilada en `frontend/dist`. Si cambias el frontend, vuelve a compilarlo con `npm run build` dentro de `frontend` antes de abrir el lanzador. Para detener los servicios conservando los datos, ejecuta `.\Detener-Prototipo.ps1`. [Desarrollo local en Windows](docs/DESARROLLO_LOCAL.md)
 
-```powershell
-Set-Location frontend
-npm ci
-npm run build
-Set-Location ..
-.\Abrir-GeoCattle.cmd
-```
+### Inicio rápido en Linux
 
-Para el primer arranque nativo, usa la configuración y los binarios locales preparados para el equipo. Cuando el prototipo crea la cuenta inicial, guarda el acceso en el archivo privado `.runtime/acceso_prototipo.json`. [Desarrollo local en Windows](docs/DESARROLLO_LOCAL.md)
-
-### Linux con Docker Compose
-
-Necesitas Python 3.11 o posterior, Docker Engine activo y Docker Compose 2 o posterior. Compose construye la interfaz y levanta PostgreSQL/PostGIS, la API y el proceso de alertas en contenedores. [Instalación de Docker Compose](https://docs.docker.com/compose/install/)
-
-Desde la raíz del repositorio, ejecuta el iniciador [`Abrir-GeoCattle.sh`](Abrir-GeoCattle.sh):
+Con Docker activo, ejecuta [`Abrir-GeoCattle.sh`](Abrir-GeoCattle.sh) o `bash Abrir-GeoCattle.sh`:
 
 ```bash
 ./Abrir-GeoCattle.sh
 ```
 
-También puedes ejecutar `bash Abrir-GeoCattle.sh` o abrirlo desde un gestor de archivos configurado para ejecutar scripts.
-
-El iniciador crea `.env.docker` si falta y configura el acceso en [localhost:8084](http://localhost:8084/). Si hay escritorio, intenta abrir el navegador. El correo inicial es `desarrollo@geocattle.local` y la contraseña se consulta en `ADMIN_PASSWORD` del archivo privado `.env.docker`. Puedes elegir otro correo y nombre para el primer arranque:
+El iniciador crea `.env.docker` si falta, construye la interfaz y levanta PostgreSQL/PostGIS, la API y el proceso de alertas en contenedores. Abre [localhost:8084](http://localhost:8084/) y, si hay escritorio, intenta abrir el navegador. El correo inicial es `desarrollo@geocattle.local` y la contraseña está en `ADMIN_PASSWORD` del archivo privado `.env.docker`. Para elegir otro correo y nombre de predio en el primer arranque:
 
 ```bash
 ./Abrir-GeoCattle.sh propietario@example.com "Mi predio"
 ```
 
-Si ya usas `.env.docker`, el iniciador reutiliza la base y las credenciales. Para entrar con una cuenta existente, usa su contraseña habitual. La base nueva empieza sin bovinos de demostración y PostgreSQL usa el puerto local `55436` por defecto.
-
-Para consultar el estado o detener los contenedores conservando la base:
+Si `.env.docker` ya existe, el iniciador reutiliza la base y las credenciales. La base nueva empieza sin bovinos de demostración y PostgreSQL usa el puerto local `55436`. Para consultar el estado o detener los contenedores conservando la base:
 
 ```bash
 python3 scripts/docker_project.py status --environment development
@@ -50,6 +34,73 @@ python3 scripts/docker_project.py stop --environment development
 ```
 
 En ambos sistemas, [localhost:8084/api/v1/health](http://localhost:8084/api/v1/health) debe responder con `status: ok` y `environment: development`.
+
+### Instalación desde cero en Windows
+
+Requisitos: Windows 10 u 11 de 64 bits, [Git](https://git-scm.com/download/win), [Python 3.12](https://www.python.org/downloads/windows/) (3.11 o posterior) y [Node.js 22 LTS](https://nodejs.org/). El prototipo nativo no usa Docker ni modifica un PostgreSQL instalado en Windows.
+
+1. Clona el repositorio y crea el entorno Python desde PowerShell:
+
+   ```powershell
+   git clone --branch main https://github.com/noagame/GeoCattle.git
+   Set-Location GeoCattle
+   py -3 -m venv .venv
+   .\.venv\Scripts\python.exe -m pip install -r backend\requirements.lock
+   .\.venv\Scripts\python.exe -m pip install -r adapters\requirements.txt
+   ```
+
+2. Genera la configuración privada `.env.academic` con secretos aleatorios. El comando nunca reemplaza un archivo existente.
+
+   ```powershell
+   .\.venv\Scripts\python.exe scripts\configure.py --environment development
+   ```
+
+3. Instala PostgreSQL 16 y PostGIS como binarios portátiles dentro del proyecto:
+   - Descarga el ZIP de **PostgreSQL 16 para Windows x86-64** desde [binarios de EDB](https://www.enterprisedb.com/download-postgresql-binaries) y extráelo en `.runtime\postgres16`. Debe existir `.runtime\postgres16\pgsql\bin\pg_ctl.exe`.
+   - Descarga el paquete `postgis-bundle-pg16-*x64.zip` desde [PostGIS para Windows](https://download.osgeo.org/postgis/windows/pg16/) y copia el contenido de su carpeta principal sobre `.runtime\postgres16\pgsql`. Debe existir `.runtime\postgres16\pgsql\share\extension\postgis.control`.
+   - Si `initdb` indica que falta una DLL, instala el [Visual C++ Redistributable x64](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist).
+
+   La instalación verificada usa PostgreSQL 16.15 y PostGIS 3.6.2.
+
+4. Inicializa la base local con el usuario y la contraseña de `.env.academic`:
+
+   ```powershell
+   .\.venv\Scripts\python.exe scripts\prototype_windows.py init
+   ```
+
+5. Compila la interfaz:
+
+   ```powershell
+   Set-Location frontend
+   npm ci
+   npm run build
+   Set-Location ..
+   ```
+
+6. Abre `Abrir-GeoCattle.cmd`. El primer arranque aplica las migraciones, crea la cuenta `prototipo@geocattle.local` con su predio y guarda la contraseña en `.runtime\acceso_prototipo.json`. También deja registrado el collar histórico `REAL01` sin asignación a bovino.
+
+Si falta un paso, el lanzador indica cuál ejecutar. Para enviar invitaciones por correo, agrega la configuración SMTP a `.env.academic`. [Correo SMTP](docs/OPERACION.md) · [Captura USB](#captura-usb-en-desarrollo-nativo)
+
+### Instalación desde cero en Linux
+
+Los pasos usan Ubuntu o Debian. Necesitas Git, Python 3.11 o posterior y Docker Engine con el plugin Compose 2. [Instalación de Docker Engine](https://docs.docker.com/engine/install/)
+
+```bash
+sudo apt update
+sudo apt install -y git python3 python3-venv
+# Instala Docker Engine y el plugin Compose según la guía oficial de tu distribución.
+sudo usermod -aG docker "$USER"
+```
+
+Cierra la sesión y vuelve a entrar para aplicar el grupo `docker`. Comprueba que `docker version` muestre la sección del servidor y luego ejecuta:
+
+```bash
+git clone --branch main https://github.com/noagame/GeoCattle.git
+cd GeoCattle
+./Abrir-GeoCattle.sh propietario@example.com "Mi predio"
+```
+
+El primer arranque descarga y construye las imágenes. Después, el [inicio rápido en Linux](#inicio-rápido-en-linux) solo necesita `./Abrir-GeoCattle.sh`. Para capturar por USB, agrega tu usuario al grupo `dialout` con `sudo usermod -aG dialout "$USER"` y vuelve a iniciar sesión. [Captura con Docker](#docker-en-windows-y-linux)
 
 Para usar el PC Windows como servidor para otros dispositivos de la misma red, inicia el prototipo y luego abre [`Abrir-GeoCattle-LAN.cmd`](Abrir-GeoCattle-LAN.cmd). En cada apertura muestra la URL HTTPS para la IP local vigente en el puerto `8445`. Un punto de acceso del celular puede proporcionar la red local. [Configuración de acceso desde otro dispositivo](docs/DESARROLLO_LOCAL.md#acceso-https-desde-otro-dispositivo)
 
@@ -71,7 +122,10 @@ Funciones disponibles en `main`.
 | Indicadores del predio | Totales, serie de alertas y rankings de movimiento y salidas para dueño y administrador con predio seleccionado. |
 | Solicitudes y auditoría | Propuestas al dueño con seguimiento de la decisión, y solicitudes privadas de soporte atendidas por el administrador desde el panel global. |
 | Alertas de sensores | Umbral térmico, mínimo de actividad y duración configurables por predio. El simulador permite probar cambios antes de guardarlos. |
-| Acceso de administrador | Usuario y contraseña en desarrollo y simulación. El TOTP es configurable para ese inicio de sesión. [Configuración](#acceso-de-administrador). |
+| Acceso de administrador | Usuario y contraseña en desarrollo y simulación. El TOTP es configurable para ese inicio de sesión y se puede reemplazar, quitar o restablecer. [Configuración](#acceso-de-administrador). |
+| Invitaciones por correo | Envío SMTP opcional con STARTTLS o TLS, reintentos y prueba de configuración. Sin SMTP, el enlace se comparte manualmente. [Operación](docs/OPERACION.md). |
+| Collares detectados | La captura LoRa y el alta USB registran collares desconocidos en una bandeja por predio. Dueño o administrador los aprueba o descarta. [Alta por USB o LoRa](docs/DESARROLLO_LOCAL.md#incorporar-un-collar-por-usb-o-lora). |
+| Datos de validación | `scripts/seed_validation_data.py` carga 40 bovinos ficticios con historial en un predio de validación, con respaldo previo. [Verificación](docs/VERIFICACION.md#carga-de-un-rebaño-de-validación). |
 | Hardware | Código Arduino del collar, las dos receptoras y los dos repetidores. [Firmware](firmware/README.md). |
 | Docker y LoRaWAN | Docker levanta la aplicación y admite perfiles MQTT/ChirpStack. La validación física de LoRaWAN está pendiente. |
 
@@ -170,9 +224,11 @@ Usa una contraseña de al menos doce caracteres y el correo elegido. Para simula
 
 Para volver a pedir TOTP al iniciar sesión, define `ADMIN_LOGIN_MFA=true` en el archivo privado del entorno y reinicia la API. `APP_ENV=production` exige TOTP al administrador. La verificación adicional de operaciones sensibles sigue disponible.
 
+Para cambiar de app autenticadora, abre **Mi perfil → Seguridad y acceso → Reemplazar autenticador**. El factor anterior sigue activo hasta confirmar un código del nuevo. Si perdiste el autenticador, restablécelo desde la consola del servidor con `py -3 scripts/account_maintenance.py mfa-reset --email CORREO`. El restablecimiento queda auditado y exige inscribir un TOTP nuevo en el siguiente ingreso. [Perfil y recuperación](docs/USUARIOS_Y_REGISTRO.md)
+
 ### Usuarios y alertas
 
-El administrador crea cuentas de dueños. El dueño invita a trabajadores y veterinarios desde Equipo y permisos. Cada invitado activa su cuenta con un enlace de uso único y vencimiento. Los enlaces se entregan manualmente.
+El administrador crea cuentas de dueños. El dueño invita a trabajadores y veterinarios desde Equipo y permisos. Cada invitado activa su cuenta con un enlace de uso único y vencimiento. Con SMTP configurado, GeoCattle envía el enlace por correo y muestra el estado del envío. Sin SMTP, o si el envío falla, el dueño comparte el enlace manualmente. Comprueba la configuración con `scripts/account_maintenance.py smtp-test --to CORREO` antes de activar `INVITATION_EMAIL_ENABLED`. [Correo SMTP](docs/OPERACION.md)
 
 En **Alertas y atención → Configurar alertas**, dueño y administrador pueden editar y guardar los parámetros del predio. Trabajador y veterinario mantienen consulta y atención. **Probar alertas de sensores** usa lecturas simuladas y los valores visibles en el formulario antes de guardarlos. Los resultados de la prueba quedan en pantalla.
 

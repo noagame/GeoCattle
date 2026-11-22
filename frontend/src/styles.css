@@ -539,3 +539,40 @@
   .panel>.form-intro{padding-inline:16px}
   .panel>.details-grid:not(.v3-record-details){padding-inline:16px}
 }
+
+/* Legibilidad, panel del dueño y móvil */
+.overview-grid>.events-panel{align-self:start}
+.event-card p,.event-card p span,.event-card small{font-size:12px}
+.attention-note,.map-panel-foot,.map-caption{font-size:12px}
+.leaflet-control-attribution{font-size:10px!important}
+.badge{font-size:11px}
+.table-scroll th{font-size:11px}
+.table-scroll td small{font-size:12px}
+.global-search input{font-size:13px}
+.sidebar-user strong{font-size:12px;white-space:normal;overflow-wrap:anywhere;line-height:1.3}
+.empty-compact{min-height:0;padding:22px 20px;gap:6px}
+.map-on-satellite .offline-map-tile{background-color:#3d4839;background-image:linear-gradient(#ffffff0f 1px,transparent 1px),linear-gradient(90deg,#ffffff0f 1px,transparent 1px);border-color:#ffffff0a}
+.map-on-satellite .offline-map-tile>span{color:#a9b49d}
+.map-on-satellite .cattle-map{background:#3d4839}
+.mobile-search{display:none}
+@media(max-width:767px){
+  .topbar-actions .mobile-search{display:inline-flex}
+  .sidebar-user{flex-wrap:wrap;row-gap:10px}
+  .sidebar-user>div{flex:1 1 calc(100% - 45px)}
+  .sidebar-user>div+button{margin-left:auto}
+  .map-base-toolbar{padding:8px 12px}
+  .map-base-toolbar button{flex:1 1 0;white-space:nowrap;padding:7px 6px;text-align:center}
+  .map-base-toolbar>span{flex-basis:100%;margin-left:0}
+  .table-scroll:has(>.card-table){overflow-x:visible}
+  .card-table thead{display:none}
+  .card-table,.card-table tbody,.card-table tr,.card-table td{display:block;width:100%}
+  .card-table tr{position:relative;padding:14px 16px;border-bottom:1px solid #eef2e7}
+  .card-table tr:last-child{border-bottom:0}
+  .card-table td{border:0!important;padding:4px 0!important;text-align:right;font-size:13px}
+  .card-table td::before{content:attr(data-label);float:left;margin-right:12px;color:#7a8c74;font-size:12px;font-weight:500}
+  .card-table td:first-child{text-align:left;padding:0 44px 8px 0!important}
+  .card-table td:first-child::before{content:none}
+  .card-table td small{display:block}
+  .card-table td.card-table-action{position:absolute;top:14px;right:12px;width:auto;padding:0!important}
+  .card-table td.card-table-action::before{content:none}
+}

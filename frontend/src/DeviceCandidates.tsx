@@ -187,6 +187,8 @@ export function DeviceCandidatesPanel({
           </div>
         ) : (
           <Empty
+            compact
+            icon={<Radio size={18} />}
             title="Sin collares detectados pendientes"
             description="Los collares conectados por USB o reconocidos mediante radio aparecerán automáticamente aquí para su incorporación."
           />

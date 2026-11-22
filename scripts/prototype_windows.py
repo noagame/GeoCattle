@@ -97,7 +97,7 @@ def provision():
             db.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(values['POSTGRES_DB'])))
     env = environment(migration=True)
     subprocess.run([sys.executable, '-m', 'geocattle.migrate'], cwd=ROOT, env=env, check=True)
-    # La cuenta y el dispositivo fisico inicial son idempotentes. Sin animales ficticios.
+    # La cuenta y el dispositivo físico inicial son idempotentes. Sin animales ficticios.
     code = '''
 import json,os
 from pathlib import Path
@@ -111,7 +111,7 @@ username='prototipo@geocattle.local'
 with SessionLocal() as db:
     exists=db.scalar(select(User).where(User.username==username))
 if not exists:
-    bootstrap(username,'Prototipo fisico GeoCattle',os.environ['ADMIN_PASSWORD'])
+    bootstrap(username,'Prototipo físico GeoCattle',os.environ['ADMIN_PASSWORD'])
     Path('.runtime/acceso_prototipo.json').write_text(json.dumps({'url':'http://localhost:8084','usuario':username,'contrasena':os.environ['ADMIN_PASSWORD']},indent=2),encoding='utf-8')
 with SessionLocal.begin() as db:
     reconcile_legacy(db)
@@ -120,7 +120,7 @@ with SessionLocal.begin() as db:
     existing=db.scalar(select(Device).where(Device.hardware_id=='REAL01'))
     if existing and existing.farm_id!=user.farm_id: raise RuntimeError('REAL01 ya pertenece a otro predio')
     if not existing:
-        device=Device(farm_id=user.farm_id,hardware_id='REAL01',name='Collar fisico REAL01',transport='academic',interval_seconds=30)
+        device=Device(farm_id=user.farm_id,hardware_id='REAL01',name='Collar físico REAL01',transport='academic',interval_seconds=30)
         db.add(device);db.flush()
         append_audit(db,user.farm_id,user.id,'device',device.id,'prototype_provision',after={'hardware_id':'REAL01','interval_seconds':30,'note':'Ventana de supervision; firmware informa su periodo real en quality.period_ms. No es confirmacion remota.'})
 print('Cuenta, predio y REAL01 preparados. Sin asignacion a bovino.')

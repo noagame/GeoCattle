@@ -107,6 +107,21 @@ function Fit({ points, requestedPoints, request, drawing }: { points: Point[]; r
   }, [map, signature, requestedSignature, request, drawing]);
   return null;
 }
+// Una geocerca de pocos píxeles se pierde en la vista regional; un marcador la mantiene visible y acerca el mapa.
+function SmallFenceMarkers({ fences, color }: { fences: Geofence[]; color: string }) {
+  const map = useMap(); const [zoom, setZoom] = useState(() => map.getZoom());
+  useMapEvents({ zoomend: () => setZoom(map.getZoom()) });
+  return <>{fences.filter(fence => fence.active).map(fence => {
+    const area = L.latLngBounds(fence.geometry.coordinates.flatMap(ring => ring.map(c => [c[1], c[0]] as Point)));
+    const corner = map.project(area.getNorthWest(), zoom); const opposite = map.project(area.getSouthEast(), zoom);
+    if (Math.max(Math.abs(opposite.x - corner.x), Math.abs(opposite.y - corner.y)) >= 18) return null;
+    return <CircleMarker key={`small-${fence.id}-${fence.version}`} center={area.getCenter()} radius={7}
+      pathOptions={{ color, weight: 2, fillColor: '#9dc4a0', fillOpacity: .85 }}
+      eventHandlers={{ click: () => map.fitBounds(area, { padding: [35, 35], maxZoom: 18 }) }}>
+      <Tooltip direction="top" offset={[0, -6]}>{fence.name} · clic para acercar</Tooltip>
+    </CircleMarker>;
+  })}</>;
+}
 function Drawing({ onPoint }: { onPoint?: (point: Point) => void }) {
   useMapEvents({ click: event => {
     const target = event.originalEvent.target;
@@ -194,7 +209,7 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
     : showSatellite ? (outsideCoverage ? 'Centro del mapa fuera de la imagen descargada' : 'Imagen guardada en el servidor')
       : showRoads ? (localMap ? 'Cartografía guardada en el servidor' : localMap === null ? 'Cuadrícula WGS84' : 'Cargando caminos…') : 'Cargando imagen satelital…';
   const drawColor = showSatellite ? '#ffe18d' : '#236b52';
-  return <div className={`map-wrapper map-${height}`}>
+  return <div className={`map-wrapper map-${height}${showSatellite ? ' map-on-satellite' : ''}`}>
     <div className="map-base-toolbar" role="group" aria-label="Base del mapa"><Layers size={16} /><button type="button" aria-pressed={base === 'satellite'} onClick={() => selectBase('satellite')}>Satélite local</button><button type="button" aria-pressed={base === 'roads'} onClick={() => selectBase('roads')}>Caminos locales</button><button type="button" aria-pressed={external} onClick={() => selectBase('osm')}>OpenStreetMap</button><span role="status">{status}</span></div>
     <MapContainer center={[-39, -72.5]} zoom={7} maxZoom={20} scrollWheelZoom className={`cattle-map ${onPoint ? 'map-drawing' : ''}`} aria-label={height === 'editor' ? 'Editor de geocerca' : 'Mapa de animales y geocercas'}>
       <OfflineGrid />
@@ -211,6 +226,7 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
           <Tooltip sticky>{fence.name} · v{fence.version}{watched && ' · zona vigilada'}{!fence.active && ' · histórica'}</Tooltip>
         </MapPolygon>;
       })}
+      {!onPoint && <SmallFenceMarkers fences={geofences} color={showSatellite ? '#ffe18d' : '#236b52'} />}
       {gateways.filter(hasGatewayPosition).map(g => <GatewayMarker key={g.id} gateway={g} onDetail={onGateway} selected={selectedGatewayId===g.id} />)}
       {gatewayDraft && hasGatewayPosition(gatewayDraft) && <GatewayMarker gateway={gatewayDraft} onMove={onGatewayMove} draft />}
       {tracks.map((track, i) => <Polyline key={i} positions={track} pathOptions={{ color: showSatellite ? '#86f3e2' : '#276e68', weight: 3, opacity: .85 }} />)}

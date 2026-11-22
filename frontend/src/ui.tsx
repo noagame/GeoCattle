@@ -1,5 +1,5 @@
 import { useEffect, useRef, useId, type ReactNode } from 'react';
-import { AlertCircle, Check, ChevronRight, LoaderCircle, X } from 'lucide-react';
+import { AlertCircle, Check, ChevronRight, Inbox, LoaderCircle, X } from 'lucide-react';
 import type { AnimalStatus } from './types';
 
 export const statusLabels: Record<AnimalStatus, string> = { normal: 'Normal', warning: 'Precaución', critical: 'Crítico', unknown: 'Sin información' };
@@ -17,7 +17,7 @@ export function ErrorNotice({ error, retry }: { error: string; retry?: () => voi
   return <div className="notice notice-error" role="alert"><AlertCircle size={18} /><span>{error}</span>{retry && <button type="button" className="text-button" onClick={retry}>Reintentar</button>}</div>;
 }
 export function Loading({ label = 'Cargando información del predio…' }: { label?: string }) { return <div className="loading" role="status"><LoaderCircle size={24} className="spin" />{label}</div>; }
-export function Empty({ title, description, action }: { title: string; description?: string; action?: ReactNode }) { return <div className="empty"><div className="empty-symbol">↗</div><h3>{title}</h3>{description && <p>{description}</p>}{action}</div>; }
+export function Empty({ title, description, action, icon, compact = false }: { title: string; description?: string; action?: ReactNode; icon?: ReactNode; compact?: boolean }) { return <div className={`empty${compact ? ' empty-compact' : ''}`}><div className="empty-symbol" aria-hidden="true">{icon ?? <Inbox size={19} />}</div><h3>{title}</h3>{description && <p>{description}</p>}{action}</div>; }
 export function Panel({ children, className = '' }: { children: ReactNode; className?: string }) { return <section className={`panel ${className}`}>{children}</section>; }
 export function PageTitle({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description?: string; actions?: ReactNode }) { return <div className="page-title"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1>{description && <p>{description}</p>}</div>{actions && <div className="page-actions">{actions}</div>}</div>; }
 export function PanelTitle({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) { return <div className="panel-heading"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>{action}</div>; }

@@ -1,10 +1,10 @@
 # Contrato de integración GeoCattle V1
 
-Base `/api/v1`. Fechas ISO 8601 UTC y UUID textuales. GeoJSON WGS84 `[longitud, latitud]`. API protegida con sesión HttpOnly (cookie `geocattle_session`); encabezado `X-CSRF-Token` para escrituras de usuarios. Ingestión separada mediante `X-Ingest-Key`. Roles `owner`, `operator`, `viewer`. Predio se obtiene de la sesión, nunca del cuerpo enviado por el cliente.
+Base `/api/v1`. Fechas ISO 8601 con zona horaria y UUID textuales. GeoJSON WGS84 `[longitud, latitud]`. La API usa la cookie de sesión HttpOnly `geocattle_session` y exige `X-CSRF-Token` para escrituras de usuarios. La ingesta usa `X-Ingest-Key`. Los roles V3 son `admin`, `owner`, `worker` y `veterinarian`. También se admiten los perfiles legados `operator` y `viewer`. Las operaciones del predio usan el contexto autorizado de la sesión.
 
 ## Sesión
 
-- `POST /auth/login` `{username,password}` → `{user:{id,username,role,farm_id},csrf_token}` y cookie.
+- `POST /auth/login` `{username,password}` → `{user:{id,username,role,farm_id},csrf_token}` y cookie, o un desafío cuando se requiere TOTP. El desafío incluye `mfa_required`, `challenge_token` y `setup_required`. Solo la inscripción incluye `secret` y `otpauth_uri`; la sesión se abre después de verificar el código.
 - `GET /auth/me` → misma estructura.
 - `POST /auth/logout` → 204.
 
@@ -66,6 +66,19 @@ Errores `{detail:string}` con 401 sin sesión, 403 permisos/CSRF/predio, 409 con
 
 Cambiar de sector manualmente contradiciendo una asignación de pastoreo vigente devuelve 409; se debe asignar la nueva zona. Las nuevas geocercas y asignaciones exigen sector activo. Un reemplazo de collar no puede recortar lecturas ya persistidas de la asociación anterior. El cierre de eventos por reasignación conserva evidencia y atención, y no representa recuperación física del sensor.
 
+## Detección y alta de collares
+
+- `GET /v3/device-candidates?status=pending` → `{"items":[Candidate]}`. Usa el predio activo de la sesión. También admite `approved` y `dismissed`.
+- `POST /v3/device-candidates` → 201 y `Candidate`. Envía `{hardware_id,transport,interval_seconds,dev_eui?,firmware_version?,source}`. `transport` admite `academic` y `lorawan`. `source` admite `usb` y `radio`. Usa la sesión del dueño o administrador con CSRF, o `X-Ingest-Key` para captura.
+- `POST /v3/device-candidates/{id}/approve` → 200 y `{"device":Device,"candidate":Candidate}`. Envía `{name?,interval_seconds?,installed_at?,dev_eui?,enabled?}`. Puede enviarse `{}` para usar el nombre sugerido y los valores del candidato. La fecha omitida es la del alta y la habilitación predeterminada es `true`. LoRaWAN exige DevEUI. La creación queda auditada y la asignación al bovino se hace por separado. Un identificador ya registrado devuelve 409.
+- `POST /v3/device-candidates/{id}/dismiss` → 200 y `Candidate` con `status:"dismissed"`. El descarte conserva el historial. Una detección nueva puede crear otro pendiente. Aprobar y descartar requiere sesión de dueño o administrador con predio activo y CSRF, con la misma política de MFA del alta manual.
+
+`Candidate` tiene `{id,hardware_id,transport,dev_eui,interval_seconds,firmware_version,source,first_seen_at,last_seen_at,seen_count,last_payload,status,suggested_name}`. `suggested_name` es el primer nombre libre de la serie `Collar 01`, `Collar 02`, etc. `last_payload` conserva el último mensaje de identificación o la trama normalizada, con coordenadas nulas si el GPS carece de fix.
+
+La captura autenticada puede seleccionar un predio activo del mismo entorno con `X-Farm-ID`. Si se omite el encabezado, las detecciones requieren que exista un solo predio físico activo. De otro modo la API devuelve 409 y el capturador debe indicar el UUID. Los despliegues en simulación rechazan detecciones físicas.
+
+`POST /ingest/telemetry` y su alias `POST /telemetry` confirman collares académicos desconocidos con HTTP 201 y `{id,status:"candidate",duplicate,animal_id:null}`. En esta respuesta, `id` identifica el candidato. Una reentrega del mismo `hardware_id`, `session_id` y `seq` conserva su recibo aun después de la aprobación o el descarte. Las tramas detectadas permanecen fuera de `telemetry`. Después del alta, las nuevas tramas ingresan como telemetría.
+
 ## Captura radio JSON V5
 
 El protocolo de radio se convierte al contrato de ingestión anterior mediante
@@ -82,7 +95,7 @@ de la API. Se conserva compatibilidad con CSV V4.
 | `a` | `[x,y,z]` en g → `quality.acceleration_g` |
 | `m` | `[estado,RMS_g]`, estado -1 desconocido, 0 reposo, 1 movimiento |
 | `b` | `[mV,porcentaje_estimado,presente,cargando,USB]` |
-| `p` | Intervalo anunciado, entre 30000 y 40000 ms |
+| `p` | Intervalo anunciado, entre 30000 y 45000 ms |
 | `f` | Bits: 1 sin posición GPS, 2 sin temperatura, 4 sin acelerómetro |
 | `e` | Motivo: 0 inicio, 1 periódico, 2 inicio de movimiento |
 | `d` | Opcional: `[bytes_NMEA,sentencias_válidas,errores_checksum]` |
@@ -119,7 +132,7 @@ Las pruebas de referencia están en `qa/test_lora_json.py`, `qa/test_lora_usb.py
 - `POST /v3/enrol/preview` `{token}`: valida vigencia, no consumo/revocación y cuenta/predio activos del entorno. Devuelve `{email,role_code,farm_name,expires_at,account_exists}`. El token se envía en el cuerpo. No crea cuenta ni membresía.
 - `POST /v3/enrol` `{token,password,full_name?}`: consume la invitación. Cuenta nueva: nombre y contraseña de al menos doce caracteres. Cuenta existente: contraseña actual, sin cambiar nombre/hash. El rol y el predio proceden exclusivamente de la invitación.
 
-Invitación manual, válida durante 48 horas y de un uso. Sin registro público libre ni envío automático de correo. Guía: [USUARIOS_Y_REGISTRO.md](USUARIOS_Y_REGISTRO.md).
+La invitación dura 48 horas y se utiliza una sola vez. `POST /v3/invitations` devuelve el token y `delivery` con valor `manual` o `queued`. En modo automático incluye `invitation_url`, construida desde `INVITATION_BASE_URL`. La API encola el correo y el worker realiza el envío de forma asíncrona. `GET /v3/invitations` devuelve el estado de la invitación, `email_status` para el correo inicial y `acceptance_email_status` para la confirmación al dueño. `sent` indica que el servidor SMTP aceptó el mensaje. [Configuración SMTP](OPERACION.md#correo-smtp-de-invitaciones)
 
 ## Ficha y agenda sanitaria
 
@@ -148,6 +161,9 @@ Los reportes `totales`, `serie-alertas`, `ranking-movimiento` y `ranking-salidas
 ## Solicitudes y avisos
 
 - `POST /auth/account/close-request` con `{password,code?,reason}` reautentica al titular y devuelve `{requested,request_id,status}`. Si hay una solicitud de cierre pendiente, devuelve su folio.
+- `POST /auth/mfa/setup` con `{password}` inicia la inscripción de una cuenta con sesión y sin factor activo. `POST /auth/mfa/replace` con `{password,code}` o `{password,recovery_code}` inicia el reemplazo de un factor activo. Ambos devuelven un desafío vinculado a la sesión y al factor pendiente, junto con `secret` y `otpauth_uri`.
+- `POST /auth/mfa/verify` con `{challenge_token,code}` verifica el factor asociado al desafío. Un desafío iniciado en el perfil requiere la misma sesión y CSRF. El desafío vence en cinco minutos. Al verificar un reemplazo, se conserva la sesión actual, se retira el factor anterior y se invalidan las demás sesiones, los códigos de recuperación y las autorizaciones sensibles pendientes.
+- `POST /auth/mfa/remove` con la misma prueba de identidad que `/auth/mfa/replace` retira el factor del titular, limpia la cookie, revoca las sesiones y devuelve `{removed,enrollment_required}`. Si la política exige MFA, el siguiente ingreso requiere inscripción. Reemplazar y quitar requieren sesión y CSRF, comparten el límite de reautenticación y consumen cualquier código de recuperación usado.
 - `POST /auth/support-requests` con `{kind,description}` crea un caso privado de tipo `change_email` o `access_issue`. `GET /auth/support-requests` lista los propios, con `status`, `limit` y `offset` opcionales. `admin=true` requiere administrador en contexto global y abre la bandeja de plataforma.
 - `POST /auth/support-requests/{id}/decision` requiere administrador en contexto global y guarda `{status,response}` con resultado `resolved` o `rejected`. El titular confirma la lectura mediante `POST /auth/support-requests/{id}/read`. La decisión resuelve el caso y comunica el resultado.
 - `GET /v3/changes` acepta `status`, `limit` y `offset`. `GET /v3/changes/{id}` aplica el mismo ámbito de predio y autoría. En el predio, dueño y administrador pueden revisar las propuestas y los demás perfiles consultan las propias.

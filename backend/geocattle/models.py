@@ -37,6 +37,7 @@ class User(Base, IdMixin):
     phone: Mapped[str | None] = mapped_column(Text)
     version: Mapped[int] = mapped_column(BigInteger, default=1)
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mfa_enrollment_required: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 class LoginSession(Base):
@@ -81,6 +82,7 @@ class AuthChallenge(Base, IdMixin):
     token_hash: Mapped[str] = mapped_column(Text, unique=True)
     purpose: Mapped[str] = mapped_column(Text)
     session_token_hash: Mapped[str | None] = mapped_column(ForeignKey("login_sessions.token_hash"))
+    factor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("mfa_factors.id"))
     operation_digest: Mapped[str | None] = mapped_column(Text)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

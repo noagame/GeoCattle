@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -18,12 +18,36 @@ class AnimalPatch(Strict):
     orientation: Literal["meat","milk"] | None = None
     sector_id: UUID | None = None
     enabled: bool | None = None
-class DeviceIn(Strict):
-    hardware_id: str = Field(min_length=1,max_length=100,pattern=r"^[A-Za-z0-9_:-]+$")
-    dev_eui: str | None = Field(default=None,pattern=r"^[0-9a-fA-F]{16}$")
-    name: str = Field(min_length=1,max_length=100)
+HARDWARE_ID_PATTERN = r"^[A-Za-z0-9_:-]+$"
+DeviceName = Annotated[str, Field(min_length=1, max_length=100)]
+DeviceInterval = Annotated[int, Field(ge=30, le=86400)]
+DevEUI = Annotated[str, Field(pattern=r"^[0-9a-fA-F]{16}$")]
+
+class DeviceIdentity(Strict):
+    hardware_id: str = Field(min_length=1,max_length=100,pattern=HARDWARE_ID_PATTERN)
+    dev_eui: DevEUI | None = None
     transport: Literal["academic","lorawan"]
-    interval_seconds: int = Field(default=300,ge=30,le=86400)
+
+class DeviceIn(DeviceIdentity):
+    name: DeviceName
+    interval_seconds: DeviceInterval = 300
+
+class DeviceCandidateIn(DeviceIdentity):
+    interval_seconds: DeviceInterval
+    firmware_version: str | None = Field(default=None, min_length=1, max_length=100)
+    source: Literal["usb", "radio"]
+
+class DeviceCandidateApproval(Strict):
+    name: DeviceName | None = None
+    interval_seconds: DeviceInterval | None = None
+    installed_at: datetime | None = None
+    dev_eui: DevEUI | None = None
+    enabled: bool | None = None
+
+    @field_validator("installed_at")
+    @classmethod
+    def aware(cls, value):
+        return check_time(value)
 class AssignmentIn(Strict):
     animal_id: UUID
     device_id: UUID

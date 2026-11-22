@@ -4,9 +4,11 @@ Los datos y las métricas de cada prueba se revierten en una transacción extern
 import json
 import os
 import secrets
+from smtplib import SMTPServerDisconnected
 from contextlib import ExitStack, contextmanager
 from datetime import timedelta
 from types import SimpleNamespace
+from unittest.mock import Mock
 from uuid import UUID, uuid4
 
 import pytest
@@ -15,6 +17,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 from geocattle.db import get_db
+from geocattle.invitation_mail import process_invitation_mail
 from geocattle.main import app
 from geocattle.models import Animal, AnimalHolding, Farm, FarmMembership, OwnerAccount, RuleSettings, User, utcnow
 from geocattle.security import hash_password, token_hash
@@ -690,6 +693,74 @@ def test_owner_invitation_previews_and_enrols_each_collaborator_role(v3, role):
     assert v3.db.execute(text("SELECT count(*) FROM audit_log WHERE actor_id=:u AND action='accept_invitation'"), {'u': identity.id}).scalar_one() == 1
 
 
+def test_gmail_sends_invitation_and_confirms_acceptance_through_worker(v3, monkeypatch):
+    cfg = settings()
+    monkeypatch.setattr(cfg, 'invitation_email_enabled', True)
+    monkeypatch.setattr(cfg, 'gmail_smtp_from', 'geocattle.qa@gmail.com')
+    monkeypatch.setattr(cfg, 'gmail_smtp_app_password', 'simulated-app-password')
+    monkeypatch.setattr(cfg, 'invitation_base_url', 'https://geocattle.qa.test')
+    smtp = Mock()
+    smtp.send_message.side_effect = [SMTPServerDisconnected('QA retry'), None, None]
+    connect = Mock(return_value=smtp)
+    monkeypatch.setattr('geocattle.invitation_mail.smtplib.SMTP_SSL', connect)
+
+    owner = v3.client('owner')
+    secret = enable_owner_mfa(v3, owner)
+    path = '/api/v1/v3/invitations'
+    recipient = f'collaborator-{uuid4().hex}@qa.test'
+    response = operation_write(v3, owner, secret, 'POST', path, {'email': recipient, 'role_code': 'veterinarian'})
+    assert response.status_code == 201, response.text
+    invite = response.json()
+    assert invite['delivery'] == 'queued'
+    assert invite['invitation_url'] == f"https://geocattle.qa.test/#enrol={invite['invitation_token']}"
+    assert owner.get(path).json()['items'][0]['email_status'] == 'pending'
+    smtp.send_message.assert_not_called()
+
+    get_mail = text('SELECT status,attempts,encrypted_token FROM invitation_mail WHERE invitation_id=:i AND kind=:k')
+    mail = {'i': UUID(invite['id']), 'k': 'invitation'}
+    assert invite['invitation_token'].encode() not in v3.db.execute(get_mail, mail).one().encrypted_token
+    process_invitation_mail(v3.db)
+    status = v3.db.execute(get_mail, mail).one()
+    assert status.status == 'pending' and status.attempts == 1
+    process_invitation_mail(v3.db)
+    assert smtp.send_message.call_count == 1
+    v3.db.execute(text('UPDATE invitation_mail SET next_attempt_at=now() WHERE invitation_id=:i'), mail)
+    process_invitation_mail(v3.db)
+    assert v3.db.execute(get_mail, mail).one() == ('sent', 2, None)
+    assert owner.get(path).json()['items'][0]['email_status'] == 'sent'
+    sent_invite = smtp.send_message.call_args.args[0]
+    assert sent_invite['To'].addresses[0].addr_spec == recipient
+    assert sent_invite['From'].addresses[0].addr_spec == cfg.gmail_smtp_from
+    assert sent_invite['Message-ID'] == smtp.send_message.call_args_list[0].args[0]['Message-ID']
+    assert invite['invitation_url'] in sent_invite.get_content()
+    assert connect.call_args.args == ('smtp.gmail.com', 465)
+    smtp.login.assert_called_with(cfg.gmail_smtp_from, cfg.gmail_smtp_app_password)
+
+    visitor = v3.client('worker', login=False)
+    token = {'token': invite['invitation_token']}
+    assert visitor.post('/api/v1/v3/enrol/preview', json=token).status_code == 200
+    assert owner.get(path).json()['items'][0]['acceptance_email_status'] is None
+    details = {**token, 'password': PASSWORD, 'full_name': 'Veterinaria QA'}
+    assert visitor.post('/api/v1/v3/enrol', json=details).status_code == 201
+    assert visitor.post('/api/v1/v3/enrol', json=details).status_code == 401
+    assert owner.get(path).json()['items'][0]['acceptance_email_status'] == 'pending'
+    process_invitation_mail(v3.db)
+    assert owner.get(path).json()['items'][0]['acceptance_email_status'] == 'sent'
+    sent_confirmation = smtp.send_message.call_args.args[0]
+    assert sent_confirmation['To'].addresses[0].addr_spec == v3.users['owner'].email
+    assert 'Veterinaria QA' in sent_confirmation.get_content()
+    assert invite['invitation_token'] not in sent_confirmation.get_content()
+    assert smtp.send_message.call_count == 3
+
+    expired = operation_write(v3, owner, secret, 'POST', path, {'email': f'expired-{uuid4().hex}@qa.test', 'role_code': 'worker'})
+    assert expired.status_code == 201, expired.text
+    mail['i'] = UUID(expired.json()['id'])
+    v3.db.execute(text("UPDATE invitations SET expires_at=now()-interval '1 minute' WHERE id=:i"), mail)
+    process_invitation_mail(v3.db)
+    assert v3.db.execute(get_mail, mail).one() == ('expired', 0, None)
+    assert smtp.send_message.call_count == 3
+
+
 def test_invitation_filter_keeps_history_and_applies_before_limit(v3):
     owner = v3.client('owner')
     enable_owner_mfa(v3, owner)
@@ -748,7 +819,7 @@ def test_enrol_preview_and_acceptance_share_token_and_farm_validation(v3, state,
     elif state == 'inactive_account':
         v3.db.execute(text('UPDATE owner_accounts SET active=false WHERE id=:id'), {'id': v3.farms['owner'].account_id})
     elif state == 'other_environment':
-        v3.farms['owner'].environment = 'simulation'
+        v3.farms['owner'].environment = 'development' if settings().app_env == 'simulation' else 'simulation'
     # Commit the fixture savepoint so rejected HTTP requests cannot undo its state.
     v3.db.commit()
     visitor = v3.client('worker', login=False)
@@ -838,3 +909,150 @@ def test_collaborators_cannot_issue_invitations_or_authorize_them(v3, profile):
     response = client.post('/api/v1/auth/operation', json={'password': PASSWORD, 'code': '000000',
         'method': 'POST', 'path': '/api/v1/v3/invitations', 'payload': payload})
     assert response.status_code == 403, response.text
+
+
+@pytest.fixture
+def development_v3(v3, monkeypatch):
+    monkeypatch.setattr(settings(), 'app_env', 'development')
+    monkeypatch.setattr(settings(), 'simulation_enabled', False)
+    for farm in v3.farms.values():
+        farm.environment = 'development'
+    v3.db.commit()
+    return v3
+
+
+def test_radio_candidate_is_idempotent_through_approval(development_v3):
+    v3 = development_v3
+    route = '/api/v1/v3/device-candidates'
+    ingest = '/api/v1/ingest/telemetry'
+    owner = v3.client('owner')
+    worker = v3.client('worker')
+    other_owner = v3.client('other_owner')
+    capture = v3.client('owner', login=False)
+    hardware_id = f'GC-{uuid4().hex[:12].upper()}'
+    headers = {'X-Ingest-Key': settings().ingest_key, 'X-Farm-ID': str(v3.farms['owner'].id)}
+    packet = {
+        'hardware_id': hardware_id, 'session_id': 'test-session', 'seq': 1,
+        'observed_at': utcnow().isoformat(), 'gnss_valid': False, 'source': 'academic',
+        'quality': {'period_ms': 45000},
+    }
+
+    assert owner.post('/api/v1/devices', json={
+        'hardware_id': f'GC-{uuid4().hex[:12].upper()}', 'name': 'Collar 01', 'transport': 'academic',
+    }).status_code == 201
+    assert capture.post(ingest, json=packet).status_code == 401
+    assert capture.post(ingest, json={**packet, 'source': 'sim'}, headers=headers).status_code == 422
+    assert capture.post(ingest, json=packet, headers={'X-Ingest-Key': settings().ingest_key}).status_code == 409
+    first = capture.post(ingest, json=packet, headers=headers)
+    assert first.status_code == 201, first.text
+    receipt = first.json()
+    assert receipt['status'] == 'candidate' and receipt['duplicate'] is False
+    assert capture.post(ingest, json=packet, headers=headers).json() == {**receipt, 'duplicate': True}
+
+    later = capture.post(ingest, json={**packet, 'seq': 2}, headers=headers)
+    assert later.status_code == 201 and later.json() == receipt, later.text
+    candidate = owner.get(route, params={'status': 'pending'}).json()['items'][0]
+    assert candidate['seen_count'] == 2
+    assert candidate['id'] == receipt['id'] and candidate['source'] == 'radio'
+    assert candidate['last_payload']['seq'] == 2
+    assert candidate['last_payload']['latitude'] is None and candidate['last_payload']['longitude'] is None
+    assert candidate['last_seen_at'] >= candidate['first_seen_at']
+    assert candidate['interval_seconds'] == 45 and candidate['suggested_name'] == 'Collar 02'
+    assert other_owner.get(route).json() == {'items': []}
+    approve = f"{route}/{candidate['id']}/approve"
+    dismiss = f"{route}/{candidate['id']}/dismiss"
+    assert worker.post(approve, json={}).status_code == 403
+    assert worker.post(dismiss).status_code == 403
+    assert other_owner.post(approve, json={}).status_code == 403
+    assert owner.post(approve, json={}, headers={'X-CSRF-Token': 'invalid'}).status_code == 403
+
+    approved = owner.post(approve, json={})
+    assert approved.status_code == 200, approved.text
+    device = approved.json()['device']
+    assert device['name'] == 'Collar 02' and device['interval_seconds'] == 45 and device['animal_id'] is None
+    assert device in owner.get('/api/v1/devices').json()['items']
+    assert approved.json()['candidate']['status'] == 'approved'
+    assert owner.get(route).json() == {'items': []}
+    assert owner.post(approve, json={}).status_code == 409
+    assert capture.post(ingest, json=packet, headers=headers).json() == {**receipt, 'duplicate': True}
+    assert v3.db.scalar(text('SELECT count(*) FROM telemetry WHERE device_id=:device'), {'device': device['id']}) == 0
+    resolution = v3.db.execute(text('SELECT resolved_by, resolved_at, device_id FROM device_candidates WHERE id=:id'),
+                               {'id': candidate['id']}).mappings().one()
+    assert resolution['resolved_by'] == v3.users['owner'].id
+    assert resolution['resolved_at'] and str(resolution['device_id']) == device['id']
+    audit = v3.db.execute(text("""
+        SELECT actor_id FROM audit_log WHERE object_type='device' AND object_id=:device AND action='create'
+    """), {'device': device['id']}).scalar_one()
+    assert audit == v3.users['owner'].id
+    telemetry = capture.post(ingest, json={**packet, 'seq': 3}, headers=headers)
+    assert telemetry.status_code == 201 and telemetry.json()['id'] != receipt['id'], telemetry.text
+    assert v3.db.scalar(text('SELECT count(*) FROM telemetry WHERE device_id=:device'), {'device': device['id']}) == 1
+
+
+def test_candidate_dismissal_manual_conflict_and_lorawan_defaults(development_v3):
+    v3 = development_v3
+    route = '/api/v1/v3/device-candidates'
+    owner = v3.client('owner')
+    hardware_id = f'GC-{uuid4().hex[:12].upper()}'
+    descriptor = {
+        'hardware_id': hardware_id, 'transport': 'lorawan', 'interval_seconds': 60,
+        'firmware_version': 'QA 1', 'source': 'usb',
+    }
+    candidate = owner.post(route, json=descriptor)
+    assert candidate.status_code == 201, candidate.text
+    assert candidate.json()['last_payload'] == descriptor
+    ident = candidate.json()['id']
+    assert owner.post(f'{route}/{ident}/approve', json={}).status_code == 422
+    dismissed = owner.post(f'{route}/{ident}/dismiss')
+    assert dismissed.status_code == 200 and dismissed.json()['status'] == 'dismissed', dismissed.text
+    assert owner.get(route).json() == {'items': []}
+    assert owner.get(route, params={'status': 'dismissed'}).json()['items'][0]['id'] == ident
+
+    capture = v3.client('owner', login=False)
+    headers = {'X-Ingest-Key': settings().ingest_key, 'X-Farm-ID': str(v3.farms['owner'].id)}
+    new_descriptor = {**descriptor, 'dev_eui': uuid4().hex[:16].upper()}
+    assert capture.post(route, json=new_descriptor, headers={**headers, 'X-Ingest-Key': 'invalid'}).status_code == 401
+    assert capture.post(route, json=new_descriptor, headers={**headers, 'X-Farm-ID': str(uuid4())}).status_code == 403
+    renewed = capture.post(route, json=new_descriptor, headers=headers)
+    assert renewed.status_code == 201 and renewed.json()['id'] != ident, renewed.text
+    installed_at = utcnow().replace(microsecond=0)
+    approved = owner.post(f"{route}/{renewed.json()['id']}/approve", json={
+        'name': 'Prueba LoRaWAN', 'enabled': False, 'interval_seconds': 75,
+        'installed_at': installed_at.isoformat(),
+    })
+    assert approved.status_code == 200, approved.text
+    device = approved.json()['device']
+    assert device['dev_eui'] == renewed.json()['dev_eui'] and device['enabled'] is False
+    assert device['interval_seconds'] == 75 and device['name'] == 'Prueba LoRaWAN'
+    stored = v3.db.execute(text('SELECT installed_at, firmware_version FROM devices WHERE id=:id'),
+                           {'id': device['id']}).one()
+    assert tuple(stored) == (installed_at, 'QA 1')
+
+    other_descriptor = {**descriptor, 'hardware_id': f'GC-{uuid4().hex[:12].upper()}', 'transport': 'academic'}
+    pending = owner.post(route, json=other_descriptor)
+    assert pending.status_code == 201, pending.text
+    manual = owner.post('/api/v1/devices', json={
+        'hardware_id': other_descriptor['hardware_id'], 'transport': 'academic', 'name': 'Alta manual',
+    })
+    assert manual.status_code == 201, manual.text
+    assert owner.post(f"{route}/{pending.json()['id']}/approve", json={}).status_code == 409
+    assert owner.post(route, json=other_descriptor).status_code == 409
+
+
+def test_simulation_refuses_physical_candidate_registration(v3, monkeypatch):
+    monkeypatch.setattr(settings(), 'app_env', 'simulation')
+    for farm in v3.farms.values():
+        farm.environment = 'simulation'
+    v3.db.commit()
+    owner = v3.client('owner')
+    descriptor = {
+        'hardware_id': 'GC-0123456789AB', 'transport': 'academic', 'interval_seconds': 45, 'source': 'usb',
+    }
+    assert owner.post('/api/v1/v3/device-candidates', json=descriptor).status_code == 403
+    capture = v3.client('owner', login=False)
+    response = capture.post('/api/v1/ingest/telemetry', json={
+        'hardware_id': descriptor['hardware_id'], 'session_id': 'test-session', 'seq': 1,
+        'observed_at': utcnow().isoformat(), 'gnss_valid': False, 'source': 'academic',
+    }, headers={'X-Ingest-Key': settings().ingest_key, 'X-Farm-ID': str(v3.farms['owner'].id)})
+    assert response.status_code == 403, response.text
+    assert owner.get('/api/v1/v3/device-candidates').json() == {'items': []}

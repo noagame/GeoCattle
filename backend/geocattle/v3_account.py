@@ -9,15 +9,18 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
-from sqlalchemy import select, update
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from sqlalchemy import select
 
 from .db import get_db
-from .models import Farm, LoginSession, User, utcnow
-from .security import current_user, hash_password, token_hash, verify_password
+from .models import Farm, User, utcnow
+from .security import admin_login_requires_mfa, current_user, hash_password, token_hash, verify_password
 from .settings import settings
 from .v3_auth import issue_session
-from .v3_security import audit, check_code, create_challenge, execute, one, rows
+from .v3_security import (
+    audit, check_code, create_challenge, execute, live_mfa_session, mfa_challenge_budget,
+    one, retire_mfa_access, revoke_sessions, rows,
+)
 
 
 router = APIRouter(prefix='/api/v1/auth', tags=['Account and recovery V3'])
@@ -35,6 +38,16 @@ SupportText = Annotated[str, StringConstraints(strip_whitespace=True, min_length
 class Reauthenticate(Strict):
     password: str = Field(min_length=1, max_length=256, repr=False)
     code: str | None = Field(default=None, pattern=r'^[0-9]{6}$', repr=False)
+
+
+class MfaChange(Reauthenticate):
+    recovery_code: str | None = Field(default=None, min_length=20, max_length=64, repr=False)
+
+    @model_validator(mode='after')
+    def one_factor(self):
+        if (self.code is None) == (self.recovery_code is None):
+            raise ValueError('Indica el código TOTP o un código de recuperación')
+        return self
 
 
 class PasswordChange(Strict):
@@ -72,35 +85,44 @@ class RecoveryLogin(Strict):
     recovery_code: str = Field(min_length=20, max_length=64, repr=False)
 
 
-def _reauthenticate(db, request, actor, password, code, require_mfa=False):
+def _reauthenticate(db, request, actor, password, code, require_mfa=False, recovery_code=None):
     """Persistent identity budget; lock order matches all other MFA endpoints."""
     one(db, 'SELECT id FROM users WHERE id=:u FOR UPDATE', u=actor.id)
     identity = db.get(User, actor.id)
     if not identity or not identity.active:
         raise HTTPException(401, 'Cuenta no disponible')
     db.refresh(identity)
-    if not identity.active:
-        raise HTTPException(401, 'Cuenta no disponible')
+    session_hash = request.state.session.token_hash
+    if not identity.active or identity.mfa_enrollment_required or not live_mfa_session(db, actor.id, session_hash):
+        raise HTTPException(401, 'Sesión requerida')
     failures = one(db, """SELECT count(*) AS n FROM auth_challenges WHERE user_id=:u
         AND purpose='step_up' AND created_at>now()-interval '5 minutes'
         AND verified_at IS NULL""", u=identity.id)['n']
     if failures >= 5:
         raise HTTPException(429, 'Demasiados intentos; espera cinco minutos')
     factor = one(db, """SELECT * FROM mfa_factors WHERE user_id=:u
-        AND verified_at IS NOT NULL AND revoked_at IS NULL
+        AND kind='totp' AND verified_at IS NOT NULL AND revoked_at IS NULL
         ORDER BY created_at DESC LIMIT 1 FOR UPDATE""", u=identity.id)
     if require_mfa and not factor:
-        raise HTTPException(409, 'Activa MFA antes de administrar recuperación de credenciales')
-    marker = create_challenge(db, identity, 'step_up', session_hash=request.state.session.token_hash)
+        raise HTTPException(409, 'Se requiere un autenticador activo para esta operación')
+    marker = create_challenge(db, identity, 'step_up', session_hash=session_hash)
     hashed = token_hash(marker['challenge_token'])
     execute(db, 'UPDATE auth_challenges SET attempts=1 WHERE token_hash=:t', t=hashed)
     try:
         if not verify_password(identity.password_hash, password):
             raise HTTPException(401, 'Credencial inválida')
         if factor:
-            if code is None:
+            if recovery_code is not None:
+                code_hash = _code_hash(recovery_code)
+                consumed = execute(db, """UPDATE mfa_recovery_codes SET used_at=now()
+                    WHERE user_id=:u AND code_hash=:h AND used_at IS NULL""",
+                    u=identity.id, h=code_hash)
+                if consumed.rowcount != 1:
+                    raise HTTPException(401, 'Credencial de recuperación inválida')
+            elif code is None:
                 raise HTTPException(401, 'Se requiere el código TOTP vigente')
-            check_code(db, factor, code)
+            else:
+                check_code(db, factor, code)
     except HTTPException:
         db.commit()
         raise
@@ -113,12 +135,27 @@ def _clear_cookie(response):
         secure=settings().cookie_secure, samesite='lax')
 
 
-def _revoke_sessions(db, identity):
-    # Synchronize any identity-map sessions too; authentication must observe
-    # revocation immediately even when a caller reuses a unit of work.
-    db.execute(update(LoginSession).where(LoginSession.user_id == identity.id,
-        LoginSession.revoked_at.is_(None)).values(revoked_at=utcnow())
-        .execution_options(synchronize_session='fetch'))
+@router.post('/mfa/replace')
+def replace_mfa(body: MfaChange, request: Request,
+        user=Depends(current_user), db=Depends(get_db, scope='function')):
+    identity = _reauthenticate(db, request, user, body.password, body.code,
+        require_mfa=True, recovery_code=body.recovery_code)
+    return create_challenge(db, identity, 'mfa_replace',
+        session_hash=request.state.session.token_hash, setup=True)
+
+
+@router.post('/mfa/remove')
+def remove_mfa(body: MfaChange, request: Request, response: Response,
+        user=Depends(current_user), db=Depends(get_db, scope='function')):
+    identity = _reauthenticate(db, request, user, body.password, body.code,
+        require_mfa=True, recovery_code=body.recovery_code)
+    identity.mfa_enrollment_required = identity.role == 'admin' and admin_login_requires_mfa(request)
+    retire_mfa_access(db, identity.id)
+    audit(db, user, 'mfa_removed', 'security', after={
+        'all_sessions_revoked': True, 'enrollment_required': identity.mfa_enrollment_required,
+    })
+    _clear_cookie(response)
+    return {'removed': True, 'enrollment_required': identity.mfa_enrollment_required}
 
 
 @router.post('/password/change')
@@ -128,7 +165,7 @@ def change_password(body: PasswordChange, request: Request, response: Response,
     identity.password_hash = hash_password(body.new_password)
     identity.version += 1
     identity.updated_at = utcnow()
-    _revoke_sessions(db, identity)
+    revoke_sessions(db, identity.id)
     execute(db, "UPDATE account_tokens SET consumed_at=now() WHERE user_id=:u AND purpose='reset_password' AND consumed_at IS NULL", u=identity.id)
     audit(db, user, 'password_changed', 'user', identity.id, after={'all_sessions_revoked': True})
     _clear_cookie(response)
@@ -259,10 +296,7 @@ def recovery_login(body: RecoveryLogin, request: Request, response: Response, db
         raise HTTPException(401, 'Credenciales de recuperación inválidas')
     one(db, 'SELECT id FROM users WHERE id=:u FOR UPDATE', u=identity.id)
     db.refresh(identity)
-    failures = one(db, """SELECT coalesce(sum(attempts),0) AS n FROM auth_challenges WHERE user_id=:u
-        AND purpose IN ('login','mfa_setup') AND created_at>now()-interval '5 minutes'
-        AND verified_at IS NULL""", u=identity.id)['n']
-    if failures >= 5:
+    if mfa_challenge_budget(db, identity.id)['failed'] >= 5:
         raise HTTPException(429, 'Demasiados intentos MFA; espera cinco minutos')
     marker = create_challenge(db, identity, 'login')
     hashed = token_hash(marker['challenge_token'])
@@ -272,7 +306,8 @@ def recovery_login(body: RecoveryLogin, request: Request, response: Response, db
     code_hash = _code_hash(body.recovery_code)
     record = one(db, 'SELECT * FROM mfa_recovery_codes WHERE user_id=:u AND code_hash=:h AND used_at IS NULL FOR UPDATE',
         u=identity.id, h=code_hash) if code_hash else None
-    if not verify_password(identity.password_hash, body.password) or not identity.active or not factor or not record:
+    if (not verify_password(identity.password_hash, body.password) or not identity.active
+            or identity.mfa_enrollment_required or not factor or not record):
         db.commit()
         raise HTTPException(401, 'Credenciales de recuperación inválidas')
     home = db.get(Farm, identity.farm_id) if identity.farm_id else None
@@ -328,7 +363,7 @@ def reset_password(body: ResetConsume, request: Request, response: Response, db=
     identity.password_hash = hash_password(body.new_password)
     identity.version += 1
     identity.updated_at = utcnow()
-    _revoke_sessions(db, identity)
+    revoke_sessions(db, identity.id)
     execute(db, "UPDATE account_tokens SET consumed_at=now() WHERE user_id=:u AND purpose='reset_password' AND consumed_at IS NULL", u=identity.id)
     audit(db, identity, 'password_reset_completed', 'user', identity.id,
         after={'all_sessions_revoked': True, 'mfa_preserved': True})

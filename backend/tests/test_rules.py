@@ -37,6 +37,25 @@ def test_simulation_cannot_run_in_production_or_sqlite():
     with pytest.raises(ValueError):Settings(database_url="sqlite:///:memory:")
     with pytest.raises(ValueError):Settings(app_env="production",cookie_secure=False)
 
+def test_gmail_invitation_settings_allow_local_test_and_require_https_for_remote_links():
+    gmail = {
+        'invitation_email_enabled': True,
+        'simulation_enabled': False,
+        'gmail_smtp_from': ' Project.QA@GMAIL.COM ',
+        'gmail_smtp_app_password': 'test only fake pass',
+        'session_secret': 'invitation-configuration-test-only-secret',
+        '_env_file': None,
+    }
+    local = Settings(**gmail, app_env='development', invitation_base_url='http://localhost:8084')
+    assert local.gmail_smtp_from == 'project.qa@gmail.com'
+    assert local.gmail_smtp_app_password == 'testonlyfakepass'
+    assert local.gmail_smtp_app_password not in repr(local)
+    assert Settings(**gmail, invitation_base_url='https://geo.example.test').invitation_email_enabled
+    with pytest.raises(ValueError, match='INVITATION_BASE_URL'):
+        Settings(**gmail, invitation_base_url='http://geo.example.test')
+    with pytest.raises(ValueError, match='GMAIL_SMTP_APP_PASSWORD'):
+        Settings(**{**gmail, 'gmail_smtp_app_password': ''}, invitation_base_url='https://geo.example.test')
+
 def test_durable_spool_survives_restart_and_deduplicates(tmp_path):
     path=str(tmp_path/"queue.db");spool=Spool(path)
     key=spool.put("academic",b'{"seq":1}',1,1,1)

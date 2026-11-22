@@ -46,13 +46,13 @@ Desde **Mi perfil → Seguridad y acceso** se puede cambiar contraseña, generar
 - **Recuperación asistida:** el administrador entra a **Usuarios de la plataforma → Restablecer contraseña**, verifica sus propias credenciales y obtiene un enlace privado de un solo uso, vigente durante quince minutos. Lo entrega al titular por un canal privado. El destinatario puede abrirlo sin sesión, definir la nueva contraseña y volver a ingresar; se revocan las sesiones previas y se conserva MFA. Un enlace nuevo invalida los anteriores.
 - **Solicitudes de soporte.** La bandeja personal muestra el folio, el estado y la respuesta para cierre de cuenta, cambio de correo y problemas de acceso. El cierre requiere motivo y reautenticación. Administración responde desde el panel global. Resolver el caso registra y comunica la decisión. La gestión de acceso y la conservación del historial se rigen por las operaciones de cuenta.
 
-La verificación y el cambio de correo siguen pendientes. Los enlaces de recuperación e invitación se entregan manualmente; no se ha configurado ni acreditado su envío automático.
+La verificación y el cambio efectivo de correo siguen pendientes. Los enlaces de recuperación asistida se entregan manualmente. Las invitaciones y sus confirmaciones admiten envío automático por SMTP. [Configuración de correo](OPERACION.md#correo-smtp-de-invitaciones)
 
 ## Equipo, enrolamiento y confianza
 
 1. El dueño selecciona el predio, entra a **Equipo y permisos** y verifica contraseña y código TOTP. La lectura sensible se habilita durante diez minutos.
 2. En **Invitar usuario** introduce correo y perfil —trabajador o veterinario—, revisa los datos y verifica esa escritura con contraseña y un código TOTP nuevo.
-3. La aplicación genera un enlace privado de enrolamiento, vigente durante 48 horas y de un solo uso. El dueño lo comunica al destinatario por un canal privado. **No se ha acreditado entrega automática por correo.**
+3. La aplicación genera un enlace privado de enrolamiento, vigente durante 48 horas y de un solo uso. Si el correo está habilitado, el worker lo envía al destinatario. El dueño también puede copiar el enlace para compartirlo por un canal privado.
 4. El destinatario abre el enlace, introduce su nombre y define una contraseña de al menos doce caracteres. Si ya existe una identidad del mismo correo, debe utilizar su contraseña vigente; no se reemplaza su contraseña al aceptar otra membresía.
 5. El dueño puede modificar el perfil o cerrar el acceso al predio. La baja conserva la identidad y su autoría histórica, así como las membresías de otros predios.
 6. La confianza se concede a una membresía de trabajador y a una acción concreta: registro sanitario permitido, estado, reporte o batería. Revocarla afecta las siguientes operaciones y conserva la historia de concesiones.
@@ -121,6 +121,6 @@ La [carta Gantt editable](planificacion/Carta_Gantt_GeoCattle_V3_2026-10-21.xlsx
 
 ## Funciones y aceptación aún pendientes
 
-La existencia del código y las tablas no acredita los 44 RF y 22 RNF completos. Continúan pendientes la verificación y el cambio efectivo de correo. Las solicitudes de cierre y cambio de correo cuentan con seguimiento y respuesta administrativa dentro de la plataforma. El perfil permite modificar nombre y teléfono. La recuperación asistida y los códigos de un solo uso están implementados. El envío externo de invitaciones, recuperación y avisos requiere proveedor configurado y pruebas de entrega.
+La existencia del código y las tablas no acredita los 44 RF y 22 RNF completos. Continúan pendientes la verificación y el cambio efectivo de correo. Las solicitudes de cierre y cambio de correo cuentan con seguimiento y respuesta administrativa dentro de la plataforma. El perfil permite modificar nombre y teléfono. La recuperación asistida y los códigos de un solo uso están implementados. Las invitaciones y confirmaciones admiten correo automático con Gmail SMTP mediante [configuración privada](USUARIOS_Y_REGISTRO.md). La verificación de entrega requiere una cuenta operativa y una URL de aceptación accesible.
 
 Quedan pendientes la observabilidad histórica dedicada, carga con 70 nodos y cinco clientes, medición continua de disponibilidad, RPO/RTO, corte WAN y recuperación de cola, cobertura LoRaWAN, autonomía, montaje y recepción real multiantena. Dosis y resguardos deben verificarse con el responsable sanitario. La aceptación del productor y la preserie predial permanecen como hitos externos de la Gantt.

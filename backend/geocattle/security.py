@@ -35,12 +35,24 @@ def admin_login_requires_mfa(request: Request) -> bool:
     )
 
 
+def check_session_csrf(request, session):
+    csrf = request.headers.get("X-CSRF-Token", "")
+    if not hmac.compare_digest(csrf, session.csrf_token):
+        raise HTTPException(403, "Token CSRF inválido")
+    origin = request.headers.get("origin")
+    allowed = {s.strip() for s in settings().allowed_origins.split(",") if s.strip()}
+    if origin and origin not in allowed:
+        raise HTTPException(403, "Origen no autorizado")
+
+
 def current_user(request: Request,db=Depends(get_db, scope="function")):
     token=request.cookies.get("geocattle_session")
     session=db.get(LoginSession,token_hash(token)) if token else None
     if not session or session.revoked_at is not None or session.expires_at<=utcnow() or (session.last_seen_at and utcnow()-session.last_seen_at>timedelta(minutes=30)): raise HTTPException(401,"Sesión requerida")
     user=db.get(User,session.user_id)
     if not user or not user.active: raise HTTPException(401,"Sesión requerida")
+    if user.mfa_enrollment_required:
+        raise HTTPException(401, "Se requiere inscribir un autenticador")
     if user.role == 'admin' and session.mfa_verified_at is None and admin_login_requires_mfa(request):
         raise HTTPException(401, "Se requiere MFA para administrador")
     request.state.identity=user
@@ -48,11 +60,7 @@ def current_user(request: Request,db=Depends(get_db, scope="function")):
     if request.url.path != '/api/v1/v3/activity-counts':
         session.last_seen_at=utcnow()
     if request.method not in ("GET","HEAD","OPTIONS"):
-        csrf=request.headers.get("X-CSRF-Token","")
-        if not hmac.compare_digest(csrf,session.csrf_token): raise HTTPException(403,"Token CSRF inválido")
-        origin=request.headers.get("origin")
-        allowed={s.strip() for s in settings().allowed_origins.split(",") if s.strip()}
-        if origin and origin not in allowed: raise HTTPException(403,"Origen no autorizado")
+        check_session_csrf(request, session)
     from .v3_security import actor_for
     actor=actor_for(db,user,session)
     request.state.actor=actor

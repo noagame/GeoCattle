@@ -7,7 +7,7 @@ import { useVerifiedOperation } from './V3Operation';
 import { Pagination } from './PagesAnimals';
 import type { Notify } from './App';
 import type { List } from './types';
-import type { Farm, Invitation, Member, Trust, UserNotice } from './v3types';
+import type { Farm, Invitation, InvitationMailStatus, Member, Trust, UserNotice } from './v3types';
 import { changeLabels, roleLabels } from './v3types';
 
 export function FarmsPage({ notify, onUpdated, admin = false }: { notify: Notify; admin?: boolean; onUpdated: () => void }) {
@@ -30,6 +30,14 @@ const invitationStatusLabels = {
   expired: 'Vencida',
 };
 type InvitationListEntry = Invitation & { status: keyof typeof invitationStatusLabels };
+const invitationMailLabels: Record<InvitationMailStatus, string> = {
+  manual: 'Enlace manual',
+  pending: 'En cola',
+  sent: 'Aceptado por el servidor de correo',
+  failed: 'Falló el envío',
+  expired: 'Plazo vencido',
+  cancelled: 'Cancelado',
+};
 
 function TeamContent({ notify, admin }: { notify: Notify; admin: boolean }) {
   const [showExpired, setShowExpired] = useState(false);
@@ -38,11 +46,19 @@ function TeamContent({ notify, admin }: { notify: Notify; admin: boolean }) {
   const trust = useData<List<Trust>>('/v3/trust');
   const [editing, setEditing] = useState<Member | null>(null); const [inviting, setInviting] = useState(false); const [granting, setGranting] = useState(false); const [revoking, setRevoking] = useState<Trust | null>(null); const [link, setLink] = useState('');
   const refresh = () => { members.reload(); invites.reload(); trust.reload(); };
+  function invitationCreated(result: Invitation) {
+    setInviting(false);
+    setShowExpired(false);
+    refresh();
+    if (result.invitation_token) setLink(result.invitation_url ?? `${location.origin}${location.pathname}#enrol=${encodeURIComponent(result.invitation_token)}`);
+    notify(result.delivery === 'queued' ? 'Invitación creada. El correo está en cola de envío.'
+      : 'Invitación creada. Copia el enlace y envíalo al destinatario.');
+  }
 
   const invitationPanel = <Panel>
     <PanelTitle
       title={showExpired ? 'Invitaciones vencidas' : 'Invitaciones'}
-      subtitle={showExpired ? undefined : 'Copia y comparte el enlace con el destinatario.'}
+      subtitle={showExpired ? undefined : 'Consulta la vigencia, la aceptación y el estado de cada correo.'}
       action={<button className="button secondary small" type="button" onClick={() => setShowExpired(view => !view)}>
         {showExpired ? 'Volver al listado' : 'Ver vencidas'}
       </button>}
@@ -57,19 +73,21 @@ function TeamContent({ notify, admin }: { notify: Notify; admin: boolean }) {
     {invites.loading && !invites.data ? <Loading /> : invites.data?.items.length ? (
       <div className="table-scroll">
         <table>
-          <thead><tr><th>Correo invitado</th><th>Perfil</th><th>Vencimiento</th><th>Estado</th></tr></thead>
+          <thead><tr><th>Correo invitado</th><th>Perfil</th><th>Vencimiento</th><th>Invitación</th><th>Correo al colaborador</th><th>Correo al dueño</th></tr></thead>
           <tbody>{invites.data.items.map(invite => <tr key={invite.id}>
             <td>{invite.email}</td>
             <td>{roleLabels[invite.role_code] ?? invite.role_code}</td>
             <td>{date(invite.expires_at)}</td>
             <td>{invitationStatusLabels[invite.status]}</td>
+            <td>{invitationMailLabels[invite.email_status ?? 'manual']}</td>
+            <td>{invite.acceptance_email_status ? invitationMailLabels[invite.acceptance_email_status] : '—'}</td>
           </tr>)}</tbody>
         </table>
       </div>
     ) : !invites.error && <Empty title={showExpired ? 'No hay invitaciones vencidas' : 'No hay invitaciones en el listado'} />}
   </Panel>;
 
-  return <>{admin && <div className="notice"><ShieldCheck size={18} /><span>Soporte administra los colaboradores ya incorporados. Las invitaciones de trabajadores y veterinarios las emite el dueño del predio.</span></div>}<Panel><PanelTitle title="Colaboradores del predio" subtitle="La revocación afecta a esta membresía y conserva la autoría histórica." action={!admin && <button className="button primary small" onClick={() => setInviting(true)}><Plus size={16} />Invitar usuario</button>} /><ErrorNotice error={members.error} retry={members.reload} />{members.loading ? <Loading /> : members.data?.items.length ? <div className="table-scroll"><table><thead><tr><th>Persona</th><th>Correo</th><th>Perfil</th><th>Acceso</th><th>Acciones</th></tr></thead><tbody>{members.data.items.map(member => <tr key={member.id}><td>{member.full_name || member.username || 'Usuario'}</td><td>{member.email || member.username}</td><td>{roleLabels[member.role_code] ?? member.role_code}</td><td><Badge status={member.active === false ? 'unknown' : 'normal'}>{member.active === false ? 'Revocado' : 'Activo'}</Badge></td><td>{member.active !== false && ['worker', 'veterinarian'].includes(member.role_code) ? <button className="button secondary small" onClick={() => setEditing(member)}><Pencil size={14} />Modificar acceso</button> : <span className="neutral-tag">{member.active === false ? 'Histórico' : 'Acceso del titular'}</span>}</td></tr>)}</tbody></table></div> : <Empty title="Sin colaboradores" description="Invita al equipo que trabaja en este predio." />}</Panel>{invitationPanel}<Panel><PanelTitle title="Confianza de trabajadores" subtitle="Permite aplicar una acción concreta sin aprobación posterior del dueño." action={<button className="button secondary small" onClick={() => setGranting(true)}><ShieldCheck size={16} />Conceder confianza</button>} /><ErrorNotice error={trust.error} retry={trust.reload} />{trust.loading ? <Loading /> : trust.data?.items.filter(t => !t.revoked_at && !t.valid_to).length ? <div className="table-scroll"><table><thead><tr><th>Trabajador</th><th>Acción autorizada</th><th>Acciones</th></tr></thead><tbody>{trust.data.items.filter(t => !t.revoked_at && !t.valid_to).map(t => <tr key={t.id}><td>{members.data?.items.find(m => m.id === t.membership_id)?.full_name || members.data?.items.find(m => m.id === t.membership_id)?.email || t.membership_id}</td><td>{changeLabels[t.action] ?? t.action}</td><td><button className="button secondary small" onClick={() => setRevoking(t)}>Revocar confianza</button></td></tr>)}</tbody></table></div> : <Empty title="Sin confianza directa concedida" description="Los cambios de trabajadores quedan pendientes de tu revisión." />}</Panel>{!admin && inviting && <InviteForm onClose={() => setInviting(false)} onSaved={result => { setInviting(false); setShowExpired(false); refresh(); if (result.invitation_token) setLink(`${location.origin}${location.pathname}#enrol=${encodeURIComponent(result.invitation_token)}`); notify('Invitación creada. Comparte el enlace con el destinatario.'); }} />}{editing && <MemberForm member={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh(); notify('Acceso del colaborador actualizado.'); }} />}{granting && <TrustForm members={members.data?.items ?? []} onClose={() => setGranting(false)} onSaved={() => { setGranting(false); trust.reload(); notify('Confianza por acción guardada.'); }} />}{revoking && <RevokeTrustForm trust={revoking} onClose={() => setRevoking(null)} onSaved={() => { setRevoking(null); trust.reload(); notify('Confianza revocada. Las próximas acciones requerirán revisión.'); }} />}</>;
+  return <>{admin && <div className="notice"><ShieldCheck size={18} /><span>Soporte administra los colaboradores ya incorporados. Las invitaciones de trabajadores y veterinarios las emite el dueño del predio.</span></div>}<Panel><PanelTitle title="Colaboradores del predio" subtitle="La revocación afecta a esta membresía y conserva la autoría histórica." action={!admin && <button className="button primary small" onClick={() => setInviting(true)}><Plus size={16} />Invitar usuario</button>} /><ErrorNotice error={members.error} retry={members.reload} />{members.loading ? <Loading /> : members.data?.items.length ? <div className="table-scroll"><table><thead><tr><th>Persona</th><th>Correo</th><th>Perfil</th><th>Acceso</th><th>Acciones</th></tr></thead><tbody>{members.data.items.map(member => <tr key={member.id}><td>{member.full_name || member.username || 'Usuario'}</td><td>{member.email || member.username}</td><td>{roleLabels[member.role_code] ?? member.role_code}</td><td><Badge status={member.active === false ? 'unknown' : 'normal'}>{member.active === false ? 'Revocado' : 'Activo'}</Badge></td><td>{member.active !== false && ['worker', 'veterinarian'].includes(member.role_code) ? <button className="button secondary small" onClick={() => setEditing(member)}><Pencil size={14} />Modificar acceso</button> : <span className="neutral-tag">{member.active === false ? 'Histórico' : 'Acceso del titular'}</span>}</td></tr>)}</tbody></table></div> : <Empty title="Sin colaboradores" description="Invita al equipo que trabaja en este predio." />}</Panel>{invitationPanel}<Panel><PanelTitle title="Confianza de trabajadores" subtitle="Permite aplicar una acción concreta sin aprobación posterior del dueño." action={<button className="button secondary small" onClick={() => setGranting(true)}><ShieldCheck size={16} />Conceder confianza</button>} /><ErrorNotice error={trust.error} retry={trust.reload} />{trust.loading ? <Loading /> : trust.data?.items.filter(t => !t.revoked_at && !t.valid_to).length ? <div className="table-scroll"><table><thead><tr><th>Trabajador</th><th>Acción autorizada</th><th>Acciones</th></tr></thead><tbody>{trust.data.items.filter(t => !t.revoked_at && !t.valid_to).map(t => <tr key={t.id}><td>{members.data?.items.find(m => m.id === t.membership_id)?.full_name || members.data?.items.find(m => m.id === t.membership_id)?.email || t.membership_id}</td><td>{changeLabels[t.action] ?? t.action}</td><td><button className="button secondary small" onClick={() => setRevoking(t)}>Revocar confianza</button></td></tr>)}</tbody></table></div> : <Empty title="Sin confianza directa concedida" description="Los cambios de trabajadores quedan pendientes de tu revisión." />}</Panel>{!admin && inviting && <InviteForm onClose={() => setInviting(false)} onSaved={invitationCreated} />}{editing && <MemberForm member={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh(); notify('Acceso del colaborador actualizado.'); }} />}{granting && <TrustForm members={members.data?.items ?? []} onClose={() => setGranting(false)} onSaved={() => { setGranting(false); trust.reload(); notify('Confianza por acción guardada.'); }} />}{revoking && <RevokeTrustForm trust={revoking} onClose={() => setRevoking(null)} onSaved={() => { setRevoking(null); trust.reload(); notify('Confianza revocada. Las próximas acciones requerirán revisión.'); }} />}</>;
 }
 function InviteForm({ onClose, onSaved }: { onClose: () => void; onSaved: (result: Invitation) => void }) {
   const [email, setEmail] = useState(''); const [role, setRole] = useState('worker'); const [confirmed, setConfirmed] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState('');

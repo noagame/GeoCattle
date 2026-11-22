@@ -6,9 +6,11 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
+from geocattle.account_maintenance import main as maintenance
 from geocattle.main import app
 from geocattle.models import utcnow
 from geocattle.security import token_hash, verify_password
+from geocattle.settings import settings
 from geocattle.v3_account import router
 from geocattle.v3_security import totp
 from test_v3_api import PASSWORD, enable_owner_mfa, v3
@@ -37,6 +39,114 @@ def generate_codes(v3, client, secret):
     response = client.post('/api/v1/auth/mfa/recovery-codes', json={'password': PASSWORD, 'code': totp(secret)})
     assert response.status_code == 200, response.text
     return response.json()['recovery_codes']
+
+
+def password_login(v3, client):
+    response = client.post('/api/v1/auth/login', json={
+        'username': v3.users['admin'].username, 'password': PASSWORD})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def verify_challenge(client, challenge, code, **kwargs):
+    return client.post('/api/v1/auth/mfa/verify', json={
+        'challenge_token': challenge['challenge_token'], 'code': code}, **kwargs)
+
+
+def test_replace_totp_is_bound_to_session_and_switches_only_after_confirmation(v3):
+    account, old_secret = admin_session(v3)
+    codes = generate_codes(v3, account, old_secret)
+    visitor = v3.client('admin', login=False)
+    wrong_password = account.post('/api/v1/auth/mfa/replace', json={
+        'password': 'incorrecta', 'recovery_code': codes[0]})
+    assert wrong_password.status_code == 401
+    replacement = account.post('/api/v1/auth/mfa/replace', json={
+        'password': PASSWORD, 'recovery_code': codes[0]})
+    assert replacement.status_code == 200, replacement.text
+    new = replacement.json()
+    assert new['secret'] != old_secret and new['secret'] in new['otpauth_uri']
+    assert account.post('/api/v1/auth/mfa/replace', json={
+        'password': PASSWORD, 'recovery_code': codes[0]}).status_code == 401
+    v3.clock['value'] += 30
+    old_login = password_login(v3, visitor)
+    assert old_login['setup_required'] is False and 'secret' not in old_login
+    signed_in = verify_challenge(visitor, old_login, totp(old_secret))
+    assert signed_in.status_code == 200, signed_in.text
+    visitor.headers['X-CSRF-Token'] = signed_in.json()['csrf_token']
+    assert verify_challenge(visitor, new, totp(new['secret'])).status_code == 401
+    assert verify_challenge(account, new, totp(new['secret']), headers={'X-CSRF-Token': 'wrong'}).status_code == 403
+    counter = v3.clock['value'] // 30
+    valid_codes = {totp(new['secret'], counter + delta) for delta in (-1, 0, 1)}
+    wrong = next(f'{number:06}' for number in range(4) if f'{number:06}' not in valid_codes)
+    assert verify_challenge(account, new, wrong).status_code == 401
+    assert verify_challenge(account, new, '１２３４５６').status_code == 401
+    stale = password_login(v3, visitor)
+    complete = verify_challenge(account, new, totp(new['secret']))
+    assert complete.status_code == 200, complete.text
+    assert complete.json()['user']['mfa_enabled'] is True
+    assert account.get('/api/v1/auth/me').status_code == 200
+    assert visitor.get('/api/v1/auth/me').status_code == 401
+    assert verify_challenge(account, new, totp(new['secret'])).status_code == 401
+    assert verify_challenge(visitor, stale, totp(old_secret)).status_code == 401
+    assert visitor.post('/api/v1/auth/mfa/recovery-login', json={
+        'username': v3.users['admin'].username, 'password': PASSWORD,
+        'recovery_code': codes[1]}).status_code == 401
+    v3.clock['value'] += 30
+    next_login = password_login(v3, visitor)
+    assert verify_challenge(visitor, next_login, totp(new['secret'])).status_code == 200
+    audited = v3.db.execute(text("SELECT after::text FROM audit_log WHERE action='mfa_replaced' AND actor_id=:u"),
+        {'u': v3.users['admin'].id}).scalar_one()
+    assert all(value not in audited for value in (old_secret, new['secret'], new['challenge_token'], codes[0]))
+
+
+@pytest.mark.parametrize('required', [False, True])
+def test_remove_totp_revokes_sessions_and_follows_admin_policy(v3, monkeypatch, required):
+    client, secret = admin_session(v3)
+    monkeypatch.setattr(settings(), 'admin_login_mfa', required)
+    v3.clock['value'] += 30
+    removed = client.post('/api/v1/auth/mfa/remove', json={'password': PASSWORD, 'code': totp(secret)})
+    assert removed.status_code == 200, removed.text
+    assert removed.json() == {'removed': True, 'enrollment_required': required}
+    assert 'geocattle_session' not in client.cookies
+    assert client.get('/api/v1/auth/me').status_code == 401
+    # A mandatory enrollment survives a switch to password-only mode.
+    monkeypatch.setattr(settings(), 'admin_login_mfa', False)
+    next_login = password_login(v3, client)
+    if required:
+        assert next_login['setup_required'] is True and 'geocattle_session' not in client.cookies
+        assert verify_challenge(client, next_login, totp(next_login['secret'])).status_code == 200
+    else:
+        assert next_login['user']['mfa_enabled'] is False
+
+
+def test_console_reset_forces_enrollment_in_password_only_mode(v3, monkeypatch, capsys):
+    account, old_secret = admin_session(v3)
+    codes = generate_codes(v3, account, old_secret)
+    visitor = v3.client('admin', login=False)
+    previous_challenge = password_login(v3, visitor)
+    monkeypatch.setattr(settings(), 'admin_login_mfa', False)
+    monkeypatch.setattr('sys.argv', ['maintenance', 'mfa-reset', '--email', 'missing@example.test'])
+    assert maintenance() == 0
+    generic_reply = capsys.readouterr().out
+    assert account.get('/api/v1/auth/me').status_code == 200
+    monkeypatch.setattr('sys.argv', ['maintenance', 'mfa-reset', '--email', v3.users['admin'].email.upper()])
+    assert maintenance() == 0 and capsys.readouterr().out == generic_reply
+    # The fixture's SessionLocal.begin() uses a nested transaction. Release
+    # the savepoint so the next failed HTTP request only rolls back its own work.
+    v3.db.commit()
+    assert account.get('/api/v1/auth/me').status_code == 401
+    assert verify_challenge(visitor, previous_challenge, totp(old_secret)).status_code == 401
+    assert visitor.post('/api/v1/auth/mfa/recovery-login', json={
+        'username': v3.users['admin'].username, 'password': PASSWORD, 'recovery_code': codes[0]}).status_code == 401
+    pending = password_login(v3, visitor)
+    assert pending['setup_required'] is True and 'geocattle_session' not in visitor.cookies
+    assert pending['secret'] != old_secret
+    assert verify_challenge(visitor, pending, totp(pending['secret'])).status_code == 200
+    audit = v3.db.execute(text("SELECT actor_id,actor_kind,after FROM audit_log WHERE object_id=:u AND action='mfa_reset_console'"),
+        {'u': str(v3.users['admin'].id)}).one()
+    assert audit.actor_id is None and audit.actor_kind == 'service' and audit.after['actor'] == 'sistema/consola'
+    assert v3.db.execute(text('SELECT mfa_enrollment_required FROM users WHERE id=:u'),
+        {'u': v3.users['admin'].id}).scalar_one() is False
 
 
 def issue_reset(v3, client, secret, key='owner'):

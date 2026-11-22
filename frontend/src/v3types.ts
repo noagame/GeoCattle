@@ -1,10 +1,16 @@
-import type { Animal } from './types';
+import type { Animal, Device } from './types';
 export type Role = 'admin' | 'owner' | 'worker' | 'veterinarian';
 export type Farm = { id: string; name: string; rup?: string | null; address?: string | null; active?: boolean; environment?: string; account_id?: string; role?: Role };
 export type Owner = { id: string; account_id?: string; email?: string; username?: string; full_name?: string; display_name?: string; active?: boolean; max_farms?: number };
 export type Member = { id: string; user_id: string; full_name?: string; email?: string; username?: string; role_code: 'worker' | 'veterinarian'; active?: boolean };
 export type Trust = { id: string; membership_id: string; action: string; revoked_at?: string | null; valid_to?: string | null };
-export type Invitation = { id: string; email: string; role_code: string; created_at?: string; expires_at?: string; status?: string; accepted_at?: string | null; revoked_at?: string | null; invitation_token?: string };
+export type InvitationMailStatus = 'manual' | 'pending' | 'sent' | 'failed' | 'expired' | 'cancelled';
+export type Invitation = {
+  id: string; email: string; role_code: string; created_at?: string; expires_at?: string;
+  status?: string; accepted_at?: string | null; revoked_at?: string | null; invitation_token?: string;
+  invitation_url?: string; delivery?: 'manual' | 'queued';
+  email_status?: InvitationMailStatus; acceptance_email_status?: InvitationMailStatus | null;
+};
 export type Change = { id: string; action: string; animal_id?: string | null; device_id?: string | null; status?: string; created_at?: string; requested_at?: string; requester_name?: string; full_name?: string; requested_by?: string; payload: Record<string, unknown>; diio?: string; decision?: string; reason?: string; applied_at?: string | null };
 export type Gateway = { id: string; name: string; gateway_eui: string; status: 'installed' | 'maintenance' | 'retired'; version: number; longitude?: number | null; latitude?: number | null; last_seen_at?: string | null; installed_at?: string | null; archived_at?: string | null; archived_by?: string | null; reception_count?: number };
 export type GatewayReception = { telemetry_id: string; gateway_id: string; hardware_id: string; observed_at: string; reception_at: string; server_received_at: string; rssi_dbm: number | string | null; snr_db: number | string | null; device_id: string; animal_id: string | null; source: string };
@@ -42,3 +48,36 @@ export const changeLabels: Record<string, string> = { animal_profile: 'Ficha té
 export const changeStates: Record<string, string> = { pending: 'Pendiente de aprobación', approved: 'Aprobado', rejected: 'Rechazado', applied: 'Aplicado', direct: 'Aplicado directamente', trusted: 'Aplicado por confianza' };
 export const healthLabels: Record<string, string> = { vaccine: 'Vacuna', vaccination: 'Vacuna', antibiotic: 'Antibiótico', treatment: 'Tratamiento', diagnosis: 'Diagnóstico', pathology: 'Patología', examination: 'Examen', observation: 'Observación', injury: 'Lesión', procedure: 'Procedimiento', other: 'Otro', death: 'Muerte', checkup: 'Control' };
 export const operationLabels: Record<string, string> = { record: 'Registro', correct: 'Corrección', void: 'Anulación', plan: 'Planificada', replace: 'Reprogramada', cancel: 'Cancelada', complete: 'Completada' };
+
+export type DeviceCandidateTransport = 'academic' | 'lorawan';
+export type DeviceCandidateSource = 'usb' | 'radio';
+export type DeviceCandidateStatus = 'pending' | 'approved' | 'dismissed';
+
+export type DeviceCandidate = {
+  id: string;
+  hardware_id: string;
+  transport: DeviceCandidateTransport;
+  dev_eui: string | null;
+  interval_seconds: number;
+  firmware_version: string | null;
+  source: DeviceCandidateSource;
+  first_seen_at: string;
+  last_seen_at: string;
+  seen_count: number;
+  last_payload: Record<string, unknown> | null;
+  status: DeviceCandidateStatus;
+  suggested_name: string;
+};
+
+export type DeviceCandidateApprove = {
+  name: string;
+  interval_seconds?: number;
+  installed_at?: string;
+  dev_eui?: string | null;
+  enabled?: boolean;
+};
+
+export type DeviceCandidateApproveResult = {
+  device: Device;
+  candidate: DeviceCandidate;
+};

@@ -35,12 +35,91 @@ La ruta de desarrollo en simulación está encapsulada por:
 ```bash
 # Preparar dependencias dentro de backend con uv sync --extra test.
 # La configuración privada elegida debe pertenecer a una instancia de simulación separada.
-python3 scripts/local_backend.py test
+python3 scripts/local_backend.py test --env-file RUTA_QA
 ```
 
 El wrapper conserva la prohibición de probar mediante esa ruta sobre development/production. La ejecución de publicación usó una base QA previamente preparada y variables exclusivas de ese proceso. No se cambió la configuración del servidor operativo.
 
-`qa/test_hardware_api.py` es una suite adicional de cuatro comprobaciones PostgreSQL que se omite por defecto. Requiere `GEOCATTLE_TEST_DATABASE=1`, esquema y cuenta de fixture preparados. Sus verificaciones anteriores están documentadas en [Visualización de telemetría](VISUALIZACION_TELEMETRIA.md); no forman parte de las 26 pruebas de adaptadores indicadas arriba.
+`qa/test_hardware_api.py` es una suite adicional de cinco comprobaciones que se omite por defecto. Requiere `GEOCATTLE_TEST_DATABASE=1` y `TEST_DATABASE_URL` apuntando a PostgreSQL/PostGIS de QA con el esquema migrado. La suite crea y revierte sus propias cuentas, predios y lecturas ficticias. Sus verificaciones anteriores están documentadas en [Visualización de telemetría](VISUALIZACION_TELEMETRIA.md).
+
+## Carga de un rebaño de validación
+
+`scripts/seed_validation_data.py` carga 40 bovinos ficticios de Temuco con aretes `VAL-09-…`, 120 pesajes, 96 eventos sanitarios, 88 productos aplicados, 40 atenciones futuras y 50 observaciones. Entre los eventos hay 40 vacunaciones, 40 procedimientos antiparasitarios, 8 tratamientos antibióticos y 8 exámenes. Las fichas de productos, los lotes, las dosis y los resguardos son ficticios. El script registra la categoría y 10 pares madre–cría por nombre y DIIO en las observaciones. Los pesajes, las observaciones y los eventos sanitarios usan fechas de los últimos 18 meses.
+
+La base debe estar migrada y el actor debe ser un dueño o administrador activo. El destino predeterminado es **Predio de validación**, identificado por actor y entorno y marcado como datos de prueba. Para crear ese predio, la cuenta dueña existente necesita un cupo disponible. El administrador puede usar su propio predio de validación mediante su acceso de plataforma. `--farm-id UUID --allow-existing-farm` permite dirigir el lote a un predio activo del mismo entorno que el actor administra o posee. Si ese predio ya cuenta con geocercas vigentes de sectores activos, se crea un pastoreo por bovino. Los conteos de collares, asignaciones de collar y telemetría de la carga son cero.
+
+Cuando el entorno físico contiene varios predios activos, `INGEST_FARM_ID` identifica el predio físico para la detección de collares. [Desarrollo local](DESARROLLO_LOCAL.md#incorporar-un-collar-por-usb-o-lora)
+
+Usa un archivo privado del entorno objetivo y el Python con dependencias del backend. Como `local_backend.py`, el script conecta a `127.0.0.1` con `DB_PORT`, `POSTGRES_DB`, `POSTGRES_USER` y `POSTGRES_PASSWORD` del archivo. `--dry-run` consulta la base en modo de solo lectura. La carga genera su propio respaldo `backups/geocattle-validacion-*.dump` mediante `pg_dump` antes de escribir y confirma todo el lote en una transacción. Repetir el mismo destino y `--seed` informa cero cambios. Otra semilla carga otro lote de 40. Usa el `pg_dump` incluido en el prototipo Windows o un cliente local compatible con la versión del servidor. [Operación y respaldos](OPERACION.md#respaldo-y-recuperación)
+
+### Windows nativo
+
+Ejecuta desde la raíz. Sustituye el correo ficticio por el de un dueño con cupo o administrador de la base elegida. Para QA, apunta `$cfg` al archivo de la base aislada en lugar de `.env.academic`.
+
+```powershell
+$cfg = '.env.academic'
+$autor = 'dueno@example.test'
+$seedTool = 'scripts/seed_validation_data.py'
+$seedPython = '.\.venv\Scripts\python.exe'
+if (!(Test-Path -LiteralPath $seedPython)) { $seedPython = '.\backend\.venv\Scripts\python.exe' }
+& $seedPython -X utf8 $seedTool --env-file $cfg --backup-only
+& $seedPython -X utf8 $seedTool --env-file $cfg --actor-email $autor --dry-run
+& $seedPython -X utf8 $seedTool --env-file $cfg --actor-email $autor
+```
+
+Para limpiar la carga completa, recupera el respaldo anterior a la carga en una base nueva. El historial V3 es inmutable. Usa el archivo `.dump` que indicó la carga, en el mismo servidor y con el mismo archivo de configuración.
+
+```powershell
+$dump = 'backups/geocattle-validacion-REEMPLAZAR.dump'
+$destino = 'geocattle_restore_validacion_' + [Guid]::NewGuid().ToString('N').Substring(0,12)
+$pg = '.runtime/postgres16/pgsql/bin'
+$pgConfig = @{}
+Get-Content -LiteralPath $cfg | ForEach-Object {
+    if ($_ -match '^(DB_PORT|POSTGRES_USER|POSTGRES_PASSWORD)=(.*)$') {
+        $pgConfig[$Matches[1]] = $Matches[2]
+    }
+}
+$conexion = @('-h', '127.0.0.1', '-p', $pgConfig.DB_PORT, '-U', $pgConfig.POSTGRES_USER)
+$env:PGPASSWORD = $pgConfig.POSTGRES_PASSWORD
+try {
+    & "$pg/createdb.exe" @conexion $destino
+    if ($LASTEXITCODE) { throw 'No se creó la base de restauración' }
+    & "$pg/pg_restore.exe" @conexion --dbname $destino --exit-on-error --single-transaction $dump
+    if ($LASTEXITCODE) { throw 'Falló la restauración' }
+} finally {
+    Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+}
+```
+
+### Docker Compose
+
+Ejecuta desde el anfitrión con el servicio `database` levantado. El puerto publicado por Compose se toma de `DB_PORT` en el mismo archivo usado para arrancar el proyecto. El ejemplo usa el entorno de desarrollo `.env.docker`. En simulación usa su archivo privado y solo `compose.yaml`. En Windows puedes ejecutar los comandos PowerShell anteriores cambiando `$cfg` al archivo de Compose.
+
+```bash
+geocattle_cfg=.env.docker
+geocattle_actor=dueno@example.test
+backend/.venv/bin/python scripts/seed_validation_data.py --env-file "$geocattle_cfg" --backup-only
+backend/.venv/bin/python scripts/seed_validation_data.py --env-file "$geocattle_cfg" --actor-email "$geocattle_actor" --dry-run
+backend/.venv/bin/python scripts/seed_validation_data.py --env-file "$geocattle_cfg" --actor-email "$geocattle_actor"
+```
+
+Para recuperar la base previa desde el contenedor, usa el `.dump` que indicó la carga.
+
+```bash
+geocattle_dump=backups/geocattle-validacion-REEMPLAZAR.dump
+geocattle_restore="geocattle_restore_validacion_$(date -u +%Y%m%d%H%M%S)_${RANDOM}"
+docker compose --env-file "$geocattle_cfg" -f compose.yaml -f compose.usb.yaml exec -T database sh -c '
+  export PGPASSWORD="$POSTGRES_PASSWORD"
+  createdb --username="$POSTGRES_USER" "$1" &&
+  pg_restore --username="$POSTGRES_USER" --dbname="$1" --exit-on-error --single-transaction
+' sh "$geocattle_restore" < "$geocattle_dump"
+```
+
+La copia representa el instante del respaldo. Verifica sus conteos y los datos preexistentes antes de utilizarla como base de reemplazo. [Operación y recuperación](OPERACION.md#respaldo-y-recuperación)
+
+### Prueba automatizada
+
+Con `DATABASE_URL` y `TEST_DATABASE_URL` apuntando a la misma base QA migrada, ejecuta `python -m pytest backend/tests/test_seed_validation_data.py -q` desde la raíz y en el entorno Python del backend. También puedes usar la suite de `scripts/local_backend.py test --env-file RUTA_QA`. Las pruebas comprueban el listado, la ficha y los reportes por API y revierten sus datos al finalizar. Incluyen el destino con y sin geocerca, la protección ante destinos no autorizados y fallos del respaldo, y la repetición de la carga.
 
 ## Interfaz
 

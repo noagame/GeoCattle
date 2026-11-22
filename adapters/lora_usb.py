@@ -176,12 +176,14 @@ class Archive:
                 coalesce(sum(status='delivered'),0) AS delivered,
                 max(received_at) AS last_capture FROM captures''').fetchone())
 
-    def deliver(self, url, key):
+    def deliver(self, url, key, farm_id=None):
         with self.connection() as db:
             rows = db.execute("SELECT * FROM captures WHERE status='pending' AND next_attempt<=? ORDER BY id LIMIT 25", (time.time(),)).fetchall()
+        headers = {'Content-Type': 'application/json', 'X-Ingest-Key': key}
+        if farm_id:
+            headers['X-Farm-ID'] = farm_id
         for row in rows:
-            request = urllib.request.Request(url, row['payload'].encode(),
-                {'Content-Type': 'application/json', 'X-Ingest-Key': key}, method='POST')
+            request = urllib.request.Request(url, row['payload'].encode(), headers, method='POST')
             try:
                 with urllib.request.urlopen(request, timeout=5) as response:
                     result = json.load(response)
@@ -194,14 +196,15 @@ class Archive:
                 with self.connection() as db:
                     db.execute('UPDATE captures SET attempts=attempts+1,last_error=?,next_attempt=? WHERE id=?',
                                (reason, time.time() + delay, row['id']))
-                # Conservar tambien desconocidos/no registrados para entrega posterior.
+                # Preserve unconfirmed captures, including those queued against an older API.
                 if code in (None, 401, 403, 500, 502, 503):
                     break
                 continue
             with self.connection() as db:
                 db.execute("UPDATE captures SET status='delivered',backend_id=?,delivered_at=?,last_error=NULL WHERE id=?",
                            (str(result['id']), datetime.now(timezone.utc).isoformat(), row['id']))
-            LOG.info('Persistido en PostgreSQL: %s seq=%s id=%s', row['hardware_id'], row['seq'], result['id'])
+            record = 'Detección' if result.get('status') == 'candidate' else 'Telemetría'
+            LOG.info('%s confirmada: %s seq=%s id=%s', record, row['hardware_id'], row['seq'], result['id'])
 
 
 def load_env(path):
@@ -263,7 +266,7 @@ def capture(args):
     def background():
         while not stop.is_set():
             try:
-                archive.deliver(args.url, private['INGEST_KEY'])
+                archive.deliver(args.url, private['INGEST_KEY'], private.get('INGEST_FARM_ID'))
             except Exception:
                 LOG.exception('Error en la entrega de telemetria; capturas conservadas')
             if not stop.is_set():

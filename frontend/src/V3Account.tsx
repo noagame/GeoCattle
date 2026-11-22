@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Check, KeyRound, LockKeyhole, ShieldCheck, UserRound } from 'lucide-react';
+import qrcode from 'qrcode-generator';
 import { date, message, setSession, useData, write } from './api';
 import { Empty, ErrorNotice, Loading, Modal, PageTitle, Panel, PanelTitle, Submit } from './ui';
 import type { Notify } from './App';
@@ -15,17 +16,36 @@ export function StepUpGate({ children, admin = false }: { children: ReactNode; a
 
   return <>{expires ? <><div className="v3-verification"><ShieldCheck size={18} /><span>Identidad verificada hasta {date(expires)}.</span><button className="text-button" onClick={() => setExpires('')}>Bloquear gestión</button></div>{children}</> : <Panel><PanelTitle title="Verifica tu identidad" subtitle="El acceso a colaboradores y permisos requiere contraseña y segundo factor." /><form className="form-body v3-narrow" onSubmit={verify}><p className="form-intro">Usa el código de tu aplicación autenticadora. Las operaciones se validan también en el servidor.</p><label>Contraseña<input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /></label><label>Código de verificación<input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} /></label><ErrorNotice error={error} /><div className="form-actions"><Submit busy={busy}>Verificar identidad</Submit></div></form></Panel>}</>;
 }
-export function ProfilePage({ notify, onUpdated, onSignedOut, mfaEnabled = false }: { notify: Notify; mfaEnabled?: boolean; onUpdated: () => void; onSignedOut: () => void }) {
+export function ProfilePage({ notify, onUpdated, onSignedOut, mfaEnabled = false }: { notify: Notify; mfaEnabled?: boolean; onUpdated: () => void; onSignedOut: (notice?: string) => void }) {
   const profile = useData<Profile>('/v3/profile'); const [setup, setSetup] = useState(false);
-  const [securityAction, setSecurityAction] = useState<'password' | 'recovery' | 'closure' | null>(null);
+  const [securityAction, setSecurityAction] = useState<'password' | 'recovery' | 'closure' | 'replace' | 'remove' | null>(null);
   return <>
-    <PageTitle eyebrow="TU CUENTA" title="Mi perfil" description="Mantén actualizados tus datos de contacto." actions={<button className="button secondary" disabled={mfaEnabled} onClick={() => setSetup(true)}><ShieldCheck size={17} />{mfaEnabled ? 'Doble verificación activa' : 'Activar doble verificación'}</button>} />
+    <PageTitle eyebrow="TU CUENTA" title="Mi perfil" description="Mantén actualizados tus datos de contacto." actions={!mfaEnabled && <button className="button secondary" onClick={() => setSetup(true)}><ShieldCheck size={17} />Activar doble verificación</button>} />
     <ErrorNotice error={profile.error} retry={profile.reload} />{profile.loading ? <Loading /> : profile.data && <ProfileForm initial={profile.data} onSaved={() => { profile.reload(); onUpdated(); notify('Datos personales actualizados.'); }} />}
-    <Panel><PanelTitle title="Seguridad y acceso" subtitle="Verifica tu identidad para cambiar credenciales o solicitar el cierre." /><div className="form-body"><div className="v3-inline-actions"><button className="button secondary" onClick={() => setSecurityAction('password')}><KeyRound size={17} />Cambiar contraseña</button><button className="button secondary" disabled={!mfaEnabled} onClick={() => setSecurityAction('recovery')}><ShieldCheck size={17} />Generar códigos de recuperación</button><button className="button secondary" onClick={() => setSecurityAction('closure')}>Solicitar cierre de cuenta</button></div><p className="form-intro">{mfaEnabled ? 'Cada código de recuperación sirve una vez y se usa junto con la contraseña. Mantén activa tu aplicación autenticadora.' : 'Activa la doble verificación para disponer de códigos de recuperación.'}</p></div></Panel>
+    <Panel>
+      <PanelTitle title="Seguridad y acceso" />
+      <div className="form-body">
+        <p className="form-intro">{mfaEnabled ? 'Doble verificación activa. Cada código de recuperación se usa una vez junto con tu contraseña.' : 'Activa la doble verificación para disponer de códigos de recuperación.'}</p>
+        <div className="v3-inline-actions">
+          <button className="button secondary" onClick={() => setSecurityAction('password')}><KeyRound size={17} />Cambiar contraseña</button>
+          {mfaEnabled && <>
+            <button className="button secondary" onClick={() => setSecurityAction('replace')}><ShieldCheck size={17} />Reemplazar autenticador</button>
+            <button className="button secondary" onClick={() => setSecurityAction('remove')}>Quitar autenticador</button>
+            <button className="button secondary" onClick={() => setSecurityAction('recovery')}>Generar códigos de recuperación</button>
+          </>}
+          <button className="button secondary" onClick={() => setSecurityAction('closure')}>Solicitar cierre de cuenta</button>
+        </div>
+      </div>
+    </Panel>
     {setup && <MfaSetup onClose={() => setSetup(false)} onSaved={() => { setSetup(false); onUpdated(); notify('Doble verificación activada.'); }} />}
     {securityAction === 'password' && <PasswordChangeForm mfaEnabled={mfaEnabled} onClose={() => setSecurityAction(null)} onSaved={onSignedOut} />}
     {securityAction === 'recovery' && <RecoveryCodesForm onClose={() => setSecurityAction(null)} />}
     {securityAction === 'closure' && <CloseAccountForm mfaEnabled={mfaEnabled} onClose={() => setSecurityAction(null)} />}
+    {(securityAction === 'replace' || securityAction === 'remove') && <AuthenticatorChangeForm
+      action={securityAction} onClose={() => setSecurityAction(null)}
+      onReplaced={() => { setSecurityAction(null); onUpdated(); notify('Autenticador reemplazado. Puedes generar códigos de recuperación nuevos.'); }}
+      onRemoved={required => onSignedOut(required ? 'Autenticador retirado. Inicia sesión para inscribir uno nuevo.' : 'Autenticador retirado. Vuelve a iniciar sesión.')}
+    />}
   </>;
 }
 function ProfileForm({ initial, onSaved }: { initial: Profile; onSaved: () => void }) {
@@ -59,10 +79,88 @@ export function EnrolPage({ token, onBack }: { token: string; onBack: () => void
     <ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" disabled={busy} onClick={onBack}>Volver</button><Submit busy={busy}>Aceptar invitación</Submit></div></form>}</Panel><p><LockKeyhole size={14} />El dueño define el perfil y el predio. La invitación tiene vigencia limitada y se utiliza una sola vez.</p></main>;
 }
 
+type Enrollment = { challenge_token: string; secret: string; otpauth_uri: string };
+
+export function AuthenticatorEnrollment({ secret, otpauth_uri }: { secret: string; otpauth_uri?: string }) {
+  const qr = useMemo(() => {
+    if (!otpauth_uri) return null;
+    const code = qrcode(0, 'M');
+    code.addData(otpauth_uri);
+    code.make();
+    return code.createDataURL(4, 16);
+  }, [otpauth_uri]);
+  return <div className="v3-mfa-setup">
+    <p>Escanea el QR en tu aplicación autenticadora o ingresa la clave manual.</p>
+    {qr && <img src={qr} width={224} height={224} alt="QR para inscribir el autenticador de GeoCattle" />}
+    <label>Clave de configuración<input readOnly value={secret} autoComplete="off" spellCheck={false} onFocus={event => event.currentTarget.select()} /></label>
+  </div>;
+}
+
+function AuthenticatorChangeForm({ action, onClose, onReplaced, onRemoved }: {
+  action: 'replace' | 'remove'; onClose: () => void; onReplaced: () => void; onRemoved: (required: boolean) => void;
+}) {
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [useRecovery, setUseRecovery] = useState(false);
+  const [challenge, setChallenge] = useState<Enrollment | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const removing = action === 'remove';
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      if (challenge) {
+        const session = await write<Session>('/auth/mfa/verify', { challenge_token: challenge.challenge_token, code });
+        setSession(session);
+        onReplaced();
+      } else {
+        const credentials = { password, ...(useRecovery ? { recovery_code: code } : { code }) };
+        if (removing) {
+          const result = await write<{ enrollment_required: boolean }>('/auth/mfa/remove', credentials);
+          onRemoved(result.enrollment_required);
+        } else {
+          setChallenge(await write<Enrollment>('/auth/mfa/replace', credentials));
+        }
+      }
+      setPassword('');
+      setCode('');
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <Modal title={removing ? 'Quitar autenticador' : 'Reemplazar autenticador'} onClose={onClose}>
+    <form className="form-body" onSubmit={submit}>
+      {challenge ? <>
+        <AuthenticatorEnrollment secret={challenge.secret} otpauth_uri={challenge.otpauth_uri} />
+        <p className="form-intro">Confirma en cinco minutos con un código del autenticador nuevo. Al activarlo se cerrarán las demás sesiones y caducarán los códigos de recuperación anteriores.</p>
+        <label>Código del autenticador nuevo<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} /></label>
+      </> : <>
+        <p className="form-intro">{removing ? 'Se cerrarán todas las sesiones y caducarán los códigos de recuperación. Si tu acceso requiere doble verificación, inscribirás un autenticador en el siguiente ingreso.' : 'Tu autenticador actual seguirá activo hasta que confirmes el nuevo.'}</p>
+        <label>Contraseña actual<input type="password" autoComplete="current-password" required maxLength={256} value={password} onChange={event => setPassword(event.target.value)} /></label>
+        {useRecovery
+          ? <label>Código de recuperación<input required autoComplete="off" spellCheck={false} minLength={20} maxLength={64} value={code} onChange={event => setCode(event.target.value)} /></label>
+          : <label>Código del autenticador actual<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} /></label>}
+        <button type="button" className="text-button" disabled={busy} onClick={() => { setUseRecovery(!useRecovery); setCode(''); }}>
+          {useRecovery ? 'Usar código del autenticador' : 'Usar un código de recuperación'}
+        </button>
+      </>}
+      <ErrorNotice error={error} />
+      <div className="form-actions">
+        <button type="button" className="button secondary" disabled={busy} onClick={onClose}>Cancelar</button>
+        <Submit busy={busy}>{removing ? 'Quitar y cerrar sesiones' : challenge ? 'Activar nuevo autenticador' : 'Continuar'}</Submit>
+      </div>
+    </form>
+  </Modal>;
+}
+
 function MfaSetup({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [password, setPassword] = useState(''); const [code, setCode] = useState(''); const [challenge, setChallenge] = useState<{ challenge_token: string; secret: string; otpauth_uri: string } | null>(null); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   async function submit(e: FormEvent) { e.preventDefault(); setBusy(true); setError(''); try { if (!challenge) { setChallenge(await write('/auth/mfa/setup', { password })); setPassword(''); } else { const session = await write<Session>('/auth/mfa/verify', { challenge_token: challenge.challenge_token, code }); setSession(session); onSaved(); } } catch (err) { setError(message(err)); } finally { setBusy(false); } }
-  return <Modal title="Activar doble verificación" onClose={onClose}><form className="form-body" onSubmit={submit}>{challenge ? <><p className="form-intro">Agrega esta clave en una aplicación autenticadora TOTP. Después introduce el código de seis dígitos para confirmar.</p><label>Clave de configuración<input readOnly value={challenge.secret} onFocus={e => e.currentTarget.select()} /></label><p className="form-intro">GeoCattle · cuenta autenticada · TOTP</p><label>Código de la aplicación<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} /></label></> : <label>Confirma tu contraseña<input required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} /></label>}<ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" onClick={onClose}>Cancelar</button><Submit busy={busy}>{challenge ? 'Verificar y activar' : 'Configurar segundo factor'}</Submit></div></form></Modal>;
+  return <Modal title="Activar doble verificación" onClose={onClose}><form className="form-body" onSubmit={submit}>{challenge ? <><AuthenticatorEnrollment secret={challenge.secret} otpauth_uri={challenge.otpauth_uri} /><label>Código de la aplicación<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} /></label></> : <label>Confirma tu contraseña<input required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} /></label>}<ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" onClick={onClose}>Cancelar</button><Submit busy={busy}>{challenge ? 'Verificar y activar' : 'Configurar segundo factor'}</Submit></div></form></Modal>;
 }
 
 function PasswordChangeForm({ mfaEnabled, onClose, onSaved }: { mfaEnabled: boolean; onClose: () => void; onSaved: () => void }) {

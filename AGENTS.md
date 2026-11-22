@@ -20,6 +20,7 @@ GeoCattle supervisa ganado por predio. Integra gestión bovina y sanitaria, mapa
 - Cambia el esquema mediante una nueva migración numerada. Conserva las migraciones ya aplicadas y valida las nuevas en una copia migrada con datos representativos. Respalda la base antes de aplicar cambios en una instalación existente. [Operación](docs/OPERACION.md)
 - En captura, conserva la compatibilidad con CSV V4 y JSON V5, la deduplicación, la cola durable y los reintentos. Respeta la identidad USB del receptor y la ausencia de coordenadas cuando el GPS carece de fix. Mantén separados los datos físicos y los simulados. [Contrato API](docs/CONTRATO_API.md) · [Captura USB](docs/USB_COM5.md)
 - Conserva secretos, datos físicos, colas SQLite, respaldos y archivos de ejecución de `.runtime/` fuera de Git. Para documentar opciones de configuración, usa valores ficticios en `.env.example`.
+- Configura la misma `INVITATION_BASE_URL` para API y worker. Usa la URL que abre el destinatario. El SMTP y el restablecimiento local de TOTP se operan desde el archivo privado de cada despliegue. [Operación](docs/OPERACION.md)
 
 ## Arranque y verificación
 

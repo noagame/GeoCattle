@@ -18,6 +18,8 @@ Abre [`Abrir-GeoCattle.cmd`](../Abrir-GeoCattle.cmd) para levantar los servicios
 
 Abre [`Iniciar-Captura.cmd`](../Iniciar-Captura.cmd) y selecciona **Directo** o **Gateways** según la receptora conectada. La detección usa la identidad USB. Cierra el Monitor Serie y el Plotter de Arduino y deja abierta la ventana de captura. Consulta [la guía actual de arranque](DESARROLLO_LOCAL.md).
 
+Un collar académico desconocido aparece en **Collares detectados** tras su primera trama válida. La cola conserva la captura local y marca su entrega con el ID del candidato confirmado. Para detectar por cable, usa `Registrar-Collar-USB.cmd`. Con varios predios físicos activos, configura `INGEST_FARM_ID` en el archivo privado de captura con el UUID del predio. [Incorporar un collar](DESARROLLO_LOCAL.md#incorporar-un-collar-por-usb-o-lora)
+
 ## Datos y registro diario
 
 `adapters/lora_usb.py` acepta:

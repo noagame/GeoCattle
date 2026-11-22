@@ -1,18 +1,22 @@
-"""Identify a newly connected GeoCattle collar and open its inventory form."""
+"""Identify a newly connected GeoCattle collar and submit it for review."""
+import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 import sys
 import time
-from urllib.parse import urlencode
-from urllib.request import ProxyHandler, build_opener
+from urllib.error import HTTPError
+from urllib.request import ProxyHandler, Request, build_opener
 import webbrowser
+from uuid import UUID
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from adapters.lora_json import decode_json
+from adapters.lora_usb import load_env
 from adapters.receiver_profiles import MODES, load_profile
 from adapters.serial_receiver import ReceiverSelectionError, choose_receiver, enumerate_ports
 
@@ -33,7 +37,11 @@ def collar_descriptor(line):
     if (not isinstance(hardware_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,16}', hardware_id)
             or item.get('transport') != 'academic' or type(interval) is not int or not 30 <= interval <= 86400):
         return None
-    return {'hardware_id': hardware_id, 'interval_seconds': interval}
+    descriptor = {'hardware_id': hardware_id, 'interval_seconds': interval, 'transport': 'academic'}
+    firmware_version = item.get('firmware_version')
+    if isinstance(firmware_version, str) and 1 <= len(firmware_version) <= 100:
+        descriptor['firmware_version'] = firmware_version
+    return descriptor
 
 
 def legacy_collar_descriptor(line):
@@ -49,7 +57,8 @@ def legacy_collar_descriptor(line):
         return None
     return {
         'hardware_id': payload['hardware_id'],
-        'interval_seconds': (quality['period_ms'] + 999) // 1000,
+        'interval_seconds': max(30, (quality['period_ms'] + 999) // 1000),
+        'transport': 'academic',
     }
 
 
@@ -84,10 +93,42 @@ def read_collar(port):
                      'Revisa que esté encendido y pueda completar un envío LoRa.')
 
 
-def main():
-    base = 'http://127.0.0.1:8084'
+def post_candidate(opener, base, descriptor, key, farm_id=None):
+    headers = {'Content-Type': 'application/json', 'X-Ingest-Key': key}
+    if farm_id:
+        headers['X-Farm-ID'] = str(farm_id)
+    request = Request(base + '/api/v1/v3/device-candidates',
+                      json.dumps({**descriptor, 'source': 'usb'}).encode(), headers, method='POST')
     try:
-        with build_opener(ProxyHandler({})).open(base + '/api/v1/health', timeout=3) as response:
+        with opener.open(request, timeout=5) as response:
+            result = json.load(response)
+    except HTTPError as error:
+        with error:
+            try:
+                detail = json.load(error).get('detail')
+            except (ValueError, AttributeError):
+                detail = None
+        raise ValueError(f'API HTTP {error.code}: {detail or error.reason}') from error
+    if not isinstance(result, dict) or not result.get('id') or result.get('status') != 'pending':
+        raise ValueError('La API no confirmó la detección USB.')
+    return result
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--env-file', type=Path, default=ROOT / '.env.academic')
+    parser.add_argument('--farm-id', type=UUID, help='UUID del predio físico')
+    args = parser.parse_args(argv)
+    base = 'http://127.0.0.1:8084'
+    opener = build_opener(ProxyHandler({}))
+    try:
+        private = load_env(args.env_file) if args.env_file.is_file() else {}
+        key = private.get('INGEST_KEY') or os.environ.get('INGEST_KEY')
+        if not key:
+            raise ValueError('Falta INGEST_KEY en la configuración privada de captura.')
+        configured_farm = private.get('INGEST_FARM_ID') or os.environ.get('INGEST_FARM_ID')
+        farm_id = args.farm_id or (UUID(configured_farm) if configured_farm else None)
+        with opener.open(base + '/api/v1/health', timeout=3) as response:
             if json.load(response).get('environment') != 'development':
                 raise ValueError('El alta USB necesita el prototipo de desarrollo.')
         input('Deja el collar desconectado y presiona Enter. Puedes mantener conectada la receptora. ')
@@ -110,11 +151,12 @@ def main():
                 raise ValueError('El USB identificado pertenece a una receptora registrada. Conecta el collar.')
         print(f'Leyendo {selected.device}. Un collar con firmware anterior puede tardar hasta 55 segundos.')
         descriptor = read_collar(selected.device)
+        candidate = post_candidate(opener, base, descriptor, key, farm_id)
     except (OSError, ValueError, ReceiverSelectionError, EOFError) as error:
         print(f'No se pudo preparar el alta USB: {error}', file=sys.stderr)
         return 1
-    url = base + '/#devices?' + urlencode({'usb_collar': descriptor['hardware_id'], 'interval': descriptor['interval_seconds']})
-    print(f'Collar detectado: {descriptor["hardware_id"]}. Confirma el alta en el navegador.')
+    url = base + '/#devices'
+    print(f'Collar detectado: {candidate["hardware_id"]}. Revisa las detecciones del predio en el navegador.')
     print(url)
     webbrowser.open(url)
     return 0

@@ -12,9 +12,11 @@ from urllib.parse import quote
 from uuid import uuid4
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
-from sqlalchemy import select, text
-from .models import User, Farm, utcnow
+from sqlalchemy import text, update
+from .models import LoginSession, utcnow
 from .settings import settings
+
+MFA_CHALLENGE_PURPOSES = ('login', 'mfa_setup', 'mfa_replace')
 
 
 def rows(db, sql, **params):
@@ -86,7 +88,7 @@ def totp(secret, counter=None):
 
 
 def check_code(db, factor, code):
-    if not isinstance(code,str) or not code.isdigit() or len(code)!=6:
+    if not isinstance(code,str) or not code.isascii() or not code.isdigit() or len(code)!=6:
         raise HTTPException(401,'Código de verificación inválido')
     secret=cipher().decrypt(bytes(factor['protected_data'])).decode()
     now_counter=int(time.time()//30)
@@ -98,23 +100,58 @@ def check_code(db, factor, code):
     raise HTTPException(401,'Código inválido, vencido o ya utilizado; espera el siguiente código')
 
 
-def create_challenge(db,user,purpose,session_hash=None,setup=False):
+def mfa_challenge_budget(db, user_id):
+    return one(db, """SELECT coalesce(sum(attempts) FILTER (WHERE verified_at IS NULL),0) AS failed,
+        count(*) AS issued FROM auth_challenges WHERE user_id=:u
+          AND purpose IN ('login','mfa_setup','mfa_replace')
+          AND created_at>now()-interval '5 minutes'""", u=user_id)
+
+
+def live_mfa_session(db, user_id, session_hash):
+    return one(db, """SELECT token_hash FROM login_sessions WHERE token_hash=:s AND user_id=:u
+        AND revoked_at IS NULL AND expires_at>now() AND last_seen_at>now()-interval '30 minutes'""",
+        u=user_id, s=session_hash)
+
+
+def revoke_sessions(db, user_id, keep_session=None):
+    db.execute(update(LoginSession).where(
+        LoginSession.user_id == user_id, LoginSession.revoked_at.is_(None),
+        LoginSession.token_hash.is_distinct_from(keep_session),
+    ).values(revoked_at=utcnow(), step_up_at=None).execution_options(synchronize_session='fetch'))
+
+
+def retire_mfa_access(db, user_id, keep_factor=None, keep_session=None):
+    """Caller holds the user lock. Retire factors and any grants tied to them."""
+    execute(db, """UPDATE mfa_factors SET revoked_at=now() WHERE user_id=:u AND kind='totp'
+        AND revoked_at IS NULL AND id IS DISTINCT FROM CAST(:f AS uuid)""", u=user_id, f=keep_factor)
+    execute(db, """UPDATE mfa_recovery_codes SET used_at=now()
+        WHERE user_id=:u AND used_at IS NULL""", u=user_id)
+    execute(db, """UPDATE auth_challenges SET consumed_at=now()
+        WHERE user_id=:u AND consumed_at IS NULL AND purpose IN ('login','mfa_setup','mfa_replace','step_up')""",
+        u=user_id)
+    revoke_sessions(db, user_id, keep_session)
+
+
+def create_challenge(db,user,purpose,session_hash=None,setup=False,factor_id=None):
     from .security import token_hash
-    if purpose in ('login','mfa_setup'):
+    if purpose in MFA_CHALLENGE_PURPOSES:
         one(db,'SELECT id FROM users WHERE id=:u FOR UPDATE',u=user.id)
-        failed=one(db,"SELECT coalesce(sum(attempts),0) AS n FROM auth_challenges WHERE user_id=:u AND purpose IN ('login','mfa_setup') AND created_at>now()-interval '5 minutes' AND verified_at IS NULL",u=user.id)['n']
-        issued=one(db,"SELECT count(*) AS n FROM auth_challenges WHERE user_id=:u AND purpose IN ('login','mfa_setup') AND created_at>now()-interval '5 minutes'",u=user.id)['n']
-        if failed>=5 or issued>=10:raise HTTPException(429,'Demasiados intentos MFA; espera cinco minutos')
+        budget = mfa_challenge_budget(db, user.id)
+        if budget['failed'] >= 5 or budget['issued'] >= 10:
+            raise HTTPException(429,'Demasiados intentos MFA; espera cinco minutos')
     token=secrets.token_urlsafe(40)
-    execute(db,"INSERT INTO auth_challenges(id,user_id,token_hash,purpose,session_token_hash,expires_at) VALUES(:i,:u,:t,:p,:s,:e)",
-        i=uuid4(),u=user.id,t=token_hash(token),p=purpose,s=session_hash,e=utcnow()+timedelta(minutes=5))
     result={'mfa_required':True,'challenge_token':token,'setup_required':setup}
     if setup:
-        # A pending factor never authenticates; only the matching OTP activates it.
-        secret=base64.b32encode(secrets.token_bytes(20)).decode()
-        execute(db,'UPDATE mfa_factors SET revoked_at=now() WHERE user_id=:u AND verified_at IS NULL AND revoked_at IS NULL',u=user.id)
-        execute(db,"INSERT INTO mfa_factors(id,user_id,kind,protected_data) VALUES(:i,:u,'totp',:s)",i=uuid4(),u=user.id,s=cipher().encrypt(secret.encode()))
-        result.update(secret=secret,otpauth_uri=f'otpauth://totp/GeoCattle:{quote(user.username)}?secret={secret}&issuer=GeoCattle&algorithm=SHA1&digits=6&period=30')
+        secret = base64.b32encode(secrets.token_bytes(20)).decode()
+        factor_id = uuid4()
+        execute(db, """UPDATE mfa_factors SET revoked_at=now()
+            WHERE user_id=:u AND kind='totp' AND verified_at IS NULL AND revoked_at IS NULL""", u=user.id)
+        execute(db, "INSERT INTO mfa_factors(id,user_id,kind,protected_data) VALUES(:i,:u,'totp',:s)",
+            i=factor_id,u=user.id,s=cipher().encrypt(secret.encode()))
+        result.update(secret=secret,otpauth_uri=f'otpauth://totp/GeoCattle:{quote(user.username, safe="")}?secret={secret}&issuer=GeoCattle&algorithm=SHA1&digits=6&period=30')
+    execute(db, """INSERT INTO auth_challenges(id,user_id,token_hash,purpose,session_token_hash,factor_id,expires_at)
+        VALUES(:i,:u,:t,:p,:s,:f,:e)""", i=uuid4(),u=user.id,t=token_hash(token),p=purpose,
+        s=session_hash,f=factor_id,e=utcnow()+timedelta(minutes=5))
     return result
 
 

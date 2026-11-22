@@ -1,6 +1,6 @@
 # Usuarios de prueba y registro de colaboradores
 
-Actualizado: 24 de octubre de 2026. Prototipo local: http://localhost:8084.
+El prototipo nativo abre en `http://localhost:8084`.
 
 ## Cuentas de prueba solicitadas
 
@@ -28,8 +28,8 @@ Las cuentas son nuevas y están identificadas como prueba. El alta local solicit
 3. Entrar a **Equipo y permisos** y verificar contraseña y código TOTP para abrir la gestión del equipo.
 4. Pulsar **Invitar usuario**, escribir el correo y elegir **Trabajador** o **Veterinario**.
 5. Confirmar el correo, perfil y predio. Introducir contraseña y un código TOTP nuevo para crear esa invitación exacta. Si acaba de usar un código, esperar al siguiente de la aplicación autenticadora.
-6. Copiar el enlace de enrolamiento y entregarlo al destinatario. **El prototipo no envía correo automáticamente.** El enlace dura 48 horas y se utiliza una sola vez.
-7. Consultar **Colaboradores del predio** para comprobar la incorporación. Desde allí se puede modificar o revocar el acceso manteniendo su historial.
+6. Consultar **Invitaciones** para ver la cola de correo. Copiar el enlace que se muestra al crear la invitación para compartirlo por otro canal si hace falta. El enlace dura 48 horas y se utiliza una sola vez.
+7. Consultar **Colaboradores del predio** para comprobar la incorporación. Desde allí se puede modificar o revocar el acceso manteniendo su historial. Si el correo automático está habilitado, el dueño recibe una confirmación al aceptar el colaborador.
 
 ## Paso a paso de la persona invitada
 
@@ -39,6 +39,23 @@ Las cuentas son nuevas y están identificadas como prueba. El alta local solicit
 4. Aceptar e iniciar sesión con el correo exacto de la invitación y su contraseña. Los datos visibles corresponden a los predios con membresía vigente.
 
 Un enlace usado, revocado o vencido no activa acceso. Si vence, el dueño genera otro. El enlace local `localhost` sirve para pruebas en este PC; en un despliegue para otros equipos debe emplearse la dirección real de la aplicación.
+
+## Correo automático de invitación
+
+El correo automático admite SMTP con TLS. Configura y comprueba el proveedor antes de activar los envíos desde GeoCattle. [Configuración y prueba SMTP](OPERACION.md#correo-smtp-de-invitaciones)
+
+La columna **Correo** pasa de en cola a **Aceptado por el servidor de correo** cuando el proveedor recibe el mensaje. La confirmación al dueño se muestra por separado. Los errores temporales admiten hasta tres intentos. Las invitaciones aceptadas, revocadas o vencidas dejan de enviarse. Si falla el envío, el enlace compartido sigue vigente hasta su uso, revocación o vencimiento. Si ya no tienes el enlace, revoca la invitación pendiente y genera otra.
+
+## Reemplazar o quitar el autenticador
+
+1. Abre el engranaje **Mi perfil** (`#profile`) y entra en **Seguridad y acceso → Reemplazar autenticador**.
+2. Introduce tu contraseña actual y un código TOTP que aún no hayas usado. Si conservas un código de recuperación, elige **Usar un código de recuperación** e introdúcelo junto con la contraseña. Ese código se consume al validar la solicitud.
+3. Agrega GeoCattle en el nuevo autenticador escaneando el QR o copiando la clave manual. Dentro de cinco minutos, introduce un código del autenticador nuevo y pulsa **Activar nuevo autenticador**. Hasta confirmar, el factor anterior sigue vigente.
+4. Tras el cambio, las demás sesiones se cierran y caducan los códigos de recuperación anteriores. Puedes generar nuevos desde **Seguridad y acceso**.
+
+Para retirar el factor, elige **Quitar autenticador**, verifica tu identidad de la misma forma y confirma. Se cierran todas las sesiones. Cuando la política exige MFA para el administrador, el siguiente inicio de sesión requiere inscribir un autenticador. El prototipo nativo permite ingreso por contraseña en loopback cuando está activada su excepción local. La variante HTTPS de LAN exige TOTP al administrador.
+
+Si perdiste el autenticador y los códigos de recuperación, la consola del anfitrión permite iniciar una inscripción nueva en el próximo acceso, también con la excepción local habilitada. [Recuperación por consola](OPERACION.md#restablecer-el-autenticador-por-consola)
 
 ## Diferencia entre perfiles
 
@@ -59,7 +76,7 @@ Las cuentas de prueba no incluyen confianza directa concedida al trabajador. El 
 - Cada cuenta consulta sus casos privados en **Mis solicitudes a soporte**. Desde allí puede reportar un problema de acceso o solicitar un cambio de correo. El cierre se solicita desde **Mi perfil → Seguridad y acceso**, con contraseña y TOTP cuando corresponde.
 - El administrador cambia a **Panel global → Administración → Solicitudes de soporte** para responder un caso. El titular recibe la respuesta en su bandeja, con el mismo folio y un contador de respuestas sin leer. La bandeja registra la decisión sobre el caso. La desactivación de acceso se gestiona por separado.
 
-## Verificación de esta actualización
+## Verificación del 24 de octubre de 2026
 
 - 95 pruebas de backend correctas, incluidas15 verificaciones nuevas de invitaciones, roles, vigencia y conservación de identidades. Registro: `.runtime/review/backend-tests-2026-10-24.txt`.
 - TypeScript y compilación Vite correctos. La API operativa contiene `/api/v1/v3/enrol/preview` y se verificaron las tres credenciales después del reinicio confirmado por el usuario.

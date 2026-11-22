@@ -121,7 +121,8 @@ def register_fence(client,name='Sector QA'):
 def receive_packet(db,device_id,seq,observed_at=None,battery_mv=3000):
     device=db.get(Device,device_id)
     at=observed_at or utcnow()
-    payload=TelemetryIn(hardware_id=device.hardware_id,session_id='qa-association',seq=seq,observed_at=at,longitude=.5,latitude=.5,gnss_valid=True,battery_mv=battery_mv,source='academic')
+    source='sim' if settings().app_env=='simulation' else 'academic'
+    payload=TelemetryIn(hardware_id=device.hardware_id,session_id='qa-association',seq=seq,observed_at=at,longitude=.5,latitude=.5,gnss_valid=True,battery_mv=battery_mv,source=source)
     result=ingest(db,payload,received_at=at)
     return db.get(Telemetry,UUID(result['id']))
 

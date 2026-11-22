@@ -3,6 +3,7 @@ from datetime import timedelta
 from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy import and_, func, or_, select, text
+from .device_candidates import capture_farm, candidate_receipt, detect_radio_candidate, lock_device_identity
 from .models import *
 from .settings import settings
 from .schemas import TelemetryIn
@@ -115,19 +116,21 @@ def condition(db,device,animal_id,event_type,active,severity="warning",telemetry
 
 def at_time(model,when): return and_(model.valid_from<=when,or_(model.valid_to.is_(None),model.valid_to>when))
 
-def ingest(db,payload:TelemetryIn,received_at=None):
+def ingest(db,payload:TelemetryIn,received_at=None,*,detect_candidates=False,capture_farm_id=None):
     """ 
     Procesa la ingesta transaccional de un paquete de telemetría de dispositivos IoT.
     Args:
         db: Sesión activa de SQLAlchemy.
         payload: Esquema de validación con los datos de telemtría entrantes.
-        recived_at: Timestamp opcional de recepción en servidor.
+        received_at: Timestamp opcional de recepción en servidor.
+        detect_candidates: Registra detecciones académicas desconocidas en la captura HTTP.
+        capture_farm_id: Predio opcional indicado por el capturador autenticado.
 
     Returns:
-        Diccionario con metadatos del procesamiento ('id', 'duplicate', 'animal_id', 'state_update').
+        Recibo de telemetría o detección con el ID persistido y el indicador de duplicado.
         
     Raises:
-        HTTPException(422): Si la marca de tiempo es futura o el dispositivo es desconocido es desconocido/incompatible.
+        HTTPException(422): Si la marca de tiempo es futura o el dispositivo es desconocido o incompatible.
         HTTPException(403): Si hay violaciones de entorno de simulación o aislamiento de predio.
     """
     now = received_at or utcnow()
@@ -135,9 +138,17 @@ def ingest(db,payload:TelemetryIn,received_at=None):
     if payload.observed_at > now + timedelta(minutes = 5):
         raise HTTPException(422,"Hora de captura futura fuera de tolerancia")
     
-    device = db.scalar(select(Device).where(Device.hardware_id == payload.hardware_id).with_for_update())
-    
-    if not device or not device.enabled: 
+    device_query = select(Device).where(Device.hardware_id == payload.hardware_id).with_for_update()
+    device = db.scalar(device_query)
+    discover = detect_candidates and payload.source == 'academic'
+    if device is None and discover:
+        farm_id = capture_farm(db, capture_farm_id)
+        lock_device_identity(db, payload.hardware_id)
+        device = db.scalar(device_query)
+        if device is None:
+            return detect_radio_candidate(db, farm_id, payload, now)
+
+    if device is None:
         raise HTTPException(422,"Dispositivo desconocido o deshabilitado")
     
     farm = db.get(Farm,device.farm_id)
@@ -147,10 +158,17 @@ def ingest(db,payload:TelemetryIn,received_at=None):
     if payload.source == "sim":
         if settings().app_env != "simulation" or not settings().simulation_enabled or farm.environment != "simulation":
             raise HTTPException(403,"Simulación aislada requerida")
-    elif payload.source != device.transport: 
-        raise HTTPException(422,"Fuente incompatible con transporte registrado")
-    
     if farm.environment!=settings().app_env: raise HTTPException(403,"Predio de otro entorno")
+    if capture_farm_id is not None and farm.id != capture_farm_id:
+        raise HTTPException(403,"Dispositivo de otro predio de captura")
+    if discover:
+        receipt = candidate_receipt(db, farm.id, payload)
+        if receipt:
+            return receipt
+    if not device.enabled:
+        raise HTTPException(422,"Dispositivo desconocido o deshabilitado")
+    if payload.source != 'sim' and payload.source != device.transport:
+        raise HTTPException(422,"Fuente incompatible con transporte registrado")
     
     existing=db.scalar(select(Telemetry).where(Telemetry.device_id==device.id,Telemetry.session_id==payload.session_id,Telemetry.seq==payload.seq))
     if existing:

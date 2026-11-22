@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .db import get_db
 from .models import User, utcnow
 from .security import current_user, token_hash, verify_password
-from .v3_security import audit, check_code, create_challenge, execute, one
+from .v3_security import audit, check_code, create_challenge, execute, live_mfa_session, one
 
 
 router = APIRouter(prefix='/api/v1/auth', tags=['Operation authorization V3'])
@@ -82,6 +82,9 @@ def authorize_operation(body: OperationIn, request: Request, user=Depends(curren
     identity = db.get(User, user.id)
     if not identity or not identity.active:
         raise HTTPException(401, 'Cuenta no disponible')
+    session_hash = request.state.session.token_hash
+    if not live_mfa_session(db, user.id, session_hash):
+        raise HTTPException(401, 'Sesión requerida')
     failures = one(db, """SELECT count(*) AS n FROM auth_challenges
         WHERE user_id=:u AND purpose='step_up' AND created_at>now()-interval '5 minutes'
         AND verified_at IS NULL""", u=user.id)['n']
@@ -93,7 +96,7 @@ def authorize_operation(body: OperationIn, request: Request, user=Depends(curren
     if not factor:
         raise HTTPException(409, 'Activa MFA en tu perfil antes de administrar colaboradores')
     digest = operation_digest(body.method, body.path, body.payload, user.farm_id)
-    marker = create_challenge(db, identity, 'step_up', session_hash=request.state.session.token_hash)
+    marker = create_challenge(db, identity, 'step_up', session_hash=session_hash)
     hashed_token = token_hash(marker['challenge_token'])
     execute(db, 'UPDATE auth_challenges SET attempts=1,operation_digest=:d WHERE token_hash=:t', d=digest, t=hashed_token)
     try:
@@ -116,7 +119,8 @@ def require_operation(request, db, user, payload: dict):
     if user.role not in ('owner', 'admin') or not user.farm_id or not token or len(token) > 200:
         raise HTTPException(403, 'Verifica tu identidad para confirmar esta operación exacta')
     session = request.state.session
-    if session.user_id != user.id or session.revoked_at or session.expires_at <= utcnow():
+    one(db, 'SELECT id FROM users WHERE id=:u FOR UPDATE', u=user.id)
+    if not live_mfa_session(db, user.id, session.token_hash):
         raise HTTPException(403, 'La autorización requiere una sesión vigente')
     method, path = request.method.upper(), request.url.path
     validate_target(method, path)

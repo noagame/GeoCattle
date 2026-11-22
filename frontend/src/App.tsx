@@ -12,9 +12,9 @@ import { FarmSelector } from './FarmSelector';
 
 
 
-import { EnrolPage, ProfilePage, ResetPasswordPage } from './V3Account';
+import { AuthenticatorEnrollment, EnrolPage, ProfilePage, ResetPasswordPage } from './V3Account';
 import { roleLabels } from './v3types';
-import type { ActivityCounts, Gateway } from './v3types';
+import type { ActivityCounts, DeviceCandidate, Gateway } from './v3types';
 
 const AdminDashboard = lazy(() => import('./V3Admin').then(module => ({ default: module.AdminDashboard })));
 const AdminOwners = lazy(() => import('./V3Admin').then(module => ({ default: module.AdminOwners })));
@@ -139,7 +139,7 @@ function Login({ onLogin, initialError, initialNotice = '' }: { onLogin: (sessio
   return <div className="login-layout"><div className="login-visual"><Brand light /><div className="login-copy"><span className="eyebrow">CERCA DE TU REBAÑO</span><h1>Cada animal.<br />Un lugar seguro.</h1><p>Ubicación, salud y trabajo en equipo. Una vista para cada responsabilidad dentro de GeoCattle.</p><div className="login-features"><span><MapPin size={17} />Localización y geocercas</span><span><FileHeart size={17} />Fichas y agenda sanitaria</span><span><ShieldCheck size={17} />Identidades y cambios trazables</span></div></div><div className="login-landscape" aria-hidden="true"><svg viewBox="0 0 580 260"><path d="M-20 240 200 80 350 120 540 20 640 80V290H-20Z" fill="#35614b" /><path d="m-20 270 200-140 140 80L540 50l90 40v210H-20Z" fill="#416c51" /><path d="m120 245 80-60 120 50 230-100" stroke="#bad6a2" strokeWidth="2" strokeDasharray="6 8" fill="none" /><circle cx="204" cy="190" r="10" fill="#c7e2b0" /><circle cx="376" cy="195" r="7" fill="#c7e2b0" /></svg></div><span className="login-footer">Tecnología al servicio de la ganadería.</span></div>
     <main className="login-form-panel"><div className="login-form-content"><span className="eyebrow">ACCESO PERSONAL</span><h2>{usingRecovery ? 'Recupera tu acceso.' : challenge ? 'Verifica tu identidad.' : 'Tu equipo, conectado.'}</h2><p>{usingRecovery ? 'Usa tu contraseña y uno de tus códigos de recuperación guardados.' : challenge ? 'Completa el segundo factor para abrir tu panel.' : 'Ingresa con tus credenciales para acceder a tu panel.'}</p>
       {initialNotice && <div className="notice" role="status"><Check size={18} /><span>{initialNotice}</span></div>}
-      <form onSubmit={submit}>{challenge ? <>{challenge.setup_required && <div className="v3-mfa-setup"><p>Configura esta clave en tu aplicación autenticadora TOTP e ingresa su primer código.</p><label>Clave de configuración<input readOnly value={challenge.secret ?? ''} onFocus={event => event.currentTarget.select()} /></label><small>Guarda el factor de forma privada antes de continuar.</small></div>}<label>Código de verificación<input autoFocus inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} /></label></> : <><label>Correo de acceso<input type="email" autoComplete="username" required value={username} onChange={event => setUsername(event.target.value)} autoFocus /></label><label>Contraseña<input type="password" autoComplete="current-password" required maxLength={256} value={password} onChange={event => setPassword(event.target.value)} /></label>{usingRecovery && <label>Código de recuperación<input autoComplete="off" spellCheck={false} required maxLength={100} value={recoveryCode} onChange={event => setRecoveryCode(event.target.value)} /><small>Cada código se utiliza una sola vez. Tu segundo factor continúa activo.</small></label>}</>}
+      <form onSubmit={submit}>{challenge ? <>{challenge.setup_required && <AuthenticatorEnrollment secret={challenge.secret ?? ''} otpauth_uri={challenge.otpauth_uri} />}<label>Código de verificación<input autoFocus inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} /></label></> : <><label>Correo de acceso<input type="email" autoComplete="username" required value={username} onChange={event => setUsername(event.target.value)} autoFocus /></label><label>Contraseña<input type="password" autoComplete="current-password" required maxLength={256} value={password} onChange={event => setPassword(event.target.value)} /></label>{usingRecovery && <label>Código de recuperación<input autoComplete="off" spellCheck={false} required maxLength={100} value={recoveryCode} onChange={event => setRecoveryCode(event.target.value)} /><small>Cada código se utiliza una sola vez. Tu segundo factor continúa activo.</small></label>}</>}
         <ErrorNotice error={error} /><button className="button primary login-submit" disabled={busy}>{busy ? 'Verificando…' : challenge ? 'Verificar y continuar' : 'Iniciar sesión'}<ArrowRight size={18} /></button>
         {challenge && <button type="button" className="text-button" disabled={busy} onClick={() => { setChallenge(null); setCode(''); setError(''); }}>Volver al acceso</button>}
         <button type="button" className="text-button" disabled={busy} onClick={chooseRecovery}>{usingRecovery ? 'Usar la aplicación autenticadora' : 'Usar un código de recuperación'}</button>
@@ -175,6 +175,9 @@ export default function App() {
   const activity = useData<ActivityCounts>(session ? '/v3/activity-counts' : null, 30000,
     `${session?.user.id ?? ''}:${session?.user.farm_id ?? ''}`);
   const unreadNotices = activity.data?.unread_notices ?? 0;
+  const candidates = useData<{ items: DeviceCandidate[] }>(session && hasFarm && owner ? '/v3/device-candidates?status=pending' : null, 30000,
+    session?.user.farm_id ?? '');
+  const pendingCandidatesCount = candidates.data?.items?.length ?? 0;
   const allowed = new Set<Page>(['profile', 'support']);
   if (hasFarm) allowed.add('notices');
   if (admin) ['admin', 'owners', 'users', 'audit', 'farms'].forEach(p => allowed.add(p as Page));
@@ -190,6 +193,9 @@ export default function App() {
     if (item.id === 'changes') return {
       ...item, title: owner ? item.title : worker ? 'Mis reportes y solicitudes' : 'Mis registros',
       count: activity.data?.pending_changes, countLabel: 'pendientes',
+    };
+    if (item.id === 'devices' && owner && pendingCandidatesCount > 0) return {
+      ...item, count: pendingCandidatesCount, countLabel: 'detectados',
     };
     if (item.id === 'support') return { ...item, count: activity.data?.unread_support, countLabel: 'respuestas sin leer' };
     if (item.id === 'support-admin') return { ...item, count: activity.data?.pending_support, countLabel: 'pendientes' };
@@ -271,7 +277,8 @@ export default function App() {
         {activePage === 'gateways' && <GatewaysPage notify={setToast} />}
         {activePage === 'hardware' && <HardwarePage farmId={session.user.farm_id ?? ''} />}
         {activePage === 'devices' && <DevicesPage key={session.user.farm_id} canWrite={owner} notify={setToast}
-          usbCollar={usbCollar} clearUsbCollar={() => navigate('devices')} />}
+          usbCollar={usbCollar} clearUsbCollar={() => navigate('devices')}
+          onCandidatesChange={candidates.reload} />}
         {activePage === 'geofences' && <GeofencesPage canWrite={owner} notify={setToast} />}
         {activePage === 'events' && <EventsPage canWrite={role !== 'viewer'} canConfigure={owner} simulation={overview.data?.farm.environment === 'simulation'} farmName={farmName} notify={setToast} />}
         {activePage === 'operations' && <OperationsPage canWrite={owner} canAudit={owner} notify={setToast} simulation={overview.data?.farm.environment === 'simulation'} onChange={overview.reload} />}
@@ -279,7 +286,7 @@ export default function App() {
         {activePage === 'audit' && <AuditPage global={admin} />}
         {activePage === 'notices' && <UserNotifications notify={setToast} onChange={activity.reload} />}
         {(activePage === 'support' || activePage === 'support-admin') && <SupportPage key={route} admin={activePage === 'support-admin'} notify={setToast} onChange={activity.reload} />}
-        {activePage === 'profile' && <ProfilePage notify={setToast} mfaEnabled={session.user.mfa_enabled} onUpdated={refreshSession} onSignedOut={() => { setSession(null); updateSession(null); setAuthError(''); setAuthNotice('Contraseña actualizada. Inicia sesión con tu nueva clave.'); location.hash = ''; }} />}
+        {activePage === 'profile' && <ProfilePage notify={setToast} mfaEnabled={session.user.mfa_enabled} onUpdated={refreshSession} onSignedOut={(notice = 'Contraseña actualizada. Inicia sesión con tu nueva clave.') => { setSession(null); updateSession(null); setAuthError(''); setAuthNotice(notice); location.hash = ''; }} />}
       </div></Suspense>}</main><footer className="app-footer"><span>GeoCattle <span>·</span> {roleLabels[role ?? '']}</span><span><span className={`connection-dot ${connected ? 'green' : 'red'}`} />{connected ? 'Red local' : 'Conexión interrumpida'}<span className="footer-separator">|</span>Hora de Chile</span></footer>
     </div>{toast && <div className="toast" role="status"><Check size={18} /><span>{toast}</span><button className="icon-button" aria-label="Cerrar aviso" onClick={() => setToast('')}><X size={16} /></button></div>}
   </div>;

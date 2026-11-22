@@ -9,6 +9,9 @@
 - Las migraciones se ordenan por nombre y quedan registradas en `schema_migrations`. Añade un SQL numerado con nombre único y conserva las migraciones desplegadas.
 - Al cambiar tablas o relaciones revisa restricciones, índices, privilegios de `geocattle_app`, historial y compatibilidad con filas existentes. Los modelos del backend y los diagramas documentan el esquema que aplican las migraciones.
 - `support_requests` conserva casos privados por cuenta, con respuesta, estado y lectura del solicitante. La migración 007 recupera los folios de cierre pendientes y sus motivos a partir de los registros históricos.
+- `invitation_mail` registra hasta un correo de cada tipo por invitación. El token cifrado pertenece al correo de invitación pendiente y se retira al finalizar su procesamiento.
+- `device_candidates` mantiene una detección pendiente por hardware y predio. Sus resoluciones conservan el actor y vinculan las aprobaciones con un dispositivo del mismo predio. `device_candidate_captures` conserva los recibos de deduplicación de las tramas detectadas.
+- La migración 010 vincula los desafíos TOTP al factor que les corresponde y permite exigir una inscripción antes de abrir sesión tras una recuperación o un retiro obligatorio. Los cambios conservan los factores activos y cierran los desafíos de acceso e inscripción emitidos antes de la migración.
 
 ## Verificación
 

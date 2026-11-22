@@ -5,7 +5,7 @@ Usa backend/.venv/bin/python; lee .env privada sin imprimir credenciales.
 BASE_URL=http://127.0.0.1:8000 backend/.venv/bin/python qa/test_mqtt_ingestion.py
 No requiere un ingestor Docker: inicia uno local con tópicos/cola exclusivos QA.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import json
 import logging
 import os
@@ -138,8 +138,8 @@ def main():
         animal = request("POST", "/animals", {"diio": "MQTTQA" + run_id, "name": "MQTT QA " + run_id, "orientation": "meat"}, 201)
         device = request("POST", "/devices", {"hardware_id": hardware, "name": "MQTT QA " + run_id,
                          "transport": "academic", "interval_seconds": 300}, 201)
-        request("POST", "/assignments", {"animal_id": animal["id"], "device_id": device["id"],
-                    "effective_at": (datetime.now(timezone.utc)-timedelta(hours=1)).isoformat()}, 201)
+        request("POST", "/assignments", {"animal_id": animal["id"], "device_id": device["id"]}, 201)
+        captured = datetime.now(timezone.utc)
 
         ready = threading.Event()
         publisher = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="qa-publisher-" + run_id)
@@ -183,7 +183,6 @@ def main():
         worker.join(10)
         check("Ingestor detenido para prueba de recuperación", not worker.is_alive())
         runner = worker = None
-        captured = datetime.now(timezone.utc) - timedelta(seconds=120)
         queued = json.dumps(payload(2, captured)).encode()
         spool = Spool(str(spool_path))
         key = spool.put(topic, queued, 0, 1, 0)

@@ -16,6 +16,71 @@ Para el bootstrap, `ADMIN_PASSWORD` se toma de `.env.pilot`; no se introduce com
 
 No utilizar las credenciales de simulación en piloto. No registrar claves OTAA en bitácoras, notas de alerta ni respuestas API. Las claves de radio se aprovisionan en ChirpStack y nodos por un procedimiento separado.
 
+## Correo SMTP de invitaciones
+
+1. Edita el archivo privado de la instalación. Los lanzadores nativos de Windows usan `.env.academic`. Docker usa el archivo indicado con `--env-file`, por ejemplo `.env.docker` con el lanzador Linux, `.env` en simulación predeterminada o `.env.pilot` para el piloto.
+2. Para Gmail, activa la verificación en dos pasos de la cuenta remitente y crea una contraseña de aplicación. Copia esa contraseña sin los espacios de presentación en `SMTP_PASSWORD` del archivo privado. Usa la misma cuenta para `SMTP_USERNAME` y `SMTP_FROM`, o un alias de envío que el proveedor autorice. [Contraseñas de aplicación de Google](https://support.google.com/accounts/answer/185833?hl=es)
+3. Guarda las variables del proveedor. Este ejemplo usa direcciones ficticias.
+
+   ```dotenv
+   INVITATION_EMAIL_ENABLED=false
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_TLS_MODE=starttls
+   SMTP_USERNAME=geocattle-ejemplo@gmail.com
+   SMTP_PASSWORD=REEMPLAZAR_EN_EL_ARCHIVO_PRIVADO
+   SMTP_FROM=geocattle-ejemplo@gmail.com
+   SMTP_TIMEOUT_SECONDS=8
+   INVITATION_BASE_URL=http://localhost:8084
+   ```
+
+   Gmail también admite `SMTP_PORT=465` con `SMTP_TLS_MODE=ssl`. Con otro proveedor usa el host y puerto de su servicio SMTP y una cuenta autorizada. Microsoft 365 usa `smtp.office365.com:587` con STARTTLS. Outlook.com usa `smtp-mail.outlook.com:587` con STARTTLS y OAuth. Cuando el proveedor exige OAuth, usa un relay TLS compatible aprobado por el operador. Si el relay autoriza la red de origen, deja `SMTP_USERNAME` y `SMTP_PASSWORD` vacíos. [Configuración de envío SMTP de Microsoft 365](https://learn.microsoft.com/exchange/mail-flow-best-practices/how-to-set-up-a-multifunction-device-or-application-to-send-email-using-microsoft-365-or-office-365)
+
+4. Ajusta `INVITATION_BASE_URL` a la dirección que abrirá el invitado. Usa `http://localhost:8084` solo para pruebas en el mismo PC, o el puerto publicado de Docker en loopback durante simulación. Para Windows LAN copia la URL HTTPS escrita por `Abrir-GeoCattle-LAN.cmd` en `.runtime/GeoCattle-LAN-URL.txt`; el dispositivo invitado debe estar en la red y confiar en el certificado de GeoCattle. Si cambia la IP, actualiza el archivo privado. En Docker publicado usa la URL HTTPS del proxy que sirve la interfaz. La API y el worker deben leer la misma URL. Conserva `SESSION_SECRET` y `MFA_ENCRYPTION_KEY` al editar SMTP. [Acceso HTTPS en Windows](DESARROLLO_LOCAL.md#acceso-https-desde-otro-dispositivo)
+5. Prueba el envío a una dirección que controlas antes de activar las invitaciones.
+
+   Ejecuta en Windows nativo desde la raíz.
+
+   ```powershell
+   py -3 scripts/account_maintenance.py smtp-test --to destinatario@example.test
+   ```
+
+   En Docker, ejecuta desde la raíz con el mismo archivo y perfiles de la instalación.
+
+   ```bash
+   docker compose --env-file .env.docker run --rm --no-deps --build worker python -m geocattle.account_maintenance smtp-test --to destinatario@example.test
+   ```
+
+   El comando envía un mensaje de prueba sin crear cuentas ni invitaciones. Informa si el servidor aceptó el mensaje o qué etapa SMTP falló. Verifica también la recepción en el buzón. Sustituye el destinatario ficticio al ejecutarlo.
+
+6. Cambia `INVITATION_EMAIL_ENABLED=true`. Respalda la base antes del arranque que aplica las migraciones de la nueva versión. En Windows, ejecuta `.\Detener-Prototipo.ps1` y vuelve a abrir `Abrir-GeoCattle.cmd` y el lanzador LAN si lo usas. En Docker, vuelve a ejecutar el arranque con el mismo archivo y perfiles.
+
+   ```bash
+   docker compose --env-file .env.docker up -d --build
+   ```
+
+Las instalaciones con `GMAIL_SMTP_FROM` y `GMAIL_SMTP_APP_PASSWORD` conservan su configuración de Gmail SSL 465 si `SMTP_HOST` queda vacío y se mantienen el modo y puerto predeterminados. El worker registra el identificador, la clase de error y el código numérico SMTP. Los rechazos definitivos cierran el intento. Ante fallos temporales, la cola conserva el correo hasta tres intentos, con demoras de uno y dos minutos. La aceptación SMTP acredita entrega al servidor de correo.
+
+## Restablecer el autenticador por consola
+
+Usa la consola del anfitrión cuando el titular haya perdido el autenticador y sus códigos de recuperación. Verifica el correo de acceso y el entorno. Aplica la migración 010 mediante el arranque o la migración de la instalación antes de ejecutar el comando.
+
+En Windows nativo, ejecuta desde la raíz con PostgreSQL del prototipo en ejecución.
+
+```powershell
+py -3 scripts/account_maintenance.py mfa-reset --email administrador@example.test
+```
+
+El comando carga `.env.academic` de forma predeterminada. Coloca `--env-file RUTA_PRIVADA` antes de `mfa-reset` si esa instalación usa otro archivo nativo.
+
+En Docker, ejecuta desde la raíz sobre el contenedor API de la instalación.
+
+```bash
+docker compose --env-file .env.docker exec -T api python -m geocattle.account_maintenance mfa-reset --email administrador@example.test
+```
+
+Usa el correo real de la cuenta y el archivo privado de ese despliegue. La consola devuelve la misma confirmación general aunque no encuentre una cuenta activa. El restablecimiento cierra las sesiones, invalida desafíos y códigos de recuperación y queda auditado como `sistema/consola`. El titular conserva su contraseña. Al ingresarla, el sistema pide escanear el QR o introducir la clave manual y verificar un código nuevo antes de abrir la sesión.
+
 ## Integración MQTT y LoRaWAN
 
 ```bash

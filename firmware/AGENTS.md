@@ -6,7 +6,7 @@ Los sketches del collar, receptoras y repetidores se preparan por placa. [Guía 
 
 ## Contratos locales
 
-- El emisor emplea el mismo identificador en la respuesta de alta USB y en la telemetría LoRa. Las unidades nuevas usan la identidad del ESP32. Conserva el identificador histórico en la unidad que ya lo tiene registrado.
+- El emisor emplea el mismo identificador de hasta 16 caracteres en USB y LoRa. Las unidades nuevas comparten el binario con alias vacío y obtienen su identidad de la eFuse del ESP32. Usa una compilación exclusiva para conservar un alias histórico.
 - Mantén compatibles las tramas de radio y los mensajes seriales de captura al añadir comandos de identificación.
 
 ## Verificación

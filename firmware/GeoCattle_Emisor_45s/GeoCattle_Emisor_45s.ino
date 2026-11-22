@@ -60,12 +60,15 @@
 // CONFIGURACION
 // ============================================================
 
-// Define GEOCATTLE_LEGACY_COLLAR_ID como "REAL01" al actualizar solo el collar histórico.
+// La compilación común se distribuye con el alias vacío.
+// Define un alias solo en un binario separado para una unidad histórica.
 #ifndef GEOCATTLE_LEGACY_COLLAR_ID
 #define GEOCATTLE_LEGACY_COLLAR_ID ""
 #endif
-// La red de repetidores y JSON V5 admiten hasta 16 caracteres.
-char COLLAR_ID[sizeof("GC-FFFFFFFFFFFF")] = {};
+constexpr size_t MAX_COLLAR_ID_LENGTH = 16;  // JSON V5 y repetidores
+static_assert(sizeof("GC-FFFFFFFFFFFF") - 1 <= MAX_COLLAR_ID_LENGTH,
+              "El identificador de fábrica debe caber en JSON V5");
+char COLLAR_ID[MAX_COLLAR_ID_LENGTH + 1] = {};
 
 const long FRECUENCIA = 915500000L;
 
@@ -97,7 +100,7 @@ constexpr uint32_t MINIMO_ENTRE_ENVIOS_MS = 45000UL;
 
 void inicializarIdentidadCollar() {
   constexpr char alias[] = GEOCATTLE_LEGACY_COLLAR_ID;
-  static_assert(sizeof(alias) <= sizeof(COLLAR_ID), "Identificador histórico demasiado largo");
+  static_assert(sizeof(alias) - 1 <= MAX_COLLAR_ID_LENGTH, "Identificador histórico demasiado largo");
   if (alias[0]) {
     snprintf(COLLAR_ID, sizeof(COLLAR_ID), "%s", alias);
   } else {

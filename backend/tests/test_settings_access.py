@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from geocattle.models import RuleSettings
 from geocattle.settings import Settings, settings
-from test_v3_api import v3
+from test_v3_api import development_v3, v3
 from test_v3_admin_filters import admin_client
 
 pytestmark = pytest.mark.skipif(not os.environ.get('TEST_DATABASE_URL'), reason='Requiere PostgreSQL/PostGIS V3 de prueba')
@@ -68,7 +68,8 @@ def test_settings_capabilities_and_write_permissions_match_actor(v3, profile, ca
         assert audit_updates(v3) == []
 
 
-def test_owner_can_save_disabled_sensor_thresholds_without_field_validation(v3):
+def test_owner_can_save_disabled_sensor_thresholds_without_field_validation(development_v3):
+    v3 = development_v3
     client = v3.client('owner')
     before = client.get('/api/v1/settings').json()
     assert before['capabilities']['preventive_rules_allowed'] is False
@@ -87,7 +88,8 @@ def test_owner_can_save_disabled_sensor_thresholds_without_field_validation(v3):
 
 
 @pytest.mark.parametrize('flag', ['temperature_enabled', 'activity_enabled'])
-def test_real_environment_cannot_enable_unvalidated_preventive_sensor(v3, flag):
+def test_real_environment_cannot_enable_unvalidated_preventive_sensor(development_v3, flag):
+    v3 = development_v3
     client = v3.client('owner')
     before = client.get('/api/v1/settings').json()
     assert before['capabilities']['environment'] != 'simulation'
@@ -110,8 +112,8 @@ def test_validated_flag_exposes_capability_and_allows_preventive_rules(v3, monke
     assert response.json()['capabilities']['preventive_rules_allowed'] is True
 
 
-def test_prototype_enables_only_temperature_for_an_authorized_profile(v3, monkeypatch):
-    assert settings().app_env == 'development'
+def test_prototype_enables_only_temperature_for_an_authorized_profile(development_v3, monkeypatch):
+    v3 = development_v3
     monkeypatch.setattr(settings(), 'prototype_temperature_enabled', True)
     owner = v3.client('owner')
     initial = owner.get('/api/v1/settings').json()

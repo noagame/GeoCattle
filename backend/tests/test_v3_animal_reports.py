@@ -113,9 +113,10 @@ def test_reports_export_records_from_their_original_sources(v3):
     ):
         result = owner.post(CHANGES, json=body(v3, action, payload))
         assert result.status_code == 201, result.text
+    source = 'sim' if v3.farms['owner'].environment == 'simulation' else 'academic'
     captured = owner.post('/api/v1/ingest/telemetry', headers={'X-Ingest-Key': settings().ingest_key}, json={
         'hardware_id': hardware_id, 'session_id': 'qa', 'seq': 1, 'observed_at': utcnow().isoformat(),
-        'gnss_valid': False, 'source': 'academic', 'quality': {'movement_state': 'moving'},
+        'gnss_valid': False, 'source': source, 'quality': {'movement_state': 'moving'},
     })
     assert captured.status_code == 201, captured.text
     v3.db.add(Event(farm_id=v3.farms['owner'].id, animal_id=animal.id, device_id=device,
@@ -167,15 +168,16 @@ def test_owner_indicators_use_farm_time_and_show_coverage(v3, monkeypatch):
         VALUES(gen_random_uuid(),:farm,:animal,:fence,:start)
     """), {**keys, 'start': assignment.valid_from})
     v3.db.execute(text("INSERT INTO farm_features(farm_id,feature_code) VALUES(:farm,'monitoring')"), keys)
+    source, excluded_source = ('sim', 'academic') if farm.environment == 'simulation' else ('academic', 'sim')
     v3.db.execute(text("""
         INSERT INTO telemetry(id,farm_id,animal_id,device_id,assignment_id,session_id,seq,observed_at,received_at,
                               gnss_valid,longitude,latitude,point,source,quality)
         SELECT gen_random_uuid(),:farm,:animal,:device,:assignment,'qa-indicators',n,
                :midnight+n*interval '1 minute',:received,true,-72,-38,ST_SetSRID(ST_MakePoint(-72,-38),4326),
-               CASE WHEN n=12 THEN 'sim' ELSE 'academic' END,
+               CASE WHEN n=12 THEN :excluded_source ELSE :source END,
                jsonb_build_object('movement_state',CASE WHEN n<=6 OR n=12 THEN 'moving' WHEN n<=10 THEN 'rest' ELSE 'unknown' END)
         FROM generate_series(1,12) AS n
-    """), {**keys, 'midnight': midnight, 'received': now})
+    """), {**keys, 'midnight': midnight, 'received': now, 'source': source, 'excluded_source': excluded_source})
     for event_type, at in [('escape', midnight), ('low_battery', midnight), ('escape', midnight - timedelta(seconds=1))]:
         closed = at < midnight
         v3.db.add(Event(farm_id=farm.id, animal_id=animal.id, device_id=collar.id, geofence_id=geofence,

@@ -53,7 +53,7 @@ En ambos sistemas, [localhost:8084/api/v1/health](http://localhost:8084/api/v1/h
 
 Para usar el PC Windows como servidor para otros dispositivos de la misma red, inicia el prototipo y luego abre [`Abrir-GeoCattle-LAN.cmd`](Abrir-GeoCattle-LAN.cmd). En cada apertura muestra la URL HTTPS para la IP local vigente en el puerto `8445`. Un punto de acceso del celular puede proporcionar la red local. [Configuración de acceso desde otro dispositivo](docs/DESARROLLO_LOCAL.md#acceso-https-desde-otro-dispositivo)
 
-Para incorporar un collar compatible, ejecuta [`Registrar-Collar-USB.cmd`](Registrar-Collar-USB.cmd) en el PC servidor. El asistente abre el alta con los datos del collar. Puedes guardarlo en inventario y asignarlo después desde la web local o por HTTPS. [Alta por USB](docs/DESARROLLO_LOCAL.md#registrar-un-collar-por-usb)
+Para incorporar un collar compatible, ejecuta [`Registrar-Collar-USB.cmd`](Registrar-Collar-USB.cmd) en el PC servidor o recibe su primera trama LoRa. Aprueba el alta en **Collares detectados** y asigna el collar después desde la web local o por HTTPS. [Alta por USB o LoRa](docs/DESARROLLO_LOCAL.md#incorporar-un-collar-por-usb-o-lora)
 
 ## Estado del sistema
 

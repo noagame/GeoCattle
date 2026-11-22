@@ -47,11 +47,13 @@ Desde una consola, el mismo iniciador acepta `--receiver-mode direct` o `--recei
 
 El estado local registra `last_line_at` para cualquier línea serial, `last_packet_at` para el último paquete válido de la ejecución y `last_capture` para la última lectura única archivada. Estos campos ayudan a distinguir actividad USB, recepción y persistencia.
 
-## Registrar un collar por USB
+## Incorporar un collar por USB o LoRa
 
-1. Inicia el prototipo con `Abrir-GeoCattle.cmd`. Abre [`Registrar-Collar-USB.cmd`](../Registrar-Collar-USB.cmd) en el PC Windows servidor y sigue las indicaciones para conectar el collar con un cable USB de datos. La receptora T3 puede quedar conectada. Cierra el Monitor Serie del collar.
-2. En **Alta de collar por USB**, entra con una cuenta de dueño o administrador, verifica el predio activo, escribe un nombre y guarda. El asistente completa el identificador y el intervalo a partir del firmware. Si el collar ya existe en ese predio, se puede usar su registro.
-3. En **Collares y dispositivos**, asigna el collar a un bovino cuando esté listo. Después del alta, las lecturas llegan por la T3 mediante LoRa. El inventario y las asignaciones se consultan también desde HTTPS por la red local.
+1. Inicia el prototipo con `Abrir-GeoCattle.cmd`. Para detectar por USB, cierra el Monitor Serie del collar, abre [`Registrar-Collar-USB.cmd`](../Registrar-Collar-USB.cmd) y sigue las indicaciones para conectar el collar con un cable USB de datos. La receptora T3 puede quedar conectada. Para detectar por LoRa, inicia `Iniciar-Captura.cmd` y espera un paquete válido del collar.
+2. En **Collares y dispositivos**, entra con una cuenta de dueño o administrador, selecciona el predio y abre **Collares detectados**. Revisa el identificador, el nombre sugerido y el intervalo. Aprueba el alta o descarta la detección.
+3. Asigna el collar a un bovino cuando esté listo. Las nuevas lecturas llegan por la T3 mediante LoRa. El inventario y las asignaciones se consultan también desde HTTPS por la red local.
+
+El alta USB usa `INGEST_KEY` de la configuración privada `.env.academic`. Con varios predios físicos activos, agrega `INGEST_FARM_ID` con el UUID del predio a ese archivo y reinicia la captura para usarlo. El USB usa ese UUID en la siguiente ejecución del asistente. También puedes pasar `--farm-id` al ejecutar `scripts/register_collar_usb.py` directamente.
 
 El [firmware con identificación USB](../firmware/README.md#identidad-y-alta-por-usb) responde a una consulta del asistente. Con el firmware anterior que imprime JSON V5 en el puerto serie, el asistente espera hasta 55 segundos y toma el identificador y el intervalo del primer paquete válido. Para el collar histórico, el resultado es `REAL01` con un intervalo de 45 segundos. Si Windows indica que el puerto está ocupado, cierra el Monitor Serie o el Plotter de Arduino y vuelve a ejecutar el asistente.
 

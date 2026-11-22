@@ -7,7 +7,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 from contextlib import asynccontextmanager
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +15,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError, TimeoutError as DatabaseTimeout
 from sqlalchemy.orm import aliased
 from .db import get_db
+from .device_inventory import create_inventory_device, device_json
 from .models import *
 from .schemas import *
 from .security import admin_login_requires_mfa, current_user, owner, operator, service_auth, create_session, token_hash, verify_password, hash_password
@@ -113,10 +114,6 @@ def events_json(db,events):
                        "attention":event.attention,"opened_at":event.opened_at,"resolved_at":event.resolved_at,
                        "detail":event.detail,"actions":actions[event.id]})
     return result
-def device_json(db,d):
-    assignment=db.scalar(select(Assignment).where(Assignment.device_id==d.id,at_time(Assignment,utcnow())))
-    pending=db.scalar(select(DeviceConfig).where(DeviceConfig.device_id==d.id,DeviceConfig.status.in_(["requested","sent"])).order_by(DeviceConfig.version.desc()))
-    return {"id":d.id,"hardware_id":d.hardware_id,"dev_eui":d.dev_eui,"name":d.name,"transport":d.transport,"enabled":d.enabled,"interval_seconds":d.interval_seconds,"config_version":d.config_version,"pending_config":{"version":pending.version,"interval_seconds":pending.interval_seconds,"status":pending.status} if pending else None,"animal_id":assignment.animal_id if assignment else None,"last_received_at":d.last_received_at}
 def animals_json(db,animals):
     if not animals:
         return []
@@ -203,9 +200,15 @@ def login(body:LoginIn,request:Request,response:Response,db=Depends(get_db, scop
     if user.farm_id and db.get(Farm,user.farm_id).environment!=settings().app_env:raise HTTPException(403,"Cuenta de otro entorno")
     from .v3_security import one,create_challenge
     from .v3_auth import issue_session
-    if user.role == 'admin' and admin_login_requires_mfa(request):
-        factor=one(db,'SELECT id FROM mfa_factors WHERE user_id=:u AND verified_at IS NOT NULL AND revoked_at IS NULL',u=user.id)
-        return create_challenge(db,user,'login' if factor else 'mfa_setup',setup=not bool(factor))
+    # Serialize issuing a session or challenge with credential resets.
+    password_hash = user.password_hash
+    one(db, 'SELECT id FROM users WHERE id=:u FOR UPDATE', u=user.id)
+    db.refresh(user)
+    if not user.active or user.password_hash != password_hash:
+        raise HTTPException(401, "Credenciales inválidas")
+    if user.mfa_enrollment_required or (user.role == 'admin' and admin_login_requires_mfa(request)):
+        factor=one(db,"SELECT id FROM mfa_factors WHERE user_id=:u AND kind='totp' AND verified_at IS NOT NULL AND revoked_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1",u=user.id)
+        return create_challenge(db,user,'login' if factor else 'mfa_setup',setup=not bool(factor),factor_id=factor['id'] if factor else None)
     attempts.clear()
     return issue_session(db,user,response)
 @api.get("/auth/me")
@@ -307,12 +310,7 @@ def devices(user=Depends(current_user),db=Depends(get_db, scope="function")):
     return {"items":[device_json(db,d) for d in items],"total":len(items)}
 @api.post("/devices",status_code=201)
 def create_device(body:DeviceIn,user=Depends(owner),db=Depends(get_db, scope="function")):
-    data=body.model_dump()
-    if data["dev_eui"]:data["dev_eui"]=data["dev_eui"].lower()
-    if body.transport=="lorawan" and not body.dev_eui:raise HTTPException(422,"LoRaWAN requiere DevEUI")
-    d=Device(id=uuid4(),farm_id=user.farm_id,**data);db.add(d);db.flush()
-    append_audit(db,user.farm_id,user.id,"device",d.id,"create",after=data)
-    return device_json(db,d)
+    return device_json(db, create_inventory_device(db, user, body))
 @api.post("/assignments",status_code=201)
 def assign(body:AssignmentIn,user=Depends(owner),db=Depends(get_db, scope="function")):
     animal=accessible(db,Animal,body.animal_id,user,True)
@@ -500,7 +498,9 @@ def notifications(user=Depends(current_user),db=Depends(get_db, scope="function"
     return {"items":[{"id":n.id,"event_id":n.event_id,"channel":n.channel,"status":n.status,"created_at":n.created_at,"attempts":[{k:getattr(a,k) for k in ["attempt","at","status","provider_id","error"]} for a in db.scalars(select(NotificationAttempt).where(NotificationAttempt.notification_id==n.id).order_by(NotificationAttempt.attempt)).all()]} for n in rows],"total":db.scalar(select(func.count()).select_from(Notification).join(Event).where(Event.farm_id==user.farm_id))}
 @api.post("/telemetry",dependencies=[Depends(service_auth)],status_code=201)
 @api.post("/ingest/telemetry",dependencies=[Depends(service_auth)],status_code=201)
-def telemetry(body:TelemetryIn,db=Depends(get_db, scope="function")):return ingest(db,body)
+def telemetry(body:TelemetryIn,db=Depends(get_db, scope="function"),
+              farm_id:UUID|None=Header(default=None,alias="X-Farm-ID")):
+    return ingest(db, body, detect_candidates=True, capture_farm_id=farm_id)
 
 @api.get("/reports/telemetry.csv")
 def export_history(start:datetime|None=None,end:datetime|None=None,animal_id:UUID|None=None,user=Depends(current_user),db=Depends(get_db, scope="function")):
@@ -570,12 +570,14 @@ def patch_sector(ident:UUID,body:SectorPatch,user=Depends(owner),db=Depends(get_
 app.include_router(api)
 from .v3_auth import router as auth_v3_router
 from .v3_api import router as v3_router
+from .v3_device_candidates import router as device_candidates_router
 from .v3_operation_auth import router as operation_auth_router
 from .v3_account import router as account_auth_router
 app.include_router(auth_v3_router)
 app.include_router(operation_auth_router)
 app.include_router(account_auth_router)
 app.include_router(v3_router)
+app.include_router(device_candidates_router)
 
 from .hardware_api import router as hardware_router
 app.include_router(hardware_router)

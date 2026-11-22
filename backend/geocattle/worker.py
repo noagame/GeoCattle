@@ -8,6 +8,7 @@ from sqlalchemy import func, select, text
 from .db import SessionLocal
 from .models import Event, Notification, NotificationAttempt, utcnow
 from .domain import check_timeouts
+from .invitation_mail import process_invitation_mail
 from .settings import settings
 log=logging.getLogger("geocattle.worker")
 
@@ -48,6 +49,8 @@ def run_once():
         from .v3_api import queue_health_reminders
         queue_health_reminders(db)
         process_outbox(db)
+    with SessionLocal.begin() as db:
+        process_invitation_mail(db)
 
 def main():
     logging.basicConfig(level=logging.INFO)

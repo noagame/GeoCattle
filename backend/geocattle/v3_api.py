@@ -12,8 +12,10 @@ from fastapi import APIRouter,Depends,HTTPException,Query,Request
 from pydantic import BaseModel,ConfigDict,Field,field_validator,model_validator
 from sqlalchemy import select,text
 from .db import get_db
+from .invitation_mail import invitation_url,queue_acceptance,queue_invitation
 from .models import User,Farm,Animal,RuleSettings,utcnow
 from .security import current_user,owner,hash_password,token_hash
+from .settings import settings
 from .v3_security import rows,one,execute,audit,require_step_up
 from .v3_operation_auth import require_operation
 router=APIRouter(prefix='/api/v1/v3',tags=['Role workspaces V3'])
@@ -334,14 +336,18 @@ def audits(user=Depends(current_user),db=Depends(get_db,scope='function'),limit:
 def invitations(request:Request,view:Literal['main','expired']|None=None,user=Depends(owner),db=Depends(get_db,scope='function')):
     require_step_up(request)
     return listing(rows(db,"""WITH farm_invitations AS (
-        SELECT id,email,role_code,expires_at,accepted_at,revoked_at,created_at,
+        SELECT i.id,i.email,i.role_code,i.expires_at,i.accepted_at,i.revoked_at,i.created_at,
+          coalesce(sent.status,'manual') AS email_status, confirmation.status AS acceptance_email_status,
           CASE
-            WHEN accepted_at IS NOT NULL THEN 'accepted'
-            WHEN revoked_at IS NOT NULL THEN 'revoked'
-            WHEN expires_at <= now() THEN 'expired'
+            WHEN i.accepted_at IS NOT NULL THEN 'accepted'
+            WHEN i.revoked_at IS NOT NULL THEN 'revoked'
+            WHEN i.expires_at <= now() THEN 'expired'
             ELSE 'pending'
           END AS status
-        FROM invitations WHERE farm_id=:farm_id
+        FROM invitations i
+        LEFT JOIN invitation_mail sent ON sent.invitation_id=i.id AND sent.kind='invitation'
+        LEFT JOIN invitation_mail confirmation ON confirmation.invitation_id=i.id AND confirmation.kind='accepted'
+        WHERE i.farm_id=:farm_id
       )
       SELECT * FROM farm_invitations
       WHERE CAST(:view AS text) IS NULL
@@ -352,9 +358,16 @@ def invitations(request:Request,view:Literal['main','expired']|None=None,user=De
 def invite(body:InviteIn,request:Request,user=Depends(owner),db=Depends(get_db,scope='function')):
     if user.role!='owner':raise HTTPException(403,'Solo el dueño del predio puede invitar colaboradores; soporte administra los ya incorporados')
     require_operation(request,db,user,body.model_dump(mode='json',exclude_unset=True));farm_id=farm_scope(user);token=secrets.token_urlsafe(40);ident=uuid4()
-    execute(db,"INSERT INTO invitations(id,farm_id,email,role_code,token_hash,invited_by,expires_at) VALUES(:i,:f,:e,:r,:t,:u,now()+interval '48 hours')",i=ident,f=farm_id,e=body.email.lower().strip(),r=body.role_code,t=token_hash(token),u=user.id)
-    audit(db,user,'invite','invitation',ident,after={'email':body.email,'role':body.role_code})
-    return {'id':ident,'email':body.email.lower().strip(),'role_code':body.role_code,'invitation_token':token,'delivery':'manual','message':'Comparte el enlace de forma privada con el destinatario; correo externo no configurado'}
+    email = body.email.lower().strip()
+    execute(db,"INSERT INTO invitations(id,farm_id,email,role_code,token_hash,invited_by,expires_at) VALUES(:i,:f,:e,:r,:t,:u,now()+interval '48 hours')",i=ident,f=farm_id,e=email,r=body.role_code,t=token_hash(token),u=user.id)
+    result = {'id': ident, 'email': email, 'role_code': body.role_code, 'invitation_token': token,
+              'delivery': 'manual', 'message': 'Copia el enlace para compartir la invitación.'}
+    cfg = settings()
+    if cfg.invitation_email_enabled:
+        queue_invitation(db, ident, email, token)
+        result.update(delivery='queued', invitation_url=invitation_url(token,cfg), message='Correo en cola de envío.')
+    audit(db,user,'invite','invitation',ident,after={'email':email,'role':body.role_code,'delivery':result['delivery']})
+    return result
 def enrol_context(db,token,lock=False):
     # Preview and acceptance share the same checks; only acceptance locks/consumes.
     item=one(db,"""SELECT i.*,f.name AS farm_name,f.active AS farm_active,
@@ -395,6 +408,8 @@ def enrol(body:EnrolIn,request:Request,db=Depends(get_db,scope='function')):
     execute(db,'UPDATE invitations SET accepted_at=now(),accepted_user_id=:u WHERE id=:i',u=target.id,i=item['id'])
     audit(db,SimpleNamespace(id=target.id,farm_id=item['farm_id']),'accept_invitation','membership',target.id)
     notify(db,item['farm_id'],item['invited_by'],f'{target.full_name} aceptó la invitación')
+    if settings().invitation_email_enabled:
+        queue_acceptance(db,item)
     return {'enrolled':True,'username':target.username}
 @router.get('/memberships')
 def members(request:Request,user=Depends(owner),db=Depends(get_db,scope='function')):

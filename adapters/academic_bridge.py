@@ -66,12 +66,15 @@ class Spool:
                 raise OverflowError('Cola llena: no se confirma ni descarta la captura')
             db.execute('INSERT INTO queue(hardware_id,session_id,seq,payload) VALUES(?,?,?,?)', (*identity, body))
 
-    def deliver(self, url, key, on_ack):
+    def deliver(self, url, key, on_ack, farm_id=None):
         with self.connection() as db:
             rows = db.execute("SELECT id,payload FROM queue WHERE status='pending' ORDER BY id LIMIT 100").fetchall()
+        headers = {'Content-Type': 'application/json', 'X-Ingest-Key': key}
+        if farm_id:
+            headers['X-Farm-ID'] = farm_id
         committed = 0
         for identity, body in rows:
-            request = urllib.request.Request(url, body.encode(), {'Content-Type': 'application/json', 'X-Ingest-Key': key}, method='POST')
+            request = urllib.request.Request(url, body.encode(), headers, method='POST')
             try:
                 with urllib.request.urlopen(request, timeout=5) as response:
                     result = json.load(response)
@@ -87,7 +90,10 @@ class Spool:
                 print(f'Captura {identity} conservada para revisión: {reason}', file=sys.stderr)
                 continue
             payload = json.loads(body)
-            on_ack({'persisted': True, 'id': result['id'], 'hardware_id': payload['hardware_id'], 'session_id': payload['session_id'], 'seq': payload['seq'], 'duplicate': bool(result.get('duplicate'))})
+            ack = {'persisted': True, 'id': result['id'], 'hardware_id': payload['hardware_id'], 'session_id': payload['session_id'], 'seq': payload['seq'], 'duplicate': bool(result.get('duplicate'))}
+            if result.get('status') == 'candidate':
+                ack['status'] = 'candidate'
+            on_ack(ack)
             with self.connection() as db:
                 db.execute('DELETE FROM queue WHERE id=?', (identity,))
             committed += 1
@@ -120,6 +126,7 @@ def main():
     key = os.environ.get('INGEST_KEY')
     if not key:
         parser.error('Defina INGEST_KEY en entorno o --env-file. No se acepta por argumento.')
+    farm_id = os.environ.get('INGEST_FARM_ID')
     spool = Spool(args.spool)
     serial_port = None
     if args.port:
@@ -143,7 +150,7 @@ def main():
 
     def retry():
         while not stop.wait(2):
-            spool.deliver(args.url, key, acknowledge)
+            spool.deliver(args.url, key, acknowledge, farm_id)
 
     thread = threading.Thread(target=retry, daemon=True)
     if not args.retry_only:
@@ -175,7 +182,7 @@ def main():
         stop.set()
         if thread.is_alive():
             thread.join(timeout=7)
-        while spool.deliver(args.url, key, acknowledge):
+        while spool.deliver(args.url, key, acknowledge, farm_id):
             pass
         remaining = spool.remaining()
         if remaining:

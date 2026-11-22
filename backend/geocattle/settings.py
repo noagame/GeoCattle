@@ -1,5 +1,10 @@
 from functools import lru_cache
+from email.errors import MessageError
+from email.headerregistry import Address
+from ipaddress import ip_address
+import re
 from typing import Literal
+from urllib.parse import urlsplit
 from pydantic import model_validator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -33,6 +38,17 @@ class Settings(BaseSettings):
     notification_webhook_token: str | None = Field(default=None, repr=False)
     notification_max_attempts: int = 3
     notification_expiry_hours: int = 24
+    invitation_email_enabled: bool = False
+    smtp_host: str = ""
+    smtp_port: int | None = Field(default=None, ge=1, le=65535)
+    smtp_tls_mode: Literal["ssl", "starttls"] = "ssl"
+    smtp_username: str = ""
+    smtp_password: str = Field(default="", repr=False)
+    smtp_from: str = ""
+    smtp_timeout_seconds: float = Field(default=8, gt=0, le=60)
+    gmail_smtp_from: str | None = None
+    gmail_smtp_app_password: str | None = Field(default=None, repr=False)
+    invitation_base_url: str | None = None
     worker_interval_seconds: int = 15
     config_timeout_seconds: int = 3600
     config_downlink_enabled: bool = False
@@ -43,6 +59,38 @@ class Settings(BaseSettings):
     @property
     def admin_login_requires_mfa(self) -> bool:
         return self.app_env == "production" or self.admin_login_mfa
+
+    def mail_connection(self):
+        if self.smtp_host.strip():
+            host = self.smtp_host.strip()
+            username = self.smtp_username.strip()
+            password = self.smtp_password
+            sender = self.smtp_from.strip()
+        elif self.gmail_smtp_from and self.gmail_smtp_app_password:
+            host = 'smtp.gmail.com'
+            username = sender = self.gmail_smtp_from
+            password = self.gmail_smtp_app_password
+        else:
+            raise ValueError("Configura SMTP_HOST o GMAIL_SMTP_FROM y GMAIL_SMTP_APP_PASSWORD")
+        if bool(username) != bool(password):
+            raise ValueError("SMTP_USERNAME y SMTP_PASSWORD deben configurarse juntos")
+        if not re.fullmatch(r"[A-Za-z0-9.-]+", host):
+            raise ValueError("SMTP_HOST debe contener solo el nombre del servidor o una IPv4")
+        try:
+            address = Address(addr_spec=sender)
+            if not address.username or not address.domain:
+                raise ValueError
+        except (ValueError, MessageError):
+            raise ValueError("SMTP_FROM debe ser una dirección de correo válida") from None
+        port = self.smtp_port or (465 if self.smtp_tls_mode == 'ssl' else 587)
+        return host, port, username, password, address
+
+    @model_validator(mode="before")
+    @classmethod
+    def optional_smtp_port(cls, values):
+        if values.get("smtp_port") == "":
+            values["smtp_port"] = None
+        return values
 
     @model_validator(mode="after")
     def isolation(self):
@@ -56,9 +104,33 @@ class Settings(BaseSettings):
             if self.demo_password:
                 raise ValueError("DEMO_PASSWORD no se permite en producción")
         if self.config_downlink_enabled:
-            import re
             if self.app_env=="simulation" or not self.config_codec_validated or not self.chirpstack_application_id or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}",self.chirpstack_application_id) or not 1<=self.config_fport<=223:
                 raise ValueError("Downlink requiere ambiente real, CONFIG_CODEC_VALIDATED, APPLICATION_ID válido y FPort 1..223")
+        self.gmail_smtp_from = (self.gmail_smtp_from or '').strip().lower()
+        self.gmail_smtp_app_password = ''.join((self.gmail_smtp_app_password or '').split())
+        if self.invitation_email_enabled:
+            self.mail_connection()
+            self.invitation_base_url = (self.invitation_base_url or '').strip()
+            try:
+                base = urlsplit(self.invitation_base_url)
+            except ValueError:
+                raise ValueError("INVITATION_BASE_URL no es una URL válida") from None
+            host = base.hostname or ''
+            try:
+                loopback = ip_address(host).is_loopback
+            except ValueError:
+                loopback = host.rstrip('.') == 'localhost'
+            local_test = self.app_env != 'production' and loopback and base.scheme == 'http'
+            if (not host or '@' in base.netloc or '?' in self.invitation_base_url or '#' in self.invitation_base_url
+                    or re.search(r'[\s\\]', self.invitation_base_url)
+                    or (base.scheme != 'https' and not local_test)):
+                raise ValueError("INVITATION_BASE_URL requiere HTTPS. HTTP local se admite en desarrollo y simulación.")
+            try:
+                _ = base.port
+            except ValueError:
+                raise ValueError("INVITATION_BASE_URL contiene un puerto inválido") from None
+            if len(self.session_secret) < 32 or self.session_secret.startswith(('development', 'GENERATE')):
+                raise ValueError("El correo de invitación requiere un SESSION_SECRET generado para cifrar los enlaces pendientes")
         if not self.database_url.startswith("postgresql"):
             raise ValueError("La base de aplicación debe ser PostgreSQL/PostGIS")
         return self

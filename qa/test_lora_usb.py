@@ -85,5 +85,37 @@ class DecoderTests(unittest.TestCase):
         finally:
             server.shutdown(); server.server_close(); worker.join()
 
+    def test_candidate_receipt_completes_the_durable_delivery(self):
+        farm_id = 'bb410a6e-0d11-42bf-8b57-70a25b7b13f9'
+        class Handler(BaseHTTPRequestHandler):
+            seen = []
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                self.seen.append((self.headers.get('X-Farm-ID'), body['hardware_id']))
+                self.send_response(201)
+                self.end_headers()
+                self.wfile.write(b'{"id":"candidate-id","status":"candidate","duplicate":false}')
+
+            def log_message(self, *args): pass
+
+        with HTTPServer(('127.0.0.1', 0), Handler) as server, tempfile.TemporaryDirectory() as temp:
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            try:
+                archive = Archive(temp)
+                archive.enqueue(*decode(WIRE, NOW))
+                url = f'http://127.0.0.1:{server.server_port}/api/v1/ingest/telemetry'
+                archive.deliver(url, 'qa-key', farm_id)
+                # Reopening the spool and delivering again must make no further HTTP request.
+                Archive(temp).deliver(url, 'qa-key', farm_id)
+                self.assertEqual(Handler.seen, [(farm_id, 'REAL01')])
+                with archive.connection() as db:
+                    row = db.execute('SELECT status,backend_id FROM captures').fetchone()
+                    self.assertEqual(tuple(row), ('delivered', 'candidate-id'))
+            finally:
+                server.shutdown()
+                worker.join()
+
 
 if __name__ == '__main__': unittest.main()

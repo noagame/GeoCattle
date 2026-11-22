@@ -14,12 +14,16 @@ spec.loader.exec_module(bridge)
 
 class Handler(BaseHTTPRequestHandler):
     status = 201
+    result = {'id': 'test-persisted-id'}
+    farm_id = None
+
     def do_POST(self):
         json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        type(self).farm_id = self.headers.get('X-Farm-ID')
         self.send_response(self.status)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
-        self.wfile.write(json.dumps({'id': 'test-persisted-id'}).encode())
+        self.wfile.write(json.dumps(self.result).encode())
     def log_message(self, *_):
         pass
 
@@ -31,6 +35,7 @@ class BridgeTests(unittest.TestCase):
         self.payload = {'hardware_id': 'academic-qa', 'session_id': 'boot-a', 'seq': 1, 'observed_at': '2026-10-07T12:00:00Z', 'gnss_valid': False}
         self.acks = []
         Handler.status = 201
+        Handler.result = {'id': 'test-persisted-id'}
         self.server = HTTPServer(('127.0.0.1', 0), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -61,6 +66,17 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.acks, [])
         with self.spool.connection() as db:
             self.assertEqual(db.execute('SELECT status FROM queue').fetchone()[0], 'failed')
+    def test_detection_ack_identifies_the_persisted_candidate(self):
+        self.spool.enqueue(dict(self.payload))
+        Handler.result = {'id': 'candidate-id', 'status': 'candidate', 'duplicate': True}
+        farm = 'bb410a6e-0d11-42bf-8b57-70a25b7b13f9'
+        self.assertEqual(self.spool.deliver(self.url, 'qa-only', self.acks.append, farm), 1)
+        self.assertEqual(Handler.farm_id, farm)
+        self.assertEqual(self.acks, [{
+            'persisted': True, 'id': 'candidate-id', 'status': 'candidate', 'session_id': 'boot-a',
+            'hardware_id': 'academic-qa', 'seq': 1, 'duplicate': True,
+        }])
+        self.assertEqual(self.spool.remaining(), 0)
     def test_duplicate_identity_and_changed_payload(self):
         self.spool.enqueue(dict(self.payload))
         self.spool.enqueue(dict(self.payload))

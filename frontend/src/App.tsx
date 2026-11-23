@@ -270,16 +270,16 @@ export default function App() {
         {activePage === 'admin' && <AdminDashboard />}{activePage === 'owners' && <AdminOwners notify={setToast} />}{activePage === 'users' && <AdminUsers notify={setToast} />}
         {activePage === 'overview' && <><div className="v3-role-heading"><div><span className="eyebrow">{roleLabels[role ?? '']}</span><p>{role === 'veterinarian' ? 'Las fichas técnicas y sanitarias se aplican directamente y conservan tu autoría.' : worker ? 'Reporta cambios del predio y consulta la decisión del dueño.' : role === 'viewer' ? 'Consulta el mapa y el monitoreo del predio con tu acceso de lectura.' : 'Gestiona el predio, el equipo y las decisiones de tu rebaño.'}</p></div><div className="v3-inline-actions">{role !== 'viewer' && <button className="button secondary small" onClick={() => navigate('health')}><FileHeart size={16} />{worker ? 'Consultar fichas' : 'Fichas y agenda'}</button>}{worker && <button className="button primary small" onClick={() => navigate('changes')}>Registrar reporte</button>}{owner && <button className="button primary small" onClick={() => navigate('changes')}>Revisar aprobaciones</button>}</div></div><OverviewPage overview={overview} canWrite={owner} notify={setToast} navigate={navigate} /></>}
         {activePage === 'farms' && <FarmsPage admin={admin} notify={setToast} onUpdated={refreshSession} />}
-        {activePage === 'animals' && <AnimalsPage search={search} setSearch={setSearch} canWrite={owner} notify={setToast} />}
+        {activePage === 'animals' && <AnimalsPage search={search} setSearch={setSearch} canWrite={owner} notify={setToast} onChanged={overview.reload} />}
         {activePage === 'health' && <HealthPage worker={worker} actorId={session.user.id} notify={setToast} />}
         {activePage === 'reports' && <AnimalReportsPage key={`${session.user.farm_id}:${reportAnimal}`} initialAnimal={reportAnimal} canSeeIndicators={owner} />}
         {activePage === 'changes' && <ChangesPage key={requestId ?? 'list'} worker={worker} canReview={owner} requestId={requestId} notify={setToast} onChange={activity.reload} />}
         {activePage === 'team' && <TeamPage key={session.user.farm_id ?? ''} admin={admin} notify={setToast} />}
-        {activePage === 'gateways' && <GatewaysPage notify={setToast} />}
+        {activePage === 'gateways' && <GatewaysPage key={session.user.farm_id} notify={setToast} canDetect={owner && !!overview.data && overview.data.farm.environment !== 'simulation'} />}
         {activePage === 'hardware' && <HardwarePage farmId={session.user.farm_id ?? ''} />}
         {activePage === 'devices' && <DevicesPage key={session.user.farm_id} canWrite={owner} notify={setToast}
           usbCollar={usbCollar} clearUsbCollar={() => navigate('devices')}
-          onCandidatesChange={candidates.reload} />}
+          onCandidatesChange={candidates.reload} onInventoryChange={overview.reload} />}
         {activePage === 'geofences' && <GeofencesPage canWrite={owner} notify={setToast} />}
         {activePage === 'events' && <EventsPage canWrite={role !== 'viewer'} canConfigure={owner} simulation={overview.data?.farm.environment === 'simulation'} farmName={farmName} notify={setToast} />}
         {activePage === 'operations' && <OperationsPage canWrite={owner} canAudit={owner} notify={setToast} simulation={overview.data?.farm.environment === 'simulation'} onChange={overview.reload} />}

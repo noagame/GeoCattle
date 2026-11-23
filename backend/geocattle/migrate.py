@@ -25,5 +25,6 @@ def migrate():
             raw.execute("GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO geocattle_app")
             raw.execute("REVOKE UPDATE,DELETE ON telemetry,telemetry_receptions,event_actions,audit_log,notification_attempts,maintenance,change_requests,change_decisions,change_applications,animal_measurements,animal_reports,health_events,health_treatments,health_schedules,request_metrics,movement_status_events FROM geocattle_app")
             raw.execute("REVOKE INSERT,UPDATE,DELETE ON schema_migrations FROM geocattle_app")
+            raw.execute("REVOKE UPDATE,DELETE ON gateway_bus_receipts FROM geocattle_app")
             raw.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
 if __name__ == "__main__": migrate()

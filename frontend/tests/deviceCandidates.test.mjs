@@ -1,36 +1,29 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmdirSync, writeFileSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-let source = readFileSync(new URL('../src/DeviceCandidates.tsx', import.meta.url), 'utf8');
-source = source.replace(/from ['"]\.\/api['"];/, "from './mockApi.mjs';");
-source = source.replace(/from ['"]\.\/ui['"];/, "from './mockUi.mjs';");
-
-const compiled = ts.transpileModule(source, {
-  compilerOptions: {
-    target: ts.ScriptTarget.ES2022,
-    module: ts.ModuleKind.ES2022,
-    jsx: ts.JsxEmit.React,
-  },
-}).outputText;
-
-const compiledPath = new URL('./_deviceCandidates_compiled.mjs', import.meta.url);
-writeFileSync(compiledPath, compiled, 'utf8');
-
-let validateCandidateApproval;
-let DeviceCandidatesPanel;
+const compiledDir = mkdtempSync(fileURLToPath(new URL('./.collar-render-', import.meta.url)));
+let validateCandidateApproval, DeviceCandidatesPanel, UsbCollarDetection, CollarInventoryTable, FarmSelector;
 
 try {
-  const mod = await import(compiledPath.href);
-  validateCandidateApproval = mod.validateCandidateApproval;
-  DeviceCandidatesPanel = mod.DeviceCandidatesPanel;
+  for (const fileName of ['api.ts', 'ui.tsx', 'collarSerial.ts', 'CollarLifecycle.tsx', 'DeviceCandidates.tsx', 'FarmSelector.tsx']) {
+    const source = readFileSync(new URL(`../src/${fileName}`, import.meta.url), 'utf8');
+    const { outputText } = ts.transpileModule(source, {
+      fileName, compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022, jsx: ts.JsxEmit.ReactJSX },
+    });
+    writeFileSync(join(compiledDir, fileName.replace(/\.tsx?$/, '.mjs')), outputText.replace(/from (['"])\.\/([^'"]+)\1/g, 'from $1./$2.mjs$1'));
+  }
+  ({ validateCandidateApproval, DeviceCandidatesPanel, UsbCollarDetection } = await import(pathToFileURL(join(compiledDir, 'DeviceCandidates.mjs')).href));
+  ({ CollarInventoryTable } = await import(pathToFileURL(join(compiledDir, 'CollarLifecycle.mjs')).href));
+  ({ FarmSelector } = await import(pathToFileURL(join(compiledDir, 'FarmSelector.mjs')).href));
 } finally {
-  try {
-    unlinkSync(compiledPath);
-  } catch {}
+  for (const fileName of readdirSync(compiledDir)) unlinkSync(join(compiledDir, fileName));
+  rmdirSync(compiledDir);
 }
 
 // Sample candidates
@@ -174,19 +167,21 @@ test('DeviceCandidatesPanel: renders empty state when no pending candidates', ()
         reload: () => {},
       },
       onApproved: () => {},
-      onDismissed: () => {},
+      onCandidatesChange: () => {},
     })
   );
 
-  assert.ok(html.includes('Collares detectados'));
+  assert.ok(html.includes('empty-compact'));
   assert.ok(html.includes('Sin collares detectados pendientes'));
-  assert.ok(!html.includes('Agregar al sistema'));
+  assert.ok(!html.includes('<table'));
+  assert.ok(!html.includes('collar-candidates-pending'));
 });
 
 test('DeviceCandidatesPanel: renders candidate list with all required fields', () => {
   const html = renderToStaticMarkup(
     React.createElement(DeviceCandidatesPanel, {
       canWrite: true,
+      now: Date.parse('2026-11-22T10:33:00Z'),
       notify: () => {},
       candidates: {
         data: { items: [sampleCandidateRadio, sampleCandidateUsb] },
@@ -195,9 +190,16 @@ test('DeviceCandidatesPanel: renders candidate list with all required fields', (
         reload: () => {},
       },
       onApproved: () => {},
-      onDismissed: () => {},
+      onCandidatesChange: () => {},
     })
   );
+
+  assert.match(html, /class="card-table collar-table" aria-label="Collares detectados"/);
+  assert.match(html, /class="collar-pending-count">2 pendientes/);
+  assert.match(html, /data-label="Detalles">Académico · 60 s · firmware v1\.4\.2/);
+  assert.match(html, /title="Última detección: .*Primera detección: .*">hace 3 min<\/time> · 14 veces/);
+  assert.match(html, /data-label="Acciones" class="card-table-action"/);
+  assert.doesNotMatch(html, /<th[^>]*>(Intervalo|Firmware|Veces visto)<\/th>/);
 
   // Checks presence of hardware IDs and suggested names
   assert.ok(html.includes('COLLAR-RADIO-01'));
@@ -225,7 +227,8 @@ test('DeviceCandidatesPanel: renders candidate list with all required fields', (
 
   // Checks action buttons for canWrite=true
   assert.ok(html.includes('Agregar al sistema'));
-  assert.ok(html.includes('Descartar'));
+  assert.match(html, /aria-label="Descartar: Collar sugerido 01" title="Descartar"/);
+  assert.doesNotMatch(html, /Conecta el collar por USB/);
 });
 
 test('DeviceCandidatesPanel: hides action buttons when canWrite is false', () => {
@@ -240,13 +243,81 @@ test('DeviceCandidatesPanel: hides action buttons when canWrite is false', () =>
         reload: () => {},
       },
       onApproved: () => {},
-      onDismissed: () => {},
+      onCandidatesChange: () => {},
     })
   );
 
   assert.ok(html.includes('COLLAR-RADIO-01'));
   assert.ok(!html.includes('Agregar al sistema'));
+  assert.ok(!html.includes('Detectar collar por USB'));
   assert.ok(!html.includes('Descartar'));
+});
+
+test('UsbCollarDetection: exposes a primary USB action before showing its instructions', () => {
+  const html = renderToStaticMarkup(React.createElement(UsbCollarDetection));
+  assert.match(html, /<button class="button primary"[^>]*>.*Detectar collar por USB<\/button>/);
+  assert.doesNotMatch(html, /Conecta el collar por USB/);
+});
+
+const inventoryNow = Date.parse('2026-11-22T10:33:00Z');
+const inventoryDevice = {
+  id: 'test-1', name: 'Collar norte', hardware_id: 'COLLAR-01', transport: 'academic', enabled: true,
+  interval_seconds: 45, config_version: 1, pending_config: null, animal_id: 'animal-1', assignment_id: 'assignment-1',
+  can_delete: false, last_received_at: new Date(inventoryNow - 165_000).toISOString(),
+};
+
+function renderInventory(overrides = {}, canWrite = true) {
+  return renderToStaticMarkup(React.createElement(CollarInventoryTable, {
+    devices: [{ ...inventoryDevice, ...overrides }], animals: [], canWrite, now: inventoryNow,
+  }));
+}
+
+test('renders the collar and farm names as text in labels and controls', () => {
+  const name = 'Norte <b>QA</b> "alias"';
+  const farm = renderToStaticMarkup(React.createElement(FarmSelector, {
+    currentFarmId: 'farm-1', farms: [{ id: 'farm-1', name }], isAdmin: false, isBusy: false,
+    onSelectFarm: () => {},
+  }));
+  for (const html of [renderInventory({ name }), farm]) {
+    assert.match(html, /Norte &lt;b&gt;QA&lt;\/b&gt; &quot;alias&quot;/);
+    assert.doesNotMatch(html, /<b>QA<\/b>/);
+  }
+});
+
+test('CollarInventoryTable: renders active and stale statuses at the inclusive applied interval threshold', () => {
+  const active = renderInventory();
+  assert.match(active, /data-label="Estado".*badge-normal.*>Activo<\/span>/);
+  assert.match(active, /collar-reception-recent" dateTime="2026-11-22T10:30:15\.000Z" title="[^"]+2026[^"]+">hace 2 min<\/time>/);
+  assert.match(active, /aria-label="Cambiar bovino: Collar norte"/);
+  assert.match(active, /aria-label="Desvincular del bovino: Collar norte"/);
+  assert.doesNotMatch(active, /aria-label="(Retirar|Reactivar|Eliminar)/);
+
+  const stale = renderInventory({ last_received_at: new Date(inventoryNow - 165_001).toISOString(),
+    pending_config: { interval_seconds: 300, status: 'requested', version: 2 } });
+  assert.match(stale, /data-label="Estado".*badge-warning.*>Sin comunicación<\/span>/);
+  assert.match(stale, /collar-reception-stale/);
+  assert.match(stale, /aria-label="Configurar intervalo: Collar norte"[^>]*disabled=""/);
+  assert.match(stale, /Solicitada<\/span> 300 s · v2/);
+});
+
+test('CollarInventoryTable: handles unassigned, retired and read-only devices', () => {
+  const unassigned = renderInventory({ animal_id: null, assignment_id: null, last_received_at: null, can_delete: true });
+  assert.match(unassigned, /data-label="Estado".*>Sin asignar<\/span>/);
+  assert.match(unassigned, /collar-reception-unknown">Sin datos/);
+  assert.match(unassigned, /data-label="Acciones" class="card-table-action"/);
+  assert.match(unassigned, /aria-label="Asignar a un bovino: Collar norte"/);
+  assert.match(unassigned, /aria-label="Retirar collar: Collar norte"/);
+  assert.match(unassigned, /class="icon-button collar-danger-action" aria-label="Eliminar del inventario: Collar norte"/);
+  assert.doesNotMatch(unassigned, /aria-label="(Reactivar|Desvincular)/);
+
+  const retired = renderInventory({ enabled: false, animal_id: null, assignment_id: null });
+  assert.match(retired, /data-label="Estado".*>Retirado<\/span>/);
+  assert.match(retired, /aria-label="Reactivar collar: Collar norte"/);
+  assert.doesNotMatch(retired, /aria-label="(Asignar|Configurar|Retirar|Desvincular)/);
+
+  const unknown = renderInventory({ last_received_at: 'no válido' }, false);
+  assert.match(unknown, /collar-reception-unknown/);
+  assert.doesNotMatch(unknown, /Sin comunicación|data-label="Acciones"|<button/);
 });
 
 test('Candidate actions error handling: 409 conflict and 403 forbidden', () => {

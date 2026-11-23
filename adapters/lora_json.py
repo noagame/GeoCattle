@@ -100,9 +100,9 @@ def decode_json(text, received_at, radio=None, receiver='PC-COM5'):
     fields = ['4', message['id'], message['s'], str(message['q']), 'device', str(message['u']),
               str(int(fix)), str(age), n(lat), n(lon), n(temp), *map(n, axes), n(score),
               str(message['f']), str(message['p']), *map(str, battery[:4])]
-    from .lora_usb import decode
-    payload, _ = decode(','.join(fields), received_at, radio, receiver)
-    payload['quality'].update(wire_protocol_version=5, gps_satellites=None if sats == -1 else sats,
+    from .lora_usb import _decode_fields
+    payload, _ = _decode_fields(fields, received_at, radio, receiver, wire_protocol_version=5)
+    payload['quality'].update(gps_satellites=None if sats == -1 else sats,
                               gps_hdop=hdop, movement_state={-1: 'unknown', 0: 'rest', 1: 'moving'}[state],
                               activity_method='highpass_rms_1s_g', usb_present=None if battery[4] == -1 else bool(battery[4]),
                               tx_reason=('boot', 'periodic', 'movement_start')[reason])

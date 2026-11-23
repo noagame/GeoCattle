@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy import select, text
 
-from .models import Device, Farm, utcnow
+from .models import Audit, Device, Farm, utcnow
 from .schemas import HARDWARE_ID_PATTERN, DeviceCandidateIn
 from .settings import settings
 
@@ -93,11 +93,24 @@ def upsert_candidate(db, farm_id, detection, payload, received_at):
     return result.mappings().one()
 
 
-def register_detection(db, farm_id, detection):
+def audit_first_detection(db, farm_id, candidate, actor=None):
+    """Audit only the first sighting; repeated packets update the candidate without new entries."""
+    if candidate['seen_count'] != 1:
+        return
+    # domain.py imports this module, so the audit row is added directly.
+    db.add(Audit(farm_id=farm_id, actor_id=actor, object_type='device_candidate', object_id=str(candidate['id']),
+                 action='detect', actor_kind='user' if actor else 'service', after={
+        key: candidate[key] for key in ('hardware_id', 'transport', 'source', 'firmware_version', 'interval_seconds')
+    }))
+
+
+def register_detection(db, farm_id, detection, actor=None):
     lock_device_identity(db, detection.hardware_id)
     if db.scalar(select(Device.id).where(Device.hardware_id == detection.hardware_id)) is not None:
         raise HTTPException(409, 'El identificador ya está registrado')
-    return upsert_candidate(db, farm_id, detection, detection.model_dump(exclude_none=True), utcnow())
+    candidate = upsert_candidate(db, farm_id, detection, detection.model_dump(exclude_none=True), utcnow())
+    audit_first_detection(db, farm_id, candidate, actor)
+    return candidate
 
 
 def capture_identity(farm_id, payload):
@@ -139,6 +152,7 @@ def detect_radio_candidate(db, farm_id, payload, received_at):
         candidate = upsert_candidate(db, farm_id, detection, frame, received_at)
     except ValueError as error:
         raise HTTPException(422, 'Carga de detección inválida') from error
+    audit_first_detection(db, farm_id, candidate)
     db.execute(text("""
         INSERT INTO device_candidate_captures (farm_id, hardware_id, session_id, seq, candidate_id)
         VALUES (:farm_id, :hardware_id, :session_id, :seq, :candidate_id)

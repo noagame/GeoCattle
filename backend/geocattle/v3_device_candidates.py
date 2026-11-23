@@ -10,9 +10,11 @@ from .device_candidates import (
     candidate_json, capture_farm, lock_device_identity, register_detection, suggested_device_name,
 )
 from .device_inventory import create_inventory_device, device_json
+from .domain import append_audit
 from .models import Device, Farm
 from .schemas import DeviceCandidateApproval, DeviceCandidateIn, DeviceIn
 from .security import current_user, owner, service_auth
+from .settings import settings
 from .v3_api import farm_scope
 from .v3_security import one, rows
 
@@ -31,17 +33,31 @@ def list_candidates(status: Literal['pending', 'approved', 'dismissed'] = 'pendi
     return {'items': [candidate_json(row, name) for row in detections]}
 
 
+@router.get('/capture-farms')
+def capture_farms(request: Request, db=Depends(get_db, scope='function')):
+    """Physical farms the capture credential may target, so the USB assistant can offer a choice."""
+    service_auth(request)
+    environment = settings().app_env
+    if environment == 'simulation':
+        raise HTTPException(403, 'Simulación no admite detecciones de hardware físico')
+    farms = db.execute(select(Farm.id, Farm.name).where(Farm.environment == environment, Farm.active)
+                       .order_by(Farm.name, Farm.id)).all()
+    return {'items': [{'id': str(farm.id), 'name': farm.name.strip()} for farm in farms]}
+
+
 @router.post('', status_code=201)
 def register_candidate(body: DeviceCandidateIn, request: Request,
                        farm_id: UUID | None = Header(default=None, alias='X-Farm-ID'),
                        db=Depends(get_db, scope='function')):
+    actor = None
     if 'X-Ingest-Key' in request.headers:
         service_auth(request)
     else:
         # Browser writes use the active farm, CSRF and the inventory's session policy.
-        farm_id = farm_scope(owner(current_user(request, db)))
+        user = owner(current_user(request, db))
+        farm_id, actor = farm_scope(user), user.id
     farm_id = capture_farm(db, farm_id)
-    candidate = register_detection(db, farm_id, body)
+    candidate = register_detection(db, farm_id, body, actor)
     return candidate_json(candidate, suggested_device_name(db, farm_id))
 
 
@@ -56,11 +72,15 @@ def lock_candidate(db, ident, farm_id):
 
 
 def resolve_candidate(db, candidate, user, status, device_id=None):
-    return one(db, """
+    resolved = one(db, """
         UPDATE device_candidates
         SET status = :status, resolved_at = now(), resolved_by = :actor, device_id = :device
         WHERE id = :ident AND farm_id = :farm RETURNING *
     """, status=status, actor=user.id, device=device_id, ident=candidate['id'], farm=user.farm_id)
+    append_audit(db, user.farm_id, user.id, 'device_candidate', candidate['id'], {'approved': 'approve', 'dismissed': 'dismiss'}[status],
+                 before={'status': candidate['status'], 'hardware_id': candidate['hardware_id']},
+                 after={'status': status, 'device_id': str(device_id) if device_id else None})
+    return resolved
 
 
 @router.post('/{ident}/approve')
@@ -86,6 +106,7 @@ def approve_candidate(ident: UUID, body: DeviceCandidateApproval,
     device = create_inventory_device(
         db, user, device_input, installed_at=body.installed_at, enabled=body.enabled,
         firmware_version=candidate['firmware_version'],
+        origin={'source': candidate['source'], 'candidate_id': str(candidate['id'])},
     )
     candidate = resolve_candidate(db, candidate, user, 'approved', device.id)
     return {

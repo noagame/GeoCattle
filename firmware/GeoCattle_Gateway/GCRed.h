@@ -9,9 +9,8 @@
 #include <ctype.h>
 #include <math.h>
 #include "GCTransport.h"
+#include "GCGatewayUsb.h"
 
-static_assert((GC_ROOT_T3 && GC_NODE_ID == 0) ||
-              (!GC_ROOT_T3 && (GC_NODE_ID == 1 || GC_NODE_ID == 2)), "ID/rol incorrecto");
 #if GC_ROOT_T3
 SX1276 radio = new Module(18, 26, 23, RADIOLIB_NC, SPI,
                          SPISettings(2000000, MSBFIRST, SPI_MODE0));
@@ -19,7 +18,7 @@ SX1276 radio = new Module(18, 26, 23, RADIOLIB_NC, SPI,
 SX1262 radio = new Module(41, 39, 42, 40, SPI,
                          SPISettings(2000000, MSBFIRST, SPI_MODE0));
 #endif
-constexpr uint8_t NODE = GC_NODE_ID;
+uint8_t NODE = 0;
 constexpr uint32_t ROOT_LEASE = 20000, NEIGHBOR_LEASE = 12000;
 constexpr uint32_t MAX_DELAY = 1800000;  // 30 minutos; caducidad declarada.
 constexpr size_t QUEUE_SIZE = 64, CACHE_SIZE = 128, MAX_RECORDS = 4;
@@ -378,10 +377,16 @@ void flushUsb(uint32_t now) {
 }
 void critical(int16_t result,const char* text) {
   if(result==RADIOLIB_ERR_NONE) return;
-  while(true) { Serial.printf("# ERROR %s: %d\n",text,result); delay(3000); }
+  uint32_t lastError=millis()-3000;
+  while(true) {
+    gatewayUsb.poll();
+    if(millis()-lastError>=3000) { lastError=millis(); Serial.printf("# ERROR %s: %d\n",text,result); }
+    delay(1);
+  }
 }
 void setup() {
   Serial.begin(115200); delay(600);
+  NODE=gatewayUsb.begin();
   bootId=esp_random(); if(!bootId) bootId=1;
 #if GC_ROOT_T3
   SPI.begin(5,19,27,18);
@@ -405,8 +410,22 @@ void setup() {
   Serial.printf("# GEOCATTLE RED nodo=%u boot=%08lX cola=%u RAM; 915.5 MHz\n",NODE,(unsigned long)bootId,unsigned(QUEUE_SIZE));
 }
 void loop() {
+  gatewayUsb.poll();
   uint32_t now=millis();
   if(!listening && now-lastRxAttempt>=1000) receiveAgain();
+  if(NODE==0) {
+    if(listening && rxReady) {
+      irqEnabled=false; rxReady=false; listening=false;
+      radio.standby();
+      receiveAgain();
+    }
+    if(now-lastState>=10000) {
+      lastState=now;
+      Serial.println("# Gateway sin número de nodo: regístralo en GeoCattle por USB");
+    }
+    delay(1);
+    return;
+  }
   if(listening && rxReady) handleFrame();
   now=millis(); selectRoute(now);
 #if GC_ROOT_T3

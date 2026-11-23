@@ -13,6 +13,8 @@ Vite sirve la interfaz React y los recursos en `public/`. `vite.config.ts` dirig
 
 Desde `frontend/`, ejecuta `npm ci`, `npm test` y `npm run build`.
 
+`tests/deviceCandidates.test.mjs` comprueba que el inventario de collares y el selector de predio escapan sus nombres al renderizar.
+
 ## Child DOX Index
 
 - [src/AGENTS.md](src/AGENTS.md) — interfaz, API web, mapas, geocercas y telemetría.

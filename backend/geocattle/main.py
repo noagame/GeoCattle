@@ -14,7 +14,8 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError, TimeoutError as DatabaseTimeout
 from sqlalchemy.orm import aliased
 from .db import get_db
-from .device_inventory import create_inventory_device, device_json
+from .device_candidates import lock_device_identity
+from .device_inventory import create_inventory_device, delete_inventory_device, device_json, devices_json
 from .hardware_api import period as farm_day_period
 from .models import *
 from .report_exports import CsvDelimiter, EXPORT_LIMIT, ExportFormat, export_response
@@ -307,11 +308,42 @@ def history(animal_id:UUID,start:datetime|None=None,end:datetime|None=None,limit
     return {"items":[telemetry_json(t) for t in db.scalars(query.order_by(Telemetry.observed_at,Telemetry.id).limit(limit).offset(offset)).all()],"total":total}
 @api.get("/devices")
 def devices(user=Depends(current_user),db=Depends(get_db, scope="function")):
-    items=db.scalars(select(Device).where(Device.farm_id==user.farm_id).order_by(Device.name)).all()
-    return {"items":[device_json(db,d) for d in items],"total":len(items)}
+    items = devices_json(db, user.farm_id)
+    return {"items": items, "total": len(items)}
 @api.post("/devices",status_code=201)
 def create_device(body:DeviceIn,user=Depends(owner),db=Depends(get_db, scope="function")):
     return device_json(db, create_inventory_device(db, user, body))
+
+def end_collar_assignment(db, assignment, user, at):
+    if assignment.valid_from >= at:
+        raise HTTPException(409,"El fin de la asociación debe ser posterior a su inicio")
+    if db.scalar(select(Telemetry.id).where(Telemetry.assignment_id==assignment.id,Telemetry.observed_at>=at).limit(1)):
+        raise HTTPException(409,"La vigencia recortaría lecturas históricas de la asociación anterior. Selecciona una fecha posterior a esas lecturas")
+    assignment.valid_to=at
+    resolve_assignment_events(db,assignment,user.id,at)
+    append_audit(db,user.farm_id,user.id,"assignment",assignment.id,"close",after={"valid_to":at.isoformat()})
+
+@api.post("/assignments/{assignment_id}/close")
+def close_assignment(assignment_id:UUID,body:AssignmentClose|None=None,user=Depends(owner),db=Depends(get_db,scope="function")):
+    target=db.execute(select(Assignment.animal_id,Assignment.device_id).where(
+        Assignment.id==assignment_id,Assignment.farm_id==user.farm_id)).one_or_none()
+    if target is None:
+        raise HTTPException(403,"Recurso no autorizado para este predio")
+    accessible(db,Animal,target.animal_id,user,True,no_key_update=True)
+    accessible(db,Device,target.device_id,user,True)
+    assignment=accessible(db,Assignment,assignment_id,user,True)
+    now=utcnow()
+    at=(body.effective_at if body else None) or now
+    if at>now:
+        raise HTTPException(422,"Vigencia futura no admitida")
+    if assignment.valid_from>now or (assignment.valid_to is not None and assignment.valid_to<=now):
+        raise HTTPException(409,"La asociación ya no está vigente. Actualiza la ficha del collar")
+    end_collar_assignment(db,assignment,user,at)
+    clear_animal_monitoring(db,assignment.animal_id)
+    db.flush()
+    return {"id":assignment.id,"animal_id":assignment.animal_id,"device_id":assignment.device_id,
+            "valid_from":assignment.valid_from,"valid_to":assignment.valid_to}
+
 @api.post("/assignments",status_code=201)
 def assign(body:AssignmentIn,user=Depends(owner),db=Depends(get_db, scope="function")):
     animal=accessible(db,Animal,body.animal_id,user,True)
@@ -320,16 +352,10 @@ def assign(body:AssignmentIn,user=Depends(owner),db=Depends(get_db, scope="funct
     at=valid_effective(body.effective_at)
     existing=db.scalars(select(Assignment).where(or_(Assignment.animal_id==animal.id,Assignment.device_id==device.id),or_(Assignment.valid_to.is_(None),Assignment.valid_to>at)).with_for_update()).all()
     if existing and not body.replace:raise HTTPException(409,"Asociación existente; cierre explícito requerido")
-    for old in existing:
-        if old.valid_from>=at:raise HTTPException(409,"Inicio debe ser posterior a asignaciones previas")
-        if db.scalar(select(Telemetry.id).where(Telemetry.assignment_id==old.id,Telemetry.observed_at>=at).limit(1)):
-            raise HTTPException(409,"La vigencia recortaría lecturas históricas de la asociación anterior. Selecciona una fecha posterior a esas lecturas")
     affected_animals={animal.id}
     for old in existing:
-        old.valid_to=at
-        resolve_assignment_events(db,old,user.id,at)
+        end_collar_assignment(db,old,user,at)
         affected_animals.add(old.animal_id)
-        append_audit(db,user.farm_id,user.id,"assignment",old.id,"close",after={"valid_to":at.isoformat()})
     db.flush()
     from .v3_api import active_holding
     holding=active_holding(db,animal.id,user.farm_id)
@@ -591,12 +617,24 @@ def create_maintenance(body:MaintenanceIn,user=Depends(owner),db=Depends(get_db,
 @api.patch("/devices/{device_id}")
 def update_device(device_id:UUID,body:DevicePatch,user=Depends(owner),db=Depends(get_db, scope="function")):
     d=accessible(db,Device,device_id,user,True)
+    now=utcnow()
+    if not body.enabled and db.scalar(select(Assignment.id).where(Assignment.device_id==d.id,
+            or_(Assignment.valid_to.is_(None),Assignment.valid_to>now)).limit(1)):
+        raise HTTPException(409,"Desvincula el collar del bovino antes de retirarlo")
     before={"enabled":d.enabled};d.enabled=body.enabled
     if not d.enabled:
         for e in db.scalars(select(Event).where(Event.device_id==d.id,Event.type=="communication_timeout",Event.condition=="active").with_for_update()).all():
             e.condition="resolved";e.resolved_at=utcnow();e.detail={**e.detail,"resolution":"Retiro explícito: comunicación deja de ser esperada"}
     db.flush();append_audit(db,user.farm_id,user.id,"device",d.id,"set_enabled",before,{"enabled":d.enabled})
     return device_json(db,d)
+@api.delete("/devices/{device_id}",status_code=204)
+def delete_device(device_id:UUID,user=Depends(owner),db=Depends(get_db,scope="function")):
+    hardware_id=db.scalar(select(Device.hardware_id).where(Device.id==device_id,Device.farm_id==user.farm_id))
+    if hardware_id is None:
+        raise HTTPException(403,"Recurso no autorizado para este predio")
+    lock_device_identity(db,hardware_id)
+    device=accessible(db,Device,device_id,user,True)
+    delete_inventory_device(db,user,device)
 @api.patch("/sectors/{ident}")
 def patch_sector(ident:UUID,body:SectorPatch,user=Depends(owner),db=Depends(get_db,scope="function")):
     sector=accessible(db,Sector,ident,user,True)
@@ -616,6 +654,7 @@ app.include_router(api)
 from .v3_auth import router as auth_v3_router
 from .v3_api import router as v3_router
 from .v3_device_candidates import router as device_candidates_router
+from .v3_gateway_candidates import router as gateway_candidates_router
 from .v3_operation_auth import router as operation_auth_router
 from .v3_account import router as account_auth_router
 app.include_router(auth_v3_router)
@@ -623,6 +662,7 @@ app.include_router(operation_auth_router)
 app.include_router(account_auth_router)
 app.include_router(v3_router)
 app.include_router(device_candidates_router)
+app.include_router(gateway_candidates_router)
 
 from .hardware_api import router as hardware_router
 app.include_router(hardware_router)

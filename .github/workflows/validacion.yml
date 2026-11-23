@@ -74,6 +74,7 @@ jobs:
           qa.test_capture_portability
           qa.test_lora_json
           qa.test_register_collar_usb
+          qa.test_register_gateway_usb
           qa.test_lora_usb
           qa.test_esp32_contract
           qa.test_academic_bridge

@@ -33,15 +33,24 @@ Base `/api/v1`. Fechas ISO 8601 con zona horaria y UUID textuales. GeoJSON WGS84
 - `PATCH /animals/{id}` `{name?,orientation?,sector_id?,enabled?}` → Animal.
 - `POST /devices` `{hardware_id,dev_eui?,name,transport:"academic"|"lorawan",interval_seconds:300}` → Device.
 - `POST /assignments` `{animal_id,device_id,effective_at?,replace:false}` → asignación. `replace:true` cierra explícitamente la anterior.
+- `POST /assignments/{id}/close` `{effective_at?}` (cuerpo opcional) → asignación cerrada. No crea otra asignación.
 - `POST /sectors` `{name}` → Sector.
 - `POST /geofences` `{sector_id,name,geometry:GeoJSONPolygon,expected_version:0,confirm_impact:true}` → Geofence (inicial expected_version 0; cambios conservan versiones).
 - `POST /pasture-assignments` `{animal_id,geofence_id,effective_at?}` → asignación.
 - `POST /events/{id}/actions` `{action:"acknowledge"|"review"|"conclude"|"reopen",note}` → Event. Atención y condición independientes.
 - `POST /devices/{id}/config` `{interval_seconds,expected_version}` → configuración solicitada pendiente. Confirmar aplicación mediante telemetría `config_version`.
-- `PATCH /devices/{id}` `{enabled:boolean}` → habilitación/retiro explícito auditable.
+- `PATCH /devices/{id}` `{enabled:boolean}` → Device; retiro (`false`) o reactivación (`true`) auditable.
+- `DELETE /devices/{id}` → 204 si el collar no tiene historial operativo.
 - `POST /maintenance` `{device_id,battery_id?,kind:"inspection"|"recharge"|"replacement"|"retirement",at?,result}` → registro; responsable de la sesión.
 - `PUT /settings` `{expected_version,battery_low_mv,temperature_high_c?,activity_low_threshold?,activity_window_minutes,proximity_meters,temperature_enabled,activity_enabled,proximity_enabled}` → reglas; sensores preventivos deshabilitados por defecto fuera de simulación.
 - `POST /simulation/scenarios` `{scenario:"normal"|"escape"|"return"|"low_battery"|"no_fix"|"timeout",animal_id?}` → resultado. Sólo entorno simulation, identifica origen `sim`.
+
+### Ciclo de vida de collares
+
+- Solo escribe el dueño o el administrador con ese predio activo. Rigen la sesión, el CSRF y la política MFA de inventario. Un rol no autorizado o un recurso fuera del predio devuelve 403.
+- Desvincular fija `valid_to` (fin exclusivo) a `effective_at` o a la hora del servidor si se omite. Una marca sin zona horaria o futura devuelve 422; una asociación ya cerrada, un fin igual o anterior al inicio, o una lectura atribuida observada en o después del fin devuelven 409. Se conserva el historial, se resuelven los eventos activos del par sin cambiar su evidencia ni atención, se limpia el monitoreo del bovino y se audita `assignment/close`. Las nuevas lecturas se atribuyen según `observed_at`: desde el fin quedan sin bovino hasta otra asignación; las lecturas tardías dentro de la vigencia aún corresponden al bovino original.
+- Retirar conserva el dispositivo y su historial, deshabilita la ingesta y resuelve las alertas activas de comunicación. No cierra asociaciones automáticamente: si existe una vigente o que aún no termina, devuelve 409; primero hay que desvincular. Reactivar permite recibir y reasignar sin reabrir vigencias anteriores. Se modifica solo `devices.enabled`, ya usado por la ingesta y el monitoreo. El campo `devices.status` de la migración V3 no gobierna este flujo; el `status` del API V3 de gateways describe otro equipo.
+- Eliminar corrige un alta sin uso. Devuelve 409 si existen asignaciones (incluidas las históricas), telemetría, mantenimiento, eventos, configuraciones o solicitudes vinculadas. En esos casos solo procede retirar para conservar la trazabilidad. Cuando hubo aprobación de una detección, esta pasa a `dismissed` sin referencia al dispositivo y conserva sus recibos de deduplicación; un paquete nuevo puede crear otra detección. Ambas acciones son auditables.
 
 ## Objetos
 
@@ -49,7 +58,9 @@ Animal: `{id,diio,name,orientation,enabled,sector_id,sector_name,device_id,devic
 
 Telemetry: `{id,device_id,animal_id,session_id,seq,observed_at,received_at,longitude:number|null,latitude:number|null,gnss_valid:boolean,surface_temperature_c:number|null,activity_index:number|null,battery_mv:number|null,source:"sim"|"academic"|"lorawan",quality:{},config_version?}`. Contrato de ingesta incluye `hardware_id` en lugar de device_id/animal_id; animal se resuelve mediante asociación histórica. `observed_at` con zona horaria obligatoria. Unique hardware/session/seq. Sin fix, lat/lon nulos; paquete tardío no rejuvenece estado ni recepción efectiva de comunicación.
 
-Device: `{id,hardware_id,dev_eui,name,transport,enabled,interval_seconds,config_version,pending_config:{version,interval_seconds,status}|null,animal_id?,last_received_at?}`.
+La ingesta exige que `quality` sea un objeto JSON con valores finitos y hasta 16.384 caracteres al serializarlo.
+
+Device: `{id,hardware_id,dev_eui,name,transport,enabled,interval_seconds,config_version,pending_config:{version,interval_seconds,status}|null,animal_id,assignment_id,last_received_at,can_delete}`. `animal_id` y `assignment_id` son `null` si no hay asociación vigente; `can_delete` indica ausencia de historial operativo, no autorización de escritura.
 
 Sector: `{id,name}`. Geofence: `{id,sector_id,name,version,active,geometry,created_at}`. Event: `{id,animal_id,animal_name,diio,device_id,type,severity,condition:"active"|"resolved",attention:"pending"|"acknowledged"|"in_review"|"concluded",opened_at,resolved_at,detail,actions:[]}`.
 
@@ -73,11 +84,25 @@ Cambiar de sector manualmente contradiciendo una asignación de pastoreo vigente
 - `POST /v3/device-candidates/{id}/approve` → 200 y `{"device":Device,"candidate":Candidate}`. Envía `{name?,interval_seconds?,installed_at?,dev_eui?,enabled?}`. Puede enviarse `{}` para usar el nombre sugerido y los valores del candidato. La fecha omitida es la del alta y la habilitación predeterminada es `true`. LoRaWAN exige DevEUI. La creación queda auditada y la asignación al bovino se hace por separado. Un identificador ya registrado devuelve 409.
 - `POST /v3/device-candidates/{id}/dismiss` → 200 y `Candidate` con `status:"dismissed"`. El descarte conserva el historial. Una detección nueva puede crear otro pendiente. Aprobar y descartar requiere sesión de dueño o administrador con predio activo y CSRF, con la misma política de MFA del alta manual.
 
+La auditoría registra `device_candidate/detect` solo en la primera detección (el actor es el usuario en USB web y el servicio en captura), además de `approve` y `dismiss` con el estado anterior y posterior. `device/create` guarda en `after.origin` el origen del alta: `{"source":"manual"}` o `{"source":"usb"|"radio","candidate_id":…}`. Los gateways auditan `gateway_candidate/detect` en la primera detección USB o radio, y también `reserve`, `approve` y `dismiss`.
+
 `Candidate` tiene `{id,hardware_id,transport,dev_eui,interval_seconds,firmware_version,source,first_seen_at,last_seen_at,seen_count,last_payload,status,suggested_name}`. `suggested_name` es el primer nombre libre de la serie `Collar 01`, `Collar 02`, etc. `last_payload` conserva el último mensaje de identificación o la trama normalizada, con coordenadas nulas si el GPS carece de fix.
 
-La captura autenticada puede seleccionar un predio activo del mismo entorno con `X-Farm-ID`. Si se omite el encabezado, las detecciones requieren que exista un solo predio físico activo. De otro modo la API devuelve 409 y el capturador debe indicar el UUID. Los despliegues en simulación rechazan detecciones físicas.
+La captura autenticada puede seleccionar un predio activo del mismo entorno con `X-Farm-ID`. Si se omite el encabezado, las detecciones requieren que exista un solo predio físico activo. De otro modo la API devuelve 409 y el capturador debe indicar el UUID. `GET /api/v1/v3/device-candidates/capture-farms` con `X-Ingest-Key` devuelve `items` con `id` y `name` de los predios físicos activos del entorno para que el asistente USB ofrezca la elección. Los despliegues en simulación rechazan detecciones físicas y esa consulta.
 
 `POST /ingest/telemetry` y su alias `POST /telemetry` confirman collares académicos desconocidos con HTTP 201 y `{id,status:"candidate",duplicate,animal_id:null}`. En esta respuesta, `id` identifica el candidato. Una reentrega del mismo `hardware_id`, `session_id` y `seq` conserva su recibo aun después de la aprobación o el descarte. Las tramas detectadas permanecen fuera de `telemetry`. Después del alta, las nuevas tramas ingresan como telemetría.
+
+## Detección y alta de gateways
+
+Rutas bajo `/api/v1/v3/gateway-candidates`, con autorización por predio y rol igual que el inventario de gateways.
+
+- `GET ?status=pending|approved|dismissed` lista las detecciones del predio activo.
+- `POST` registra una detección USB (`gateway_eui`, `node_id` opcional, `firmware`) con la clave de captura o la sesión de dueño o administrador con CSRF.
+- `POST /{id}/reserve` reserva un nodo libre (1 o 2) para una detección USB pendiente; 409 si no quedan nodos.
+- `POST /{id}/approve` crea el gateway con `name`, coordenadas opcionales y, para USB, `confirmed_eui` y `confirmed_node_id` devueltos por la placa tras `GEOCATTLE_SET_NODE_V1`. 409 si el EUI ya está registrado o el nodo está ocupado.
+- `POST /{id}/dismiss` descarta la detección.
+
+Un lote bus_v1 cuyo `origin_gateway` no corresponde a un gateway vigente crea una detección de origen radio sin bloquear la telemetría. Los gateways vinculados guardan `node_id` y las recepciones de primer salto se atribuyen al gateway de ese nodo.
 
 ## Captura radio JSON V5
 
@@ -176,6 +201,7 @@ Los reportes `totales`, `serie-alertas`, `ranking-movimiento` y `ranking-salidas
 - `GET /v3/changes` acepta `status`, `limit` y `offset`. `GET /v3/changes/{id}` aplica el mismo ámbito de predio y autoría. En el predio, dueño y administrador pueden revisar las propuestas y los demás perfiles consultan las propias.
 - `GET /v3/notifications` acepta `unread`, `limit` y `offset`. Los avisos de propuestas incluyen `request_id`. `GET /v3/activity-counts` devuelve `unread_notices`, `pending_changes`, `unread_support` y `pending_support` dentro del ámbito de la sesión.
 - La auditoría de predio excluye los casos privados de cuenta. Los nuevos eventos de cambio de contexto guardan `before` y `after` con el ámbito y, para un predio, su identidad y nombre.
+- `GET /v3/audit/export?format=xlsx|csv` acepta los mismos filtros que `GET /v3/audit` (`q`, `actor_id`, `action`, `entity`, `farm_id`, `start`, `end`) y el `delimiter` de las exportaciones. Aplica el mismo ámbito: el dueño exporta su predio y el administrador la plataforma o un predio. Las columnas son fecha, actor, usuario, entidad, identificador, acción, predio y los estados anterior y posterior en JSON. Más de 50.000 filas devuelven 422. Cada descarga queda auditada como `audit_log/export_audit`.
 
 ## Configuración desde el panel de alertas
 

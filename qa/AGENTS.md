@@ -8,8 +8,12 @@ Pruebas de arranque, portabilidad, contratos seriales, adaptadores, ingesta y ha
 
 - Las pruebas de contrato usan entradas ficticias y servicios de prueba. Para una prueba con PostgreSQL usa una base QA aislada. `test_hardware_api.py` exige `GEOCATTLE_TEST_DATABASE=1`, `TEST_DATABASE_URL`, esquema migrado y fixtures.
 - `test_register_collar_usb.py` comprueba la identificación y el POST de detección. `test_lora_usb.py` y `test_academic_bridge.py` verifican el recibo de candidato en las colas de captura.
+- `test_register_gateway_usb.py` cubre la identificación, la reserva y la configuración del nodo por USB del asistente de gateways.
+- `test_lora_json.py` comprueba la trama JSON V5 de la T3 con sensores ausentes y estados de batería desconocidos. `test_lora_usb.py` conserva la comprobación de presencia para el voltaje de CSV V4.
 - `test_mqtt_ingestion.py` requiere un broker local con autenticación y una API de simulación de QA. La lectura encolada precede a la lectura reciente y pertenece a la asignación vigente del bovino ficticio.
 - Antes de ejecutar pruebas de humo o preparar usuarios, verifica a qué instancia apuntan. Conserva el origen y el alcance de las evidencias archivadas.
+- `benchmark_capture.py` genera JSON V5 y bus_v1 con collares ficticios y mide consultas e ingesta por HTTP. `smoke_capture_recovery.py` levanta y detiene su propia API para comprobar la recuperación de la cola SQLite. Ambos requieren `psutil`, un PostgreSQL dedicado `geocattle_qa_*` y loopback.
+- `smoke_capture_http.py` comprueba los cuatro roles sobre HTTPS, detección, ciclo de vida, exportaciones, sesión y MFA. Con `--smtp` también verifica el envío del worker mediante un servidor SMTP de prueba en loopback. [Verificación](../docs/VERIFICACION.md#recorrido-http-carga-y-recuperación-en-qa)
 
 ## Verificación
 

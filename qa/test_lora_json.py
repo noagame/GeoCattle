@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from adapters.lora_json import decode_json
 from adapters.lora_usb import Archive, decode
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'backend'))
 from geocattle.schemas import TelemetryIn
@@ -55,6 +56,33 @@ class JsonProtocolTests(unittest.TestCase):
         self.assertIsNone(result['activity_index'])
         TelemetryIn.model_validate(result)
 
+    def test_t3_without_optional_sensors(self):
+        packet = {
+            'v': 5, 'id': 'GC-123456789ABC', 's': '0123456789ABCDEF', 'q': 1, 'u': 3000,
+            'g': [None, None, -1, -1, None], 't': None, 'a': [None, None, None],
+            'm': [-1, None], 'p': 45000, 'f': 7, 'e': 0, 'd': [0, 0, 0],
+        }
+        for mv, pct in ((-1, -1), (3935, 73)):
+            with self.subTest(mv=mv):
+                packet['b'] = [mv, pct, -1, -1, -1]
+                payload, original = decode_json(wire(packet), NOW)
+                checked = TelemetryIn.model_validate(payload)
+                self.assertEqual(json.loads(original), packet)
+                self.assertEqual(checked.hardware_id, packet['id'])
+                self.assertFalse(checked.gnss_valid)
+                self.assertIsNone(checked.latitude)
+                self.assertIsNone(checked.longitude)
+                self.assertIsNone(checked.surface_temperature_c)
+                self.assertIsNone(checked.activity_index)
+                self.assertEqual(checked.quality['acceleration_g'], {'x': None, 'y': None, 'z': None})
+                self.assertEqual(checked.quality['movement_state'], 'unknown')
+                self.assertEqual(checked.quality['period_ms'], 45000)
+                self.assertEqual(checked.battery_mv, None if mv == -1 else mv)
+                self.assertEqual(checked.quality['battery_pct_est'], None if pct == -1 else pct)
+                self.assertEqual(checked.quality['flags'], 7)
+                for key in ('battery_present', 'battery_charging', 'usb_present'):
+                    self.assertIsNone(checked.quality[key])
+
     def test_receiver_envelope_and_duplicate_radio_keeps_identity(self):
         p1,w1=decode(wire(SAMPLE),NOW)
         envelope={'packet':SAMPLE,'radio':{'rssi_dbm':-40,'snr_db':9.5}}
@@ -70,6 +98,7 @@ class JsonProtocolTests(unittest.TestCase):
                    ('s','bad'),('g',[-33.,None,0,8,1.]),('g',[-33.,-70.,5000,8,1.]),
                    ('g',[-91.,-70.,0,8,1.]),('a',[float('inf'),0,1]),
                    ('m',[1,None]),('b',[-1,-1,0,1,1]),('b',[4000,101,1,0,0]),
+                   ('b',[4000,84,0,-1,-1]),('b',[4000,84,-1,1,-1]),
                    ('f',1),('e',3),('o','sim')]
         for key,value in mutations:
             with self.subTest(key=key,value=value):

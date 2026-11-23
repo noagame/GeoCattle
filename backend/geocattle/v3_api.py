@@ -8,12 +8,15 @@ from datetime import date,datetime,timedelta
 from typing import Literal
 from types import SimpleNamespace
 from uuid import UUID,uuid4
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter,Depends,HTTPException,Query,Request
 from pydantic import BaseModel,ConfigDict,Field,field_validator,model_validator
 from sqlalchemy import select,text
 from .db import get_db
+from .gateway_detection import check_gateway_eui, ensure_node_available, lock_gateway_farm
 from .invitation_mail import invitation_url,queue_acceptance,queue_invitation
 from .models import User,Farm,Animal,RuleSettings,utcnow
+from .report_exports import CsvDelimiter,EXPORT_LIMIT,ExportFormat,export_response
 from .security import current_user,owner,hash_password,token_hash
 from .settings import settings
 from .v3_security import rows,one,execute,audit,require_step_up
@@ -132,6 +135,7 @@ class GatewayPatch(Strict):
     status:Literal['installed','maintenance','retired']|None=None
     longitude:float|None=Field(default=None,ge=-180,le=180,allow_inf_nan=False,strict=True)
     latitude:float|None=Field(default=None,ge=-90,le=90,allow_inf_nan=False,strict=True)
+    node_id:int|None=Field(default=None,strict=True,ge=1,le=2)
     @model_validator(mode='after')
     def valid_changes(self):
         changes=self.model_fields_set-{'expected_version'}
@@ -308,8 +312,8 @@ def kpis(account_id:UUID|None=None,farm_id:UUID|None=None,start:datetime|None=No
       'alerts_by_day':alerts,'requests':usage['requests'],'error_requests':usage['error_requests'],
       'farm_options':rows(db,'SELECT id,name,account_id FROM farms WHERE environment=:e ORDER BY name,id',e=settings_env()),
       'accounts':rows(db,'SELECT id,display_name FROM owner_accounts ORDER BY display_name,id')}
-@router.get('/audit')
-def audits(user=Depends(current_user),db=Depends(get_db,scope='function'),limit:int=Query(100,ge=1,le=100),offset:int=Query(0,ge=0),q:str|None=Query(None,max_length=200),actor_id:UUID|None=None,action:str|None=Query(None,max_length=100),entity:str|None=Query(None,max_length=100),farm_id:UUID|None=None,start:datetime|None=None,end:datetime|None=None):
+AUDIT_EXPORT_COLUMNS=('Fecha','Actor','Usuario','Entidad','Identificador','Acción','Predio','Estado anterior','Estado posterior')
+def audit_filters(user,q,actor_id,action,entity,farm_id,start,end):
     if user.role not in ('admin','owner'):raise HTTPException(403,'Sin permiso de auditoría')
     predicates=[];p={}
     if user.role!='admin':
@@ -326,11 +330,32 @@ def audits(user=Depends(current_user),db=Depends(get_db,scope='function'),limit:
         predicates.append("concat_ws(' ',a.action,a.object_type,a.actor_id::text,u.username,u.full_name) ILIKE :q")
         p['q']='%'+q.strip().replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
     where=' WHERE '+' AND '.join(predicates) if predicates else ''
-    source=' FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id'
-    data=rows(db,'SELECT a.id,a.farm_id,a.actor_id,a.object_type,a.object_id,a.action,a.at,u.username AS actor_name,u.username AS username,a.before,a.after'+source+where+' ORDER BY a.at DESC,a.id LIMIT :n OFFSET :offset',n=limit,offset=offset,**p)
-    total=one(db,'SELECT count(*) AS n'+source+where,**p)['n']
+    return ' FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id'+where,p,farm_id
+@router.get('/audit')
+def audits(user=Depends(current_user),db=Depends(get_db,scope='function'),limit:int=Query(100,ge=1,le=100),offset:int=Query(0,ge=0),q:str|None=Query(None,max_length=200),actor_id:UUID|None=None,action:str|None=Query(None,max_length=100),entity:str|None=Query(None,max_length=100),farm_id:UUID|None=None,start:datetime|None=None,end:datetime|None=None):
+    source,p,farm_id=audit_filters(user,q,actor_id,action,entity,farm_id,start,end)
+    data=rows(db,'SELECT a.id,a.farm_id,a.actor_id,a.object_type,a.object_id,a.action,a.at,u.username AS actor_name,u.username AS username,a.before,a.after'+source+' ORDER BY a.at DESC,a.id LIMIT :n OFFSET :offset',n=limit,offset=offset,**p)
+    total=one(db,'SELECT count(*) AS n'+source,**p)['n']
     audit(db,user,'read_audit','audit_log',after={'scope': 'farm' if farm_id else 'platform'})
     return {'items':data,'total':total}
+@router.get('/audit/export')
+def export_audits(format:ExportFormat='xlsx',delimiter:CsvDelimiter='comma',user=Depends(current_user),db=Depends(get_db,scope='function'),q:str|None=Query(None,max_length=200),actor_id:UUID|None=None,action:str|None=Query(None,max_length=100),entity:str|None=Query(None,max_length=100),farm_id:UUID|None=None,start:datetime|None=None,end:datetime|None=None):
+    """Download the same audit selection shown on screen, newest first."""
+    source,p,farm_id=audit_filters(user,q,actor_id,action,entity,farm_id,start,end)
+    total=one(db,'SELECT count(*) AS n'+source,**p)['n']
+    if total>EXPORT_LIMIT:raise HTTPException(422,'La auditoría supera las 50.000 filas. Acota el período o los filtros.')
+    farm=one(db,'SELECT name,timezone FROM farms WHERE id=:f',f=farm_id) if farm_id else None
+    zone=ZoneInfo(farm['timezone'] if farm else 'America/Santiago')
+    statement=text("""SELECT a.at,coalesce(u.full_name,u.username,'Servicio del sistema') AS actor,u.username,a.object_type,a.object_id,a.action,
+        f.name AS farm_name,a.before,a.after"""+source.replace(' FROM audit_log a',' FROM audit_log a LEFT JOIN farms f ON f.id=a.farm_id',1)+' ORDER BY a.at DESC,a.id').execution_options(yield_per=1000)
+    def state(value):return json.dumps(value,ensure_ascii=False,sort_keys=True,default=str) if value is not None else None
+    filters=[('Búsqueda',q),('Actor',actor_id),('Acción',action),('Entidad',entity),('Desde',p.get('start')),('Hasta',p.get('end'))]
+    metadata=[('Alcance',farm['name'] if farm else 'Plataforma completa'),('Zona horaria',zone.key),('Generado',utcnow()),('Registros',total),
+              *[(label,value) for label,value in filters if value]]
+    audit(db,user,'export_audit','audit_log',after={'scope':'farm' if farm_id else 'platform','format':format,'rows':total})
+    with db.execute(statement,p) as results:
+        return export_response(AUDIT_EXPORT_COLUMNS,([r.at,r.actor,r.username,r.object_type,r.object_id,r.action,r.farm_name,state(r.before),state(r.after)] for r in results),
+                               format=format,filename='geocattle-auditoria',title='Auditoría',zone=zone,metadata=metadata,delimiter=delimiter)
 
 @router.get('/invitations')
 def invitations(request:Request,view:Literal['main','expired']|None=None,user=Depends(owner),db=Depends(get_db,scope='function')):
@@ -706,7 +731,7 @@ def record(ident:UUID,user=Depends(current_user),db=Depends(get_db,scope='functi
       'measurements':rows(db,'SELECT * FROM animal_measurements WHERE animal_holding_id=ANY(:ids) ORDER BY measured_at DESC LIMIT 100',ids=ids),
       'reports':rows(db,'SELECT * FROM animal_reports WHERE animal_holding_id=ANY(:ids) ORDER BY occurred_at DESC LIMIT 100',ids=ids),'pending':pending,
       'pending_health_warning':any(x['action']=='health_record' for x in pending)}
-GATEWAY_FIELDS="g.id,g.farm_id,g.gateway_eui,g.name,g.status,g.installed_at,g.last_seen_at,g.archived_at,g.archived_by,g.version,ST_X(g.position) AS longitude,ST_Y(g.position) AS latitude"
+GATEWAY_FIELDS="g.id,g.farm_id,g.gateway_eui,g.node_id,g.name,g.status,g.installed_at,g.last_seen_at,g.archived_at,g.archived_by,g.version,ST_X(g.position) AS longitude,ST_Y(g.position) AS latitude"
 
 def gateway_record(db,ident,user,lock=False):
     result=one(db,f'SELECT {GATEWAY_FIELDS} FROM gateways g WHERE g.id=:i AND g.farm_id=:f'+(' FOR UPDATE OF g' if lock else ''),i=ident,f=farm_scope(user))
@@ -737,33 +762,58 @@ def gateway_receptions(ident:UUID,limit:int=Query(50,ge=1,le=200),offset:int=Que
 
 @router.post('/gateways',status_code=201)
 def create_gateway(body:GatewayIn,user=Depends(owner),db=Depends(get_db,scope='function')):
+    return insert_gateway(db, user, body.gateway_eui, body.name, body.longitude, body.latitude)
+
+
+def insert_gateway(db, user, gateway_eui, name, longitude, latitude, node_id=None, candidate_id=None):
     farm=farm_scope(user)
-    if one(db,'SELECT id FROM gateways WHERE gateway_eui=:e',e=body.gateway_eui):raise HTTPException(409,'Gateway EUI ya registrado; revisa el inventario, incluidos los archivados')
-    ident=uuid4()
-    execute(db,"""INSERT INTO gateways(id,farm_id,gateway_eui,name,position,status,installed_at)
-        VALUES(:i,:f,:e,:n,ST_SetSRID(ST_Point(:lon,:lat),4326),'installed',now())""",i=ident,f=farm,e=body.gateway_eui,n=body.name,lon=body.longitude,lat=body.latitude)
-    result=gateway_record(db,ident,user)
-    audit(db,user,'create','gateway',ident,after=result)
+    lock_gateway_farm(db, farm)
+    check_gateway_eui(db, gateway_eui)
+    if node_id is not None:
+        ensure_node_available(db, farm, node_id, candidate_id=candidate_id)
+    inserted=one(db,"""INSERT INTO gateways(farm_id,gateway_eui,node_id,node_linked_at,name,position,status,installed_at)
+        VALUES(:f,:e,:node,CASE WHEN CAST(:node AS smallint) IS NOT NULL THEN now() END,
+          :n,ST_SetSRID(ST_Point(CAST(:lon AS double precision),CAST(:lat AS double precision)),4326),'installed',now())
+        ON CONFLICT DO NOTHING RETURNING id""",f=farm,e=gateway_eui,node=node_id,n=name,lon=longitude,lat=latitude)
+    if not inserted:
+        check_gateway_eui(db, gateway_eui)
+        raise HTTPException(409, 'El nodo de radio ya está ocupado en este predio')
+    result=gateway_record(db,inserted['id'],user)
+    audit(db,user,'create','gateway',result['id'],after=result)
     return result
 
 @router.patch('/gateways/{ident}')
 def update_gateway(ident:UUID,body:GatewayPatch,user=Depends(owner),db=Depends(get_db,scope='function')):
+    farm=farm_scope(user)
+    lock_gateway_farm(db,farm)
     before=gateway_record(db,ident,user,True)
     if before['archived_at']:raise HTTPException(409,'Un gateway archivado conserva su historial y no se puede editar')
     if before['version']!=body.expected_version:raise HTTPException(409,'El gateway cambió; recarga su versión antes de guardar')
     changes=body.model_dump(exclude_unset=True,exclude={'expected_version'})
     if not any(before[key]!=value for key,value in changes.items()):return before
-    execute(db,"""UPDATE gateways SET name=:name,status=:status,
+    node=changes.get('node_id',before['node_id'])
+    if node != before['node_id']:
+        if before['node_id'] is not None:raise HTTPException(409,'El nodo de un gateway vinculado no se puede cambiar')
+        ensure_node_available(db,farm,node,gateway_id=ident)
+    execute(db,"""UPDATE gateways SET name=:name,status=:status,node_id=:node,
+        node_linked_at=CASE WHEN node_id IS DISTINCT FROM CAST(:node AS smallint) THEN now() ELSE node_linked_at END,
         position=CASE WHEN :move THEN ST_SetSRID(ST_Point(CAST(:lon AS double precision),CAST(:lat AS double precision)),4326) ELSE position END,
         version=version+1 WHERE id=:i AND farm_id=:f""",
         name=changes.get('name',before['name']),status=changes.get('status',before['status']),move='latitude' in changes,
-        lon=changes.get('longitude'),lat=changes.get('latitude'),i=ident,f=farm_scope(user))
+        lon=changes.get('longitude'),lat=changes.get('latitude'),i=ident,f=farm,node=node)
     result=gateway_record(db,ident,user)
     audit(db,user,'update','gateway',ident,before=before,after=result)
+    if node != before['node_id']:
+        candidate=one(db,"""UPDATE gateway_candidates SET status='approved', resolved_at=now(), resolved_by=:actor,
+            gateway_id=:gateway WHERE farm_id=:farm AND node_id=:node AND status='pending' AND source='radio' RETURNING *""",
+            actor=user.id,gateway=ident,farm=farm,node=node)
+        if candidate:
+            audit(db,user,'approve','gateway_candidate',candidate['id'],after=candidate)
     return result
 
 @router.delete('/gateways/{ident}')
 def archive_gateway(ident:UUID,body:GatewayArchiveIn,user=Depends(owner),db=Depends(get_db,scope='function')):
+    lock_gateway_farm(db,farm_scope(user))
     before=gateway_record(db,ident,user,True)
     if before['archived_at']:return before
     if before['version']!=body.expected_version:raise HTTPException(409,'El gateway cambió; recarga antes de archivar')

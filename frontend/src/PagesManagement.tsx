@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { ArrowRight, Clock, Fence, Link2, Pencil, Plus, Radio, Settings2, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Clock, Fence, Pencil, Plus, Radio, ShieldCheck } from 'lucide-react';
 import type { Animal, Device, Geofence, List, Sector, UsbCollar } from './types';
 import { ApiError, date, useData, write } from './api';
 import { Badge, Empty, ErrorNotice, Loading, Modal, PageTitle, Panel, PanelTitle, Submit } from './ui';
@@ -7,17 +7,58 @@ import { CattleMap, type CollarLocation } from './Map';
 import type { Notify } from './App';
 import { AlertSettingsPanel } from './AlertSettings';
 import { GeofenceForm } from './GeofenceForm';
-import { DeviceCandidatesPanel } from './DeviceCandidates';
+import { DeviceCandidatesPanel, UsbCollarDetection } from './DeviceCandidates';
+import { CollarDialog, CollarInventoryTable, CollarLifecycleDialog, type CollarAction } from './CollarLifecycle';
 import type { DeviceCandidate } from './v3types';
 
-export function DevicesPage({ canWrite, notify, usbCollar, clearUsbCollar, onCandidatesChange }: {
-  canWrite: boolean; notify: Notify; usbCollar?: UsbCollar; clearUsbCollar: () => void; onCandidatesChange?: () => void;
+export function DevicesPage({ canWrite, notify, usbCollar, clearUsbCollar, onCandidatesChange, onInventoryChange }: {
+  canWrite: boolean; notify: Notify; usbCollar?: UsbCollar; clearUsbCollar: () => void; onCandidatesChange?: () => void; onInventoryChange: () => void;
 }) {
-  const devices = useData<List<Device>>('/devices'); const animals = useData<List<Animal>>('/animals?limit=100'); const candidates = useData<{ items: DeviceCandidate[] }>(canWrite ? '/v3/device-candidates?status=pending' : null, 30000);
+  const devices = useData<List<Device>>('/devices', 30000); const animals = useData<List<Animal>>('/animals?limit=100'); const candidates = useData<{ items: DeviceCandidate[] }>(canWrite ? '/v3/device-candidates?status=pending' : null, 30000);
   const [adding, setAdding] = useState(false); const [assigning, setAssigning] = useState<Device | null>(null); const [configuring, setConfiguring] = useState<Device | null>(null);
   const existingCollar = usbCollar && devices.data?.items.find(d => d.hardware_id === usbCollar.hardware_id);
-  const ready = devices.data?.items.filter(d => d.enabled).length ?? 0;
-  return <><PageTitle eyebrow="HARDWARE Y ASOCIACIONES" title="Collares y dispositivos" description="Asocia los módulos y consulta su configuración aplicada." actions={canWrite && <button className="button primary" onClick={() => setAdding(true)}><Plus size={17} />Registrar dispositivo</button>} /><div className="summary-strip"><div><Radio size={19} /><strong>{devices.data?.total ?? '—'}</strong><span>dispositivos registrados</span></div><div><ShieldCheck size={19} /><strong>{ready}</strong><span>habilitados</span></div><div><Clock size={19} /><strong>{devices.data?.items.filter(d => !!d.pending_config).length ?? '—'}</strong><span>configuraciones pendientes</span></div>{canWrite && <div><Radio size={19} /><strong>{candidates.data?.items.length ?? '—'}</strong><span>detectados pendientes</span></div>}</div>{canWrite && <DeviceCandidatesPanel canWrite={canWrite} notify={notify} candidates={candidates} onApproved={() => { devices.reload(); candidates.reload(); onCandidatesChange?.(); }} onDismissed={() => { candidates.reload(); onCandidatesChange?.(); }} />}<Panel><PanelTitle title="Inventario de dispositivos" subtitle="El intervalo activo cambia únicamente al recibir confirmación del nodo." /><ErrorNotice error={devices.error} retry={devices.reload} /><ErrorNotice error={animals.error} retry={animals.reload} />{devices.loading && <Loading />}{!devices.loading && devices.data && (devices.data.items.length ? <div className="table-scroll"><table><thead><tr><th>Dispositivo</th><th>Transporte</th><th>Animal asociado</th><th>Intervalo aplicado</th><th>Configuración pendiente</th><th>Última recepción</th>{canWrite && <th>Acciones</th>}</tr></thead><tbody>{devices.data.items.map(device => { const animal = animals.data?.items.find(a => a.id === device.animal_id || a.device_id === device.id); return <tr key={device.id}><td><div className="animal-cell"><span className="animal-avatar"><Radio size={18} /></span><div><strong>{device.name}</strong><small>{device.hardware_id}</small>{!device.enabled && <small>Deshabilitado</small>}</div></div></td><td>{device.transport === 'academic' ? 'Académico' : 'LoRaWAN'}{device.dev_eui && <small>{device.dev_eui}</small>}</td><td>{animal ? <>{animal.name}<small>DIIO {animal.diio}</small></> : device.animal_id ? 'Animal asociado' : <span className="muted">Sin asignar</span>}</td><td><strong>{device.interval_seconds} s</strong><small>Versión {device.config_version}</small></td><td>{device.pending_config ? <><Badge status="warning">{device.pending_config.status === 'requested' ? 'Solicitada' : device.pending_config.status === 'sent' ? 'Enviada' : device.pending_config.status === 'pending' ? 'Pendiente' : device.pending_config.status}</Badge><small>{device.pending_config.interval_seconds} s · v{device.pending_config.version}</small></> : <span className="muted">Sin cambios pendientes</span>}</td><td>{date(device.last_received_at)}</td>{canWrite && <td><div className="row-actions"><button className="icon-button" aria-label={`Asignar ${device.name}`} title="Asignar o reasignar" onClick={() => setAssigning(device)} disabled={!device.enabled}><Link2 size={17} /></button><button className="icon-button" aria-label={`Configurar ${device.name}`} title="Solicitar configuración" onClick={() => setConfiguring(device)} disabled={!!device.pending_config || !device.enabled}><Settings2 size={17} /></button></div></td>}</tr>; })}</tbody></table></div> : <Empty title="Sin dispositivos registrados" description="Da de alta un módulo e identifica su transporte antes de asociarlo a un animal." />)}</Panel>{canWrite && usbCollar && <Modal title="Alta de collar por USB" onClose={clearUsbCollar}>
+  const registered = devices.data?.total;
+  const ready = devices.data?.items.filter(d => d.enabled).length;
+  const pendingConfigs = devices.data?.items.filter(d => d.pending_config).length;
+  const [approving, setApproving] = useState<DeviceCandidate | null>(null);
+  const [lifecycle, setLifecycle] = useState<CollarAction | null>(null);
+  function refreshInventory() {
+    setLifecycle(null);
+    devices.reload(); animals.reload(); candidates.reload(); onCandidatesChange?.(); onInventoryChange();
+  }
+  function refreshCandidates() {
+    candidates.reload(); onCandidatesChange?.();
+  }
+  return <>
+    <div className="collars-page">
+      <PageTitle eyebrow="HARDWARE Y ASOCIACIONES" title="Collares y dispositivos"
+        description="Asocia collares, revisa su recepción y consulta la configuración aplicada."
+        actions={canWrite && <>
+          <UsbCollarDetection onDetected={setApproving} onCandidatesChange={refreshCandidates} />
+          <button type="button" className="button secondary" onClick={() => setAdding(true)}><Plus size={17} />Registrar dispositivo</button>
+        </>}
+      />
+      <div className="summary-strip">
+        <div><Radio size={19} /><strong>{registered ?? '—'}</strong><span>{registered === 1 ? 'dispositivo registrado' : 'dispositivos registrados'}</span></div>
+        <div><ShieldCheck size={19} /><strong>{ready ?? '—'}</strong><span>{ready === 1 ? 'habilitado' : 'habilitados'}</span></div>
+        <div><Clock size={19} /><strong>{pendingConfigs ?? '—'}</strong><span>{pendingConfigs === 1 ? 'configuración pendiente' : 'configuraciones pendientes'}</span></div>
+      </div>
+      {canWrite && <DeviceCandidatesPanel canWrite={canWrite} notify={notify} candidates={candidates}
+        approving={approving} onApprove={setApproving} onApproved={() => { devices.reload(); refreshCandidates(); }}
+        onCandidatesChange={refreshCandidates} />}
+      <Panel className="collar-inventory-panel">
+        <PanelTitle title="Inventario de dispositivos" subtitle="El intervalo activo cambia únicamente al recibir confirmación del nodo." />
+        <ErrorNotice error={devices.error} retry={devices.reload} />
+        <ErrorNotice error={animals.error} retry={animals.reload} />
+        {devices.loading && !devices.data && <Loading />}
+        {devices.data && (devices.data.items.length ? <CollarInventoryTable devices={devices.data.items}
+          animals={animals.data?.items ?? []} canWrite={canWrite} onAssign={setAssigning} onConfigure={setConfiguring} onLifecycle={setLifecycle} />
+          : <Empty title="Sin dispositivos registrados" description="Da de alta un módulo e identifica su transporte antes de asociarlo a un bovino." />)}
+      </Panel>
+    </div>
+    {canWrite && lifecycle && <CollarLifecycleDialog action={lifecycle} onCancel={() => setLifecycle(null)}
+      onSaved={notice => { refreshInventory(); notify(notice); }} onRefresh={refreshInventory} />}
+    {canWrite && usbCollar && <CollarDialog title="Alta de collar por USB" onClose={clearUsbCollar}>
       <div className="form-body">
         {!devices.data && (devices.error ? <ErrorNotice error={devices.error} retry={devices.reload} /> : <Loading />)}
         {existingCollar && <>
@@ -31,10 +72,10 @@ export function DevicesPage({ canWrite, notify, usbCollar, clearUsbCollar, onCan
         {devices.data && !existingCollar && <DeviceFields key={usbCollar.hardware_id} usbCollar={usbCollar}
           onClose={clearUsbCollar} onSaved={() => { clearUsbCollar(); devices.reload(); notify('Collar registrado. Ya puedes asignarlo a un bovino.'); }} />}
       </div>
-    </Modal>}
-    {adding && <Modal title="Registrar dispositivo" onClose={() => setAdding(false)}><DeviceFields
+    </CollarDialog>}
+    {adding && <CollarDialog title="Registrar dispositivo" onClose={() => setAdding(false)}><DeviceFields
       onClose={() => setAdding(false)}
-      onSaved={() => { setAdding(false); devices.reload(); notify('Dispositivo registrado.'); }} /></Modal>}{assigning && <AssignmentForm device={assigning} animals={animals.data?.items ?? []} onClose={() => setAssigning(null)} onSaved={() => { setAssigning(null); devices.reload(); animals.reload(); notify('Asignación guardada con vigencia histórica.'); }} />}{configuring && <DeviceConfigForm device={configuring} onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); devices.reload(); notify('Configuración solicitada. Pendiente de confirmación del nodo.'); }} />}</>;
+      onSaved={() => { setAdding(false); devices.reload(); notify('Dispositivo registrado.'); }} /></CollarDialog>}{assigning && <AssignmentForm device={assigning} animals={animals.data?.items ?? []} onClose={() => setAssigning(null)} onSaved={() => { setAssigning(null); devices.reload(); animals.reload(); notify('Asignación guardada con vigencia histórica.'); }} />}{configuring && <DeviceConfigForm device={configuring} onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); devices.reload(); notify('Configuración solicitada. Pendiente de confirmación del nodo.'); }} />}</>;
 }
 function DeviceFields({ usbCollar, onClose, onSaved }: {
   usbCollar?: UsbCollar; onClose: () => void; onSaved: () => void;
@@ -88,12 +129,12 @@ function AssignmentForm({ device, animals, onClose, onSaved }: { device: Device;
   const destination = animals.find(a => a.id === animal);
   const replacementRequired = !!device.animal_id || !!destination?.device_id;
   async function submit(event: FormEvent) { event.preventDefault(); setBusy(true); setError(''); try { await write('/assignments', { animal_id: animal, device_id: device.id, replace }); onSaved(); } catch (err) { setError(err instanceof Error ? err.message : 'No se pudo asociar.'); } finally { setBusy(false); } }
-  return <Modal title={`Asignar ${device.name}`} onClose={onClose}><form className="form-body" onSubmit={submit}><p className="form-intro">La nueva asociación comienza al guardar. El historial de lecturas mantiene las asociaciones que estaban vigentes al observar cada paquete.</p><label>Animal<select value={animal} onChange={e => setAnimal(e.target.value)} required><option value="">Selecciona un animal</option>{animals.filter(a => a.enabled).map(a => <option key={a.id} value={a.id}>{a.name} · DIIO {a.diio}{a.device_id ? ' · tiene collar' : ''}</option>)}</select></label>{replacementRequired && <div className="notice notice-warning">El collar o el animal ya tiene una asociación. La reasignación cerrará las asociaciones previas afectadas.</div>}<label className="checkbox-field"><input type="checkbox" checked={replace} onChange={e => setReplace(e.target.checked)} required={replacementRequired} /><span>Confirmo el cierre de las asociaciones anteriores si existen.</span></label><ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" onClick={onClose} disabled={busy}>Cancelar</button><Submit busy={busy}>Guardar asignación</Submit></div></form></Modal>;
+  return <CollarDialog title={`Asignar ${device.name}`} onClose={onClose}><form className="form-body" onSubmit={submit}><p className="form-intro">La nueva asociación comienza al guardar. El historial de lecturas mantiene las asociaciones que estaban vigentes al observar cada paquete.</p><label>Animal<select value={animal} onChange={e => setAnimal(e.target.value)} required><option value="">Selecciona un animal</option>{animals.filter(a => a.enabled).map(a => <option key={a.id} value={a.id}>{a.name} · DIIO {a.diio}{a.device_id ? ' · tiene collar' : ''}</option>)}</select></label>{replacementRequired && <div className="notice notice-warning">El collar o el animal ya tiene una asociación. La reasignación cerrará las asociaciones previas afectadas.</div>}<label className="checkbox-field"><input type="checkbox" checked={replace} onChange={e => setReplace(e.target.checked)} required={replacementRequired} /><span>Confirmo el cierre de las asociaciones anteriores si existen.</span></label><ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" onClick={onClose} disabled={busy}>Cancelar</button><Submit busy={busy}>Guardar asignación</Submit></div></form></CollarDialog>;
 }
 function DeviceConfigForm({ device, onClose, onSaved }: { device: Device; onClose: () => void; onSaved: () => void }) {
   const [interval, setInterval] = useState(String(device.pending_config?.interval_seconds ?? device.interval_seconds)); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent) { event.preventDefault(); setBusy(true); setError(''); try { await write(`/devices/${device.id}/config`, { interval_seconds: Number(interval), expected_version: device.config_version }); onSaved(); } catch (err) { setError(err instanceof Error ? err.message : 'No se pudo solicitar.'); } finally { setBusy(false); } }
-  return <Modal title={`Configurar ${device.name}`} onClose={onClose}><form className="form-body" onSubmit={submit}><div className="notice"><Clock size={18} /><span>Intervalo aplicado: <strong>{device.interval_seconds} s · v{device.config_version}</strong>. El intervalo solicitado permanece pendiente hasta recibir la versión confirmada por el nodo.</span></div>{device.pending_config && <div className="notice notice-warning">Existe una solicitud pendiente de {device.pending_config.interval_seconds} s (v{device.pending_config.version}). El servidor comprobará si puede emitir una nueva versión.</div>}<label>Nuevo intervalo (segundos)<input type="number" min="30" max="86400" step="1" value={interval} onChange={e => setInterval(e.target.value)} required /></label><p className="form-intro">La pérdida de comunicación y la vigencia de posición siguen usando el intervalo aplicado. En clase A, el envío puede esperar una ventana de recepción.</p><ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" onClick={onClose} disabled={busy}>Cancelar</button><Submit busy={busy}>Solicitar configuración</Submit></div></form></Modal>;
+  return <CollarDialog title={`Configurar ${device.name}`} onClose={onClose}><form className="form-body" onSubmit={submit}><div className="notice"><Clock size={18} /><span>Intervalo aplicado: <strong>{device.interval_seconds} s · v{device.config_version}</strong>. El intervalo solicitado permanece pendiente hasta recibir la versión confirmada por el nodo.</span></div>{device.pending_config && <div className="notice notice-warning">Existe una solicitud pendiente de {device.pending_config.interval_seconds} s (v{device.pending_config.version}). El servidor comprobará si puede emitir una nueva versión.</div>}<label>Nuevo intervalo (segundos)<input type="number" min="30" max="86400" step="1" value={interval} onChange={e => setInterval(e.target.value)} required /></label><p className="form-intro">La pérdida de comunicación y la vigencia de posición siguen usando el intervalo aplicado. En clase A, el envío puede esperar una ventana de recepción.</p><ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" onClick={onClose} disabled={busy}>Cancelar</button><Submit busy={busy}>Solicitar configuración</Submit></div></form></CollarDialog>;
 }
 type MapContext = { items: { hardware_id: string; last_position: { latitude: number | null; longitude: number | null; observed_at: string; gnss_valid: boolean } | null; position_age_seconds: number | null; freshness_seconds: number }[] };
 function PastureTransferForm({ devices, collars, selected, onSelect, animal, fences, sectors, watched, notify }: {

@@ -51,13 +51,24 @@ El estado local registra `last_line_at` para cualquier línea serial, `last_pack
 
 ## Incorporar un collar por USB o LoRa
 
-1. Inicia el prototipo con `Abrir-GeoCattle.cmd`. Para detectar por USB, cierra el Monitor Serie del collar, abre [`Registrar-Collar-USB.cmd`](../Registrar-Collar-USB.cmd) y sigue las indicaciones para conectar el collar con un cable USB de datos. La receptora T3 puede quedar conectada. Para detectar por LoRa, inicia `Iniciar-Captura.cmd` y espera un paquete válido del collar.
-2. En **Collares y dispositivos**, entra con una cuenta de dueño o administrador, selecciona el predio y abre **Collares detectados**. Revisa el identificador, el nombre sugerido y el intervalo. Aprueba el alta o descarta la detección.
-3. Asigna el collar a un bovino cuando esté listo. Las nuevas lecturas llegan por la T3 mediante LoRa. El inventario y las asignaciones se consultan también desde HTTPS por la red local.
+1. Abre el prototipo en Chrome o Edge de escritorio desde `http://localhost:8084` o por HTTPS en la LAN. Inicia sesión como dueño o administrador y selecciona el predio físico donde quedará el collar.
+2. Conecta el collar con un cable USB de datos **al equipo donde está abierto el navegador**. Cierra el Monitor Serie, el Plotter de Arduino o cualquier captura que use ese puerto. En **Collares y dispositivos → Collares detectados**, pulsa **Detectar collar por USB**. En el selector de puertos, elige el collar y concede acceso. La receptora T3 puede quedar conectada, pero no selecciones su puerto.
+3. La web registra la detección en el predio activo de tu sesión y abre **Agregar al sistema**. Revisa el identificador, el nombre sugerido y el intervalo antes de confirmar. Si cierras el formulario de alta, la detección queda pendiente en la bandeja.
+4. Asigna el collar a un bovino cuando esté listo. Las nuevas lecturas llegan por la T3 mediante LoRa.
 
-El alta USB usa `INGEST_KEY` de la configuración privada `.env.academic`. Con varios predios físicos activos, agrega `INGEST_FARM_ID` con el UUID del predio a ese archivo y reinicia la captura para usarlo. El USB usa ese UUID en la siguiente ejecución del asistente. También puedes pasar `--farm-id` al ejecutar `scripts/register_collar_usb.py` directamente.
+El [firmware con identificación USB](../firmware/README.md#identidad-y-alta-por-usb) responde a una consulta. Con el firmware anterior que imprime JSON V5, la detección espera hasta 55 segundos y toma el identificador y el intervalo del primer paquete válido. Para el collar histórico, el resultado es `REAL01` con un intervalo de 45 segundos.
 
-El [firmware con identificación USB](../firmware/README.md#identidad-y-alta-por-usb) responde a una consulta del asistente. Con el firmware anterior que imprime JSON V5 en el puerto serie, el asistente espera hasta 55 segundos y toma el identificador y el intervalo del primer paquete válido. Para el collar histórico, el resultado es `REAL01` con un intervalo de 45 segundos. Si Windows indica que el puerto está ocupado, cierra el Monitor Serie o el Plotter de Arduino y vuelve a ejecutar el asistente.
+**Alternativa USB en Windows:** si Web Serial no está disponible o necesitas reutilizar como collar una T3 que estaba registrada como receptora Directa, ejecuta [`Registrar-Collar-USB.cmd`](../Registrar-Collar-USB.cmd) y sigue sus indicaciones. Este asistente usa `INGEST_KEY` de `.env.academic`. Si hay varios predios físicos activos, elige el predio y confirma si quieres recordarlo como `INGEST_FARM_ID`. Para cambiarlo, edita o borra esa opción o pasa `--farm-id` al ejecutar `scripts/register_collar_usb.py`. Reinicia la captura LoRa si cambia la configuración guardada. Si confirmas la reutilización de la T3, el asistente archiva su perfil de receptora en `.runtime/capture/` y cambia la recepción a Gateways. La placa base de Gateways nunca se acepta como collar. Abre el predio elegido en la web para aprobar el collar.
+
+**Detección por LoRa:** inicia `Iniciar-Captura.cmd` y espera un paquete válido del collar; aparecerá en **Collares detectados** del predio configurado para la captura. Desde allí puedes aprobar el alta o descartar la detección.
+
+## Incorporar un gateway por USB
+
+1. Carga `firmware/GeoCattle_Gateway` en el XIAO ESP32-S3 con RadioLib 7.8.1. Todos los gateways usan el mismo binario. [Firmware](../firmware/README.md#gateways-con-nodo-asignado-por-geocattle)
+2. En Chrome o Edge, abre **Gateways instalados** en el predio correspondiente, conecta solo el gateway por USB y presiona **Detectar gateway por USB**.
+3. En **Agregar al sistema**, revisa el nombre sugerido y, si quieres, marca la ubicación. Al confirmar, GeoCattle reserva un nodo libre, lo configura en la placa por USB y completa el alta cuando la placa responde.
+
+Como alternativa, ejecuta `Registrar-Gateway-USB.cmd` e inicia sesión con una cuenta de dueño o administrador. La placa base de Gateways y las receptoras no se aceptan como gateway. Un predio admite dos gateways vinculados.
 
 ## Dónde agregar funcionalidades
 

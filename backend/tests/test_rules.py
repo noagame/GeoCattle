@@ -26,6 +26,16 @@ def test_no_fix_null_not_zero_and_observation_requires_timezone():
     with pytest.raises(ValueError):TelemetryIn(**common,observed_at=datetime.now(timezone.utc),longitude=0,latitude=0)
     with pytest.raises(ValueError):TelemetryIn(**common,observed_at=datetime.now())
 
+def test_telemetry_quality_accepts_finite_json_with_size_limit():
+    fields = dict(hardware_id="qa", session_id="qa", seq=1, source="academic",
+                  gnss_valid=False, observed_at=datetime.now(timezone.utc))
+    quality = {"radio": {"rssi_dbm": -65.5}, "sensors": [None, True, 0]}
+    assert TelemetryIn(**fields, quality=quality).quality == quality
+    with pytest.raises(ValueError, match="Quality requiere JSON válido"):
+        TelemetryIn(**fields, quality={"radio": {"rssi_dbm": float("nan")}})
+    with pytest.raises(ValueError, match="Quality demasiado grande"):
+        TelemetryIn(**fields, quality={"note": "x" * 16384})
+
 def test_strong_hash_is_salted_and_verifiable():
     a=hash_password("long-test-password");b=hash_password("long-test-password")
     assert a!=b and a.startswith("$argon2id$")

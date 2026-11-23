@@ -4,6 +4,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy import and_, func, or_, select, text
 from .device_candidates import capture_farm, candidate_receipt, detect_radio_candidate, lock_device_identity
+from .gateway_detection import observe_bus_gateway
 from .models import *
 from .settings import settings
 from .schemas import TelemetryIn
@@ -146,7 +147,9 @@ def ingest(db,payload:TelemetryIn,received_at=None,*,detect_candidates=False,cap
         lock_device_identity(db, payload.hardware_id)
         device = db.scalar(device_query)
         if device is None:
-            return detect_radio_candidate(db, farm_id, payload, now)
+            receipt = detect_radio_candidate(db, farm_id, payload, now)
+            observe_bus_gateway(db, farm_id, payload, now)
+            return receipt
 
     if device is None:
         raise HTTPException(422,"Dispositivo desconocido o deshabilitado")
@@ -164,6 +167,7 @@ def ingest(db,payload:TelemetryIn,received_at=None,*,detect_candidates=False,cap
     if discover:
         receipt = candidate_receipt(db, farm.id, payload)
         if receipt:
+            observe_bus_gateway(db, farm.id, payload, now)
             return receipt
     if not device.enabled:
         raise HTTPException(422,"Dispositivo desconocido o deshabilitado")
@@ -172,6 +176,8 @@ def ingest(db,payload:TelemetryIn,received_at=None,*,detect_candidates=False,cap
     
     existing=db.scalar(select(Telemetry).where(Telemetry.device_id==device.id,Telemetry.session_id==payload.session_id,Telemetry.seq==payload.seq))
     if existing:
+        if discover:
+            observe_bus_gateway(db, farm.id, payload, now, existing)
         persist_receptions(db,existing,payload.receptions,now)
         return {"id":str(existing.id),"duplicate":True,"animal_id":str(existing.animal_id) if existing.animal_id else None}
     
@@ -185,6 +191,8 @@ def ingest(db,payload:TelemetryIn,received_at=None,*,detect_candidates=False,cap
     db.add(row); 
     db.flush()
     
+    if discover:
+        observe_bus_gateway(db, farm.id, payload, now, row)
     persist_receptions(db,row,payload.receptions,now)
     newer=device.last_observed_at is None or row.observed_at>device.last_observed_at
     recent=(now-row.observed_at).total_seconds()<=2*device.interval_seconds+30

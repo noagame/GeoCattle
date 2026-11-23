@@ -1,9 +1,18 @@
-import React, { useState, type FormEvent } from 'react';
-import { Plus, Radio, RefreshCw, Trash2 } from 'lucide-react';
+import React, { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Info, Plus, Radio, RefreshCw, Trash2, Usb } from 'lucide-react';
 import type { DeviceCandidate, DeviceCandidateApprove, DeviceCandidateApproveResult } from './v3types';
 import { ApiError, date, write } from './api';
-import { Empty, ErrorNotice, Loading, Modal, Panel, PanelTitle, Submit } from './ui';
+import { detectUsbCollar } from './collarSerial';
+import { CollarDialog, collarTimestamp } from './CollarLifecycle';
+import { Empty, ErrorNotice, Loading, Panel, PanelTitle, Submit } from './ui';
 import type { Notify } from './App';
+
+const usbProgress = {
+  selecting: 'Selecciona el puerto USB del collar, no el de la receptora.',
+  identifying: 'Esperando identificación…',
+  legacy: 'Firmware anterior: esperando el próximo envío (hasta 55 s)…',
+  saving: 'Guardando la detección en el predio activo…',
+};
 
 export type CandidateApprovalInput = {
   name: string;
@@ -62,12 +71,76 @@ export function validateCandidateApproval(input: CandidateApprovalInput): Candid
   };
 }
 
+export function UsbCollarDetection({ onDetected, onCandidatesChange }: {
+  onDetected: (candidate: DeviceCandidate) => void;
+  onCandidatesChange: () => void;
+}) {
+  const [usbStage, setUsbStage] = useState<keyof typeof usbProgress | null>(null);
+  const [usbBusy, setUsbBusy] = useState(false);
+  const [usbError, setUsbError] = useState('');
+  const usbRun = useRef<AbortController | null>(null);
+  const detectButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => () => {
+    usbRun.current?.abort();
+    usbRun.current = null;
+  }, []);
+
+  async function detectCollar() {
+    if (usbRun.current) return;
+    const run = new AbortController();
+    usbRun.current = run;
+    setUsbBusy(true);
+    setUsbError('');
+    try {
+      const descriptor = await detectUsbCollar({ signal: run.signal, onProgress: setUsbStage });
+      run.signal.throwIfAborted();
+      setUsbStage('saving');
+      const candidate = await write<DeviceCandidate>('/v3/device-candidates', { ...descriptor, source: 'usb' });
+      if (usbRun.current !== run) return;
+      if (!candidate.id || candidate.status !== 'pending') throw new Error('El servidor no confirmó la detección USB. Actualiza la bandeja y vuelve a intentarlo.');
+      onCandidatesChange();
+      if (!run.signal.aborted) onDetected(candidate);
+    } catch (error) {
+      if (!run.signal.aborted) {
+        setUsbError(error instanceof ApiError && error.status === 409
+          ? 'Ese collar ya está registrado. Busca su identificador en el inventario de dispositivos.'
+          : error instanceof Error ? error.message : 'No se pudo detectar el collar. Reconéctalo y vuelve a intentarlo.');
+      }
+    } finally {
+      if (usbRun.current === run) {
+        usbRun.current = null;
+        setUsbStage(null);
+        setUsbBusy(false);
+      }
+    }
+  }
+
+  function closeDetection() {
+    usbRun.current?.abort();
+    setUsbStage(null);
+    setUsbError('');
+  }
+
+  return <>
+    <button className="button primary" type="button" onClick={detectCollar} disabled={usbBusy} ref={detectButton}>
+      <Usb size={17} aria-hidden="true" />Detectar collar por USB
+    </button>
+    {(usbStage || usbError) && <CollarDialog title="Detectar collar por USB" onClose={closeDetection} returnFocusTo={detectButton.current}>
+      <div className="form-body">
+        <p className="collar-usb-note"><Info size={16} aria-hidden="true" />Conecta el collar por USB al equipo donde está abierto este navegador.</p>
+        {usbStage && <p role="status">{usbProgress[usbStage]}</p>}
+        <ErrorNotice error={usbError} />
+        <div className="form-actions">
+          <button className="button secondary" type="button" onClick={closeDetection}>{usbError ? 'Cerrar' : 'Cancelar'}</button>
+        </div>
+      </div>
+    </CollarDialog>}
+  </>;
+}
+
 export function DeviceCandidatesPanel({
-  canWrite,
-  notify,
-  candidates,
-  onApproved,
-  onDismissed,
+  canWrite, notify, candidates, approving, onApprove, onApproved, onCandidatesChange, now = Date.now(),
 }: {
   canWrite: boolean;
   notify: Notify;
@@ -77,111 +150,76 @@ export function DeviceCandidatesPanel({
     error: string;
     reload: () => void;
   };
+  approving: DeviceCandidate | null;
+  onApprove: (candidate: DeviceCandidate | null) => void;
   onApproved: () => void;
-  onDismissed: () => void;
+  onCandidatesChange: () => void;
+  now?: number;
 }) {
-  const [approving, setApproving] = useState<DeviceCandidate | null>(null);
   const [dismissing, setDismissing] = useState<DeviceCandidate | null>(null);
-
   const pendingItems = candidates.data?.items ?? [];
+  const hasPending = pendingItems.length > 0;
+  const refresh = <button className="icon-button collar-candidate-refresh" type="button" onClick={candidates.reload}
+    disabled={candidates.loading} title="Actualizar collares detectados" aria-label="Actualizar collares detectados">
+    <RefreshCw size={16} aria-hidden="true" className={candidates.loading ? 'spin' : ''} />
+  </button>;
 
   return (
-    <Panel className="candidates-panel">
-      <PanelTitle
+    <Panel className={'candidates-panel' + (hasPending ? ' collar-candidates-pending' : '')}>
+      {(!candidates.data || hasPending) && <PanelTitle
         title="Collares detectados"
-        subtitle="Módulos reconocidos por USB o tramas de radio pendientes de incorporación al inventario del predio."
-        action={
-          <button
-            className="button secondary small"
-            type="button"
-            onClick={candidates.reload}
-            disabled={candidates.loading}
-          >
-            <RefreshCw size={15} className={candidates.loading ? 'spin' : ''} />
-            Actualizar
-          </button>
-        }
-      />
+        subtitle="Revisa los collares detectados por USB o radio antes de agregarlos al inventario."
+        action={<div className="collar-candidate-tools">
+          {hasPending && <span className="collar-pending-count">{pendingItems.length} {pendingItems.length === 1 ? 'pendiente' : 'pendientes'}</span>}
+          {refresh}
+        </div>}
+      />}
       <ErrorNotice error={candidates.error} retry={candidates.reload} />
       {candidates.loading && !candidates.data && <Loading label="Consultando collares detectados…" />}
-      {!candidates.loading && candidates.data && (
-        pendingItems.length > 0 ? (
+      {candidates.data && (
+        hasPending ? (
           <div className="table-scroll">
-            <table>
+            <table className="card-table collar-table" aria-label="Collares detectados">
               <thead>
                 <tr>
-                  <th>Collar detectado</th>
-                  <th>Origen</th>
-                  <th>Transporte</th>
-                  <th>Intervalo</th>
-                  <th>Firmware</th>
-                  <th>Detección</th>
-                  <th>Veces visto</th>
-                  {canWrite && <th>Acciones</th>}
+                  <th scope="col">Collar detectado</th>
+                  <th scope="col">Origen</th>
+                  <th scope="col">Detalles</th>
+                  <th scope="col">Detección</th>
+                  {canWrite && <th scope="col">Acciones</th>}
                 </tr>
               </thead>
               <tbody>
-                {pendingItems.map(candidate => (
-                  <tr key={candidate.id}>
-                    <td>
+                {pendingItems.map(candidate => {
+                  const last = collarTimestamp(candidate.last_seen_at, now);
+                  const first = collarTimestamp(candidate.first_seen_at, now);
+                  const detectionTitle = [last && 'Última detección: ' + last.exact, first && 'Primera detección: ' + first.exact].filter(Boolean).join(' · ');
+                  return <tr key={candidate.id}>
+                    <td data-label="Collar detectado">
                       <div className="animal-cell">
-                        <span className="animal-avatar">
-                          <Radio size={18} />
-                        </span>
-                        <div>
-                          <strong>{candidate.suggested_name}</strong>
-                          <small>{candidate.hardware_id}</small>
-                        </div>
+                        <span className="animal-avatar" aria-hidden="true"><Radio size={18} /></span>
+                        <div><strong>{candidate.suggested_name}</strong><small>{candidate.hardware_id}</small></div>
                       </div>
                     </td>
-                    <td>
-                      <span className="neutral-tag">
-                        {candidate.source === 'usb' ? 'USB' : 'Radio'}
-                      </span>
-                    </td>
-                    <td>
-                      {candidate.transport === 'academic' ? 'Académico' : 'LoRaWAN'}
+                    <td data-label="Origen"><span className="neutral-tag">{candidate.source === 'usb' ? 'USB' : 'Radio'}</span></td>
+                    <td data-label="Detalles">
+                      {candidate.transport === 'academic' ? 'Académico' : 'LoRaWAN'} · {candidate.interval_seconds} s · firmware {candidate.firmware_version || '—'}
                       {candidate.dev_eui && <small>{candidate.dev_eui}</small>}
                     </td>
-                    <td>
-                      <strong>{candidate.interval_seconds} s</strong>
+                    <td data-label="Detección">
+                      {last ? <time dateTime={last.value} title={detectionTitle}>{last.relative}</time> : 'Sin datos'}
+                      {' · '}{candidate.seen_count} {candidate.seen_count === 1 ? 'vez' : 'veces'}
                     </td>
-                    <td>
-                      {candidate.firmware_version || <span className="muted">—</span>}
-                    </td>
-                    <td>
-                      <div>
-                        <strong>{date(candidate.last_seen_at)}</strong>
-                        <small>Primera: {date(candidate.first_seen_at)}</small>
+                    {canWrite && <td data-label="Acciones" className="card-table-action">
+                      <div className="row-actions collar-row-actions" role="group" aria-label={'Acciones de ' + candidate.suggested_name}>
+                        <button className="button primary small" type="button" aria-label={'Agregar al sistema: ' + candidate.suggested_name}
+                          onClick={() => onApprove(candidate)}><Plus size={15} aria-hidden="true" />Agregar</button>
+                        <button className="icon-button collar-danger-action" type="button" aria-label={'Descartar: ' + candidate.suggested_name}
+                          title="Descartar" onClick={() => setDismissing(candidate)}><Trash2 size={17} aria-hidden="true" /></button>
                       </div>
-                    </td>
-                    <td>
-                      <span>{candidate.seen_count} {candidate.seen_count === 1 ? 'vez' : 'veces'}</span>
-                    </td>
-                    {canWrite && (
-                      <td>
-                        <div className="row-actions">
-                          <button
-                            className="button primary small"
-                            type="button"
-                            onClick={() => setApproving(candidate)}
-                          >
-                            <Plus size={14} />
-                            Agregar al sistema
-                          </button>
-                          <button
-                            className="button secondary small"
-                            type="button"
-                            onClick={() => setDismissing(candidate)}
-                          >
-                            <Trash2 size={14} />
-                            Descartar
-                          </button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
+                    </td>}
+                  </tr>;
+                })}
               </tbody>
             </table>
           </div>
@@ -190,30 +228,30 @@ export function DeviceCandidatesPanel({
             compact
             icon={<Radio size={18} />}
             title="Sin collares detectados pendientes"
-            description="Los collares conectados por USB o reconocidos mediante radio aparecerán automáticamente aquí para su incorporación."
+            action={refresh}
           />
         )
       )}
 
-      {approving && (
+      {canWrite && approving && (
         <ApproveCandidateModal
           candidate={approving}
-          onClose={() => setApproving(null)}
+          onClose={() => onApprove(null)}
           onApproved={() => {
-            setApproving(null);
+            onApprove(null);
             onApproved();
           }}
           notify={notify}
         />
       )}
 
-      {dismissing && (
+      {canWrite && dismissing && (
         <DismissCandidateModal
           candidate={dismissing}
           onClose={() => setDismissing(null)}
           onDismissed={() => {
             setDismissing(null);
-            onDismissed();
+            onCandidatesChange();
           }}
           notify={notify}
         />
@@ -289,7 +327,7 @@ function ApproveCandidateModal({
   }
 
   return (
-    <Modal title={`Agregar collar ${candidate.hardware_id} al sistema`} onClose={onClose}>
+    <CollarDialog title={`Agregar collar ${candidate.hardware_id} al sistema`} onClose={onClose}>
       <form className="form-body" onSubmit={submit}>
         <p className="form-intro">
           Revisa y confirma la configuración del collar detectado por {candidate.source === 'usb' ? 'USB' : 'radio'} antes de incorporarlo al inventario activo.
@@ -361,7 +399,7 @@ function ApproveCandidateModal({
           <Submit busy={busy}>Agregar al sistema</Submit>
         </div>
       </form>
-    </Modal>
+    </CollarDialog>
   );
 }
 
@@ -398,7 +436,7 @@ function DismissCandidateModal({
   }
 
   return (
-    <Modal title={`Descartar collar detectado`} onClose={onClose}>
+    <CollarDialog title="Descartar collar detectado" onClose={onClose}>
       <div className="form-body">
         <p className="form-intro">
           ¿Confirmas que deseas descartar el collar <strong>{candidate.suggested_name}</strong> con identificador <code>{candidate.hardware_id}</code>?
@@ -419,6 +457,6 @@ function DismissCandidateModal({
           </button>
         </div>
       </div>
-    </Modal>
+    </CollarDialog>
   );
 }

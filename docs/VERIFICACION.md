@@ -42,6 +42,17 @@ El wrapper conserva la prohibición de probar mediante esa ruta sobre developmen
 
 `qa/test_hardware_api.py` es una suite adicional de cinco comprobaciones que se omite por defecto. Requiere `GEOCATTLE_TEST_DATABASE=1` y `TEST_DATABASE_URL` apuntando a PostgreSQL/PostGIS de QA con el esquema migrado. La suite crea y revierte sus propias cuentas, predios y lecturas ficticias. Sus verificaciones anteriores están documentadas en [Visualización de telemetría](VISUALIZACION_TELEMETRIA.md).
 
+### Recorrido HTTP, carga y recuperación en QA
+
+Usa un PostgreSQL/PostGIS de loopback con una base descartable `geocattle_qa_*`, las migraciones aplicadas y una API de desarrollo en otro puerto. Ajusta `DATABASE_URL`, `APP_ENV=development`, `SIMULATION_ENABLED=false`, `INGEST_KEY` y `PYTHONPATH=backend` en el proceso QA. Si varias bases de QA comparten clúster, usa la misma contraseña de `geocattle_app` al migrarlas y evita aplicar migraciones durante la medición. El rol y su contraseña pertenecen al clúster.
+
+- `python -m qa.smoke_capture_http --url https://127.0.0.1:PUERTO --ca RUTA_CA --output RUTA_JSON` prueba las cuatro funciones sobre HTTPS. Define `QA_SMOKE_PASSWORD` como contraseña ficticia y usa `COOKIE_SECURE=true`, `ADMIN_LOGIN_MFA=true` y el origen HTTPS exacto. Para `--smtp`, apunta API y worker al mismo SMTP local con TLS y configura una misma `INVITATION_BASE_URL`.
+- `python -m qa.benchmark_capture --url http://127.0.0.1:PUERTO --output RUTA_JSON` ejecuta 70 collares durante 600 s y ráfagas de 70 y 320. Define `QA_BENCH_PASSWORD` y añade `psutil` al entorno QA. Puedes indicar los PID de la API, el worker y el postmaster con `--api-pid`, `--worker-pid` y `--postgres-pid` para registrar CPU y memoria.
+- `python -m qa.smoke_capture_recovery --directory RUTA_TEMPORAL_NUEVA` inicia su propia API de loopback, comprueba los reintentos, reabre SQLite y reconcilia 1.000 secuencias con PostgreSQL después de un corte de 1.800 s. Usa la misma configuración que la carga y omite cualquier capturador físico.
+- Para ejecutar pytest en desarrollo, después de verificar la base aislada, configura `TEST_DATABASE_URL` con la misma URL que `DATABASE_URL` y usa `python -m pytest backend/tests -q -rs` desde la raíz.
+
+[Campaña QA del 22 de noviembre de 2026](evidencias/QA_2026-11-22.md)
+
 ### Exportaciones de Excel y CSV
 
 En el entorno del backend con el extra `test`, `python -m pytest backend/tests/test_report_exports.py -q` desde la raíz comprueba los tipos y el escape con openpyxl y el lector CSV. En QA, `backend/tests/test_v3_animal_reports.py` comprueba además filtros de predio y zona horaria, roles, límites y concordancia con la vista previa. Para una revisión manual con el rebaño ficticio, descarga sanidad y telemetría (esta última requiere el seed de simulación o lecturas sintéticas) y abre el `.xlsx` en Excel. Comprueba las columnas, los tipos y la hoja `Metadatos`. El CSV de la interfaz usa `;` y coma decimal; el de integración usa `,` por defecto y puede requerir importación manual. [Contrato](CONTRATO_API.md#exportaciones-tabulares)

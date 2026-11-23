@@ -1,8 +1,9 @@
 /*
-  GEOCATTLE - EMISOR T-BEAM CLASICA
-  ESP32 + AXP2101 + SX1276 + GPS u-blox integrado
+  GEOCATTLE - EMISOR ESP32 / SX1276
+  T-Beam clasica (predeterminada): AXP2101 y GPS u-blox integrado.
+  T3 V1.6.1: sin PMU, con GPS NMEA externo opcional. Ver ../README.md.
 
-  CONEXIONES ACTUALES:
+  CONEXIONES T-BEAM:
     OLED SDA:   GPIO21
     OLED SCL:   GPIO22
     ADXL SDA:   GPIO25
@@ -29,13 +30,16 @@
   GPS:
     - Alimentacion continua durante el diagnostico.
     - UART a 9600, velocidad comprobada en esta placa.
-    - Solicita mensajes GSV al u-blox para ver satelites y C/N0.
+    - Solo T-Beam: solicita GSV al u-blox para ver satelites y C/N0.
     - No realiza restauracion de fabrica.
     - No guarda configuraciones mediante CFG-CFG.
 
   TX OK confirma finalizacion local del envio.
   No confirma recepcion del paquete.
 */
+
+// Descomenta esta linea para seleccionar la T3 desde Arduino IDE.
+// #define GEOCATTLE_BOARD_T3_V161
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -53,8 +57,10 @@
 #include <esp_system.h>
 #include <math.h>
 
-#define XPOWERS_CHIP_AXP2101
-#include <XPowersLib.h>
+#ifndef GEOCATTLE_BOARD_T3_V161
+  #define XPOWERS_CHIP_AXP2101
+  #include <XPowersLib.h>
+#endif
 
 // ============================================================
 // CONFIGURACION
@@ -80,8 +86,11 @@ constexpr bool PANTALLA_ACTIVA = true;
 // Mantener true mientras se diagnostica el GPS.
 constexpr bool MOSTRAR_NMEA = true;
 
-// Solicita GSV al GPS u-blox mediante el GPIO12 interno.
+#ifdef GEOCATTLE_BOARD_T3_V161
+constexpr bool SOLICITAR_GSV = false;
+#else
 constexpr bool SOLICITAR_GSV = true;
+#endif
 
 // Umbrales iniciales. Ajustar con observacion real del animal.
 constexpr float UMBRAL_MOVIMIENTO_G = 0.12f;
@@ -131,28 +140,49 @@ void atenderIdentificacionUSB() {
   }
 }
 
-const int PIN_TEMPERATURA = 13;
+constexpr int OLED_SDA = 21;
+constexpr int OLED_SCL = 22;
+constexpr int OLED_RST = -1;
 
-const int OLED_SDA = 21;
-const int OLED_SCL = 22;
+constexpr int LORA_SCK = 5;
+constexpr int LORA_MISO = 19;
+constexpr int LORA_MOSI = 27;
+constexpr int LORA_CS = 18;
+constexpr int LORA_RST = 23;
+constexpr int LORA_DIO0 = 26;
 
-const int ADXL_SDA = 25;
-const int ADXL_SCL = 14;
+constexpr int PIN_GPS_RX = 34;
 
-const int PIN_GPS_RX = 34;
-const int PIN_GPS_TX = 12;
+#ifdef GEOCATTLE_BOARD_T3_V161
+constexpr int PIN_TEMPERATURA = 4;
+constexpr int PIN_BATERIA = 35;
+constexpr int PIN_GPS_TX = -1;
+constexpr int FACTOR_DIVISOR_BATERIA = 2;  // 100 kΩ / 100 kΩ
+constexpr int MUESTRAS_BATERIA = 16;
+#else
+constexpr int PIN_TEMPERATURA = 13;
+constexpr int ADXL_SDA = 25;
+constexpr int ADXL_SCL = 14;
+constexpr int PIN_GPS_TX = 12;
+#endif
 
 // ============================================================
 // OBJETOS
 // ============================================================
 
+#ifndef GEOCATTLE_BOARD_T3_V161
 XPowersPMU pmu;
+#endif
 
 Adafruit_SSD1306 pantalla(
-  128, 64, &Wire, -1, 100000, 100000
+  128, 64, &Wire, OLED_RST, 100000, 100000
 );
 
+#ifdef GEOCATTLE_BOARD_T3_V161
+TwoWire& busADXL = Wire;
+#else
 TwoWire busADXL(1);
+#endif
 
 OneWire oneWire(PIN_TEMPERATURA);
 DallasTemperature sensorTemperatura(&oneWire);
@@ -164,7 +194,9 @@ TinyGPSPlus gps;
 // ESTADO GENERAL
 // ============================================================
 
+#ifndef GEOCATTLE_BOARD_T3_V161
 bool pmuOK = false;
+#endif
 bool pantallaOK = false;
 bool acelerometroOK = false;
 
@@ -242,7 +274,7 @@ uint8_t ventanasReposo = 0;
 // ============================================================
 
 uint32_t bytesGPS = 0;
-uint32_t ultimoByteGPS = 0;
+uint32_t ultimosDatosGPS = 0;
 uint32_t ultimoDiagnosticoGPS = 0;
 
 char bufferNMEA[160];
@@ -293,14 +325,11 @@ const char* textoMovimiento() {
 }
 
 // ============================================================
-// ENERGIA AXP2101
+// ENERGIA Y BATERIA
 // ============================================================
 
+#ifndef GEOCATTLE_BOARD_T3_V161
 bool iniciarEnergia() {
-  Wire.begin(OLED_SDA, OLED_SCL);
-  Wire.setClock(100000);
-  Wire.setTimeOut(50);
-
   pmuOK = pmu.begin(
     Wire,
     0x34,
@@ -353,6 +382,7 @@ bool iniciarEnergia() {
          gpsVoltajeOK &&
          gpsEncendidoOK;
 }
+#endif
 
 int estimarPorcentaje(int mv) {
   const int curva[] = {
@@ -381,6 +411,15 @@ void leerBateria() {
   bateriaCargando = -1;
   usbPresente = -1;
 
+#ifdef GEOCATTLE_BOARD_T3_V161
+  uint32_t sumaMV = 0;
+  for (int i = 0; i < MUESTRAS_BATERIA; i++) {
+    sumaMV += analogReadMilliVolts(PIN_BATERIA);
+  }
+
+  const int lectura =
+    (sumaMV * FACTOR_DIVISOR_BATERIA + MUESTRAS_BATERIA / 2) / MUESTRAS_BATERIA;
+#else
   if (!pmuOK || !respondeI2C(0x34)) {
     return;
   }
@@ -395,7 +434,8 @@ void leerBateria() {
 
   bateriaCargando = pmu.isCharging() ? 1 : 0;
 
-  int lectura = pmu.getBattVoltage();
+  const int lectura = pmu.getBattVoltage();
+#endif
 
   if (lectura >= 2500 && lectura <= 4350) {
     bateriaMV = lectura;
@@ -443,8 +483,13 @@ void iniciarPantalla() {
   pantalla.ssd1306_command(SSD1306_DISPLAYON);
   pantalla.clearDisplay();
   pantalla.setCursor(0, 0);
+#ifdef GEOCATTLE_BOARD_T3_V161
+  pantalla.println("GEOCATTLE T3 V1.6.1");
+  pantalla.println("ADC / JSON V5");
+#else
   pantalla.println("GEOCATTLE T-BEAM");
   pantalla.println("AXP2101 / JSON V5");
+#endif
   pantalla.display();
 }
 
@@ -781,8 +826,8 @@ String campoNMEA(const String& texto, uint8_t indice) {
   return texto.substring(inicio, fin);
 }
 
-void analizarLineaGPS(const String& texto) {
-  if (!checksumNMEAValido(texto)) return;
+bool analizarLineaGPS(const String& texto) {
+  if (!checksumNMEAValido(texto)) return false;
 
   String tipo = campoNMEA(texto, 0);
 
@@ -794,6 +839,12 @@ void analizarLineaGPS(const String& texto) {
 
   bool esGSV =
     tipo == "$GPGSV" || tipo == "$GNGSV";
+
+#ifdef GEOCATTLE_BOARD_T3_V161
+  esGGA = esGGA || tipo == "$BDGGA";
+  esRMC = esRMC || tipo == "$BDRMC";
+  esGSV = esGSV || tipo == "$BDGSV";
+#endif
 
   if (
     MOSTRAR_NMEA &&
@@ -844,16 +895,62 @@ void analizarLineaGPS(const String& texto) {
       }
     }
   }
+
+  return true;
 }
+
+#ifdef GEOCATTLE_BOARD_T3_V161
+void procesarLineaGPST3() {
+  // GPIO34 puede quedar flotante sin GPS. Exige un encabezado NMEA
+  // antes de considerar que llegaron datos por UART.
+  if (
+    longitudNMEA < 7 ||
+    bufferNMEA[6] != ',' ||
+    (strncmp(bufferNMEA + 1, "GP", 2) != 0 &&
+     strncmp(bufferNMEA + 1, "GN", 2) != 0 &&
+     strncmp(bufferNMEA + 1, "BD", 2) != 0)
+  ) {
+    return;
+  }
+
+  ultimosDatosGPS = millis();
+  const String texto(bufferNMEA);
+  const bool checksumValido = analizarLineaGPS(texto);
+
+  // TinyGPSPlus solo extrae posiciones de GP/GN. Conserva la sentencia
+  // original para el diagnostico y adapta BD tras validar su checksum.
+  if (
+    checksumValido &&
+    (texto.startsWith("$BDGGA,") || texto.startsWith("$BDRMC,"))
+  ) {
+    bufferNMEA[1] = 'G';
+    bufferNMEA[2] = 'N';
+    const int estrella = texto.indexOf('*');
+    uint8_t checksum = 0;
+    for (int i = 1; i < estrella; i++) {
+      checksum ^= static_cast<uint8_t>(bufferNMEA[i]);
+    }
+    const char digitos[] = "0123456789ABCDEF";
+    bufferNMEA[estrella + 1] = digitos[checksum >> 4];
+    bufferNMEA[estrella + 2] = digitos[checksum & 0x0F];
+  }
+
+  for (size_t i = 0; i < longitudNMEA; i++) {
+    gps.encode(bufferNMEA[i]);
+  }
+  gps.encode('\n');
+}
+#endif
 
 void procesarGPS() {
   while (puertoGPS.available()) {
     char c = (char)puertoGPS.read();
 
     bytesGPS++;
-    ultimoByteGPS = millis();
-
+#ifndef GEOCATTLE_BOARD_T3_V161
+    ultimosDatosGPS = millis();
     gps.encode(c);
+#endif
 
     if (c == '$') {
       longitudNMEA = 0;
@@ -862,7 +959,11 @@ void procesarGPS() {
     } else if (c == '\n') {
       if (longitudNMEA > 0) {
         bufferNMEA[longitudNMEA] = '\0';
+#ifdef GEOCATTLE_BOARD_T3_V161
+        procesarLineaGPST3();
+#else
         analizarLineaGPS(String(bufferNMEA));
+#endif
       }
 
       longitudNMEA = 0;
@@ -988,8 +1089,12 @@ double hdopActual() {
 
 const char* estadoGPS() {
   if (
+#ifdef GEOCATTLE_BOARD_T3_V161
+    ultimosDatosGPS == 0 ||
+#else
     bytesGPS == 0 ||
-    millis() - ultimoByteGPS > 10000
+#endif
+    millis() - ultimosDatosGPS > 10000
   ) {
     return "SIN DATOS UART";
   }
@@ -1023,8 +1128,12 @@ void diagnosticarGPS(uint32_t ahora) {
   Serial.printf(
     "# GPS estado=%s bytes=%lu validas=%lu "
     "errores=%lu usados=%d visibles=%d "
-    "CN0max=%d HDOP=%.2f calidadGGA=%d "
-    "ALDO3=%d configurado_mV=%u\n",
+    "CN0max=%d HDOP=%.2f calidadGGA=%d"
+#ifdef GEOCATTLE_BOARD_T3_V161
+    "\n",
+#else
+    " ALDO3=%d configurado_mV=%u\n",
+#endif
     estadoGPS(),
     (unsigned long)bytesGPS,
     (unsigned long)gps.passedChecksum(),
@@ -1033,9 +1142,11 @@ void diagnosticarGPS(uint32_t ahora) {
     visiblesActuales(),
     cn0Actual(),
     isfinite(hdopActual()) ? hdopActual() : -1.0,
-    calidadGGA,
-    pmu.isEnableALDO3() ? 1 : 0,
-    (unsigned int)pmu.getALDO3Voltage()
+    calidadGGA
+#ifndef GEOCATTLE_BOARD_T3_V161
+    , pmu.isEnableALDO3() ? 1 : 0
+    , (unsigned int)pmu.getALDO3Voltage()
+#endif
   );
 
   // configurado_mV es el ajuste del regulador.
@@ -1047,8 +1158,8 @@ void diagnosticarGPS(uint32_t ahora) {
 // ============================================================
 
 bool iniciarRadio() {
-  SPI.begin(5, 19, 27, 18);
-  LoRa.setPins(18, 23, 26);
+  SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
+  LoRa.setPins(LORA_CS, LORA_RST, LORA_DIO0);
 
   if (!LoRa.begin(FRECUENCIA)) {
     return false;
@@ -1273,9 +1384,14 @@ void mostrarPantalla(uint32_t ahora) {
   pantalla.clearDisplay();
   pantalla.setCursor(0, 0);
 
+#ifdef GEOCATTLE_BOARD_T3_V161
+  pantalla.print("T3 ");
+  pantalla.print(COLLAR_ID);
+#else
   pantalla.print(COLLAR_ID);
   pantalla.print(" TX#");
   pantalla.print(secuencia);
+#endif
 
   uint8_t pagina = (ahora / 5000UL) % 3;
 
@@ -1340,6 +1456,9 @@ void mostrarPantalla(uint32_t ahora) {
       linea(0, "Bateria: sin lectura");
     }
 
+#ifdef GEOCATTLE_BOARD_T3_V161
+    linea(1, "ADC / Fuente desc.");
+#else
     linea(
       1,
       bateriaCargando == 1
@@ -1348,6 +1467,7 @@ void mostrarPantalla(uint32_t ahora) {
           ? "USB conectado"
           : "Fuente: bateria"
     );
+#endif
 
     linea(
       2,
@@ -1380,12 +1500,28 @@ void setup() {
   delay(500);
 
   Serial.println();
+
+#ifdef GEOCATTLE_BOARD_T3_V161
+  Serial.println("# GEOCATTLE T3 V1.6.1");
+  Serial.println("# OLED/ADXL345 SDA21 SCL22");
+  Serial.println("# DS18B20 DAT4 / ADC bateria GPIO35");
+  Serial.println("# GPS NMEA externo RX34 a 9600");
+#else
   Serial.println("# GEOCATTLE T-BEAM AXP2101");
   Serial.println("# OLED/PMU SDA21 SCL22");
   Serial.println("# ADXL345 SDA25 SCL14");
   Serial.println("# DS18B20 DAT13");
   Serial.println("# GPS interno RX34 / TX12");
+#endif
 
+  Wire.begin(OLED_SDA, OLED_SCL);
+  Wire.setClock(100000);
+  Wire.setTimeOut(50);
+
+#ifdef GEOCATTLE_BOARD_T3_V161
+  analogSetPinAttenuation(PIN_BATERIA, ADC_11db);
+  iniciarPantalla();
+#else
   bool energiaOK = iniciarEnergia();
 
   iniciarPantalla();
@@ -1393,6 +1529,7 @@ void setup() {
   if (!energiaOK) {
     detenerConError("ERROR PMU AXP2101");
   }
+#endif
 
   snprintf(
     sesion,
@@ -1402,8 +1539,6 @@ void setup() {
     (unsigned long)esp_random()
   );
 
-  // GPIO12 es una conexion interna al RX del GPS.
-  // No hay que agregar un cable externo.
   puertoGPS.setRxBufferSize(4096);
 
   puertoGPS.begin(
@@ -1427,6 +1562,7 @@ void setup() {
     (unsigned int)sensorTemperatura.getDeviceCount()
   );
 
+#ifndef GEOCATTLE_BOARD_T3_V161
   busADXL.begin(
     ADXL_SDA,
     ADXL_SCL,
@@ -1434,6 +1570,7 @@ void setup() {
   );
 
   busADXL.setTimeOut(50);
+#endif
 
   acelerometroOK = iniciarAcelerometro();
 

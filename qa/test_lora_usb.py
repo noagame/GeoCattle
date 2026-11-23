@@ -33,6 +33,10 @@ class DecoderTests(unittest.TestCase):
         self.assertIsNone(p['battery_mv'])
         self.assertFalse(p['quality']['battery_present'])
 
+    def test_csv_v4_rejects_voltage_with_unknown_battery_presence(self):
+        with self.assertRaisesRegex(ValueError, 'Datos de bateria sin bateria presente'):
+            decode(WIRE.rsplit(',', 2)[0] + ',-1,-1', NOW)
+
     def test_reject_simulation_and_nonfinite_and_bad_fix(self):
         for wire in (WIRE.replace(',device,', ',sim,'), WIRE.replace('0.546', 'inf'),
                      WIRE.replace(',0,-1,nan,nan,', ',1,-1,nan,nan,')):

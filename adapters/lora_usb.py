@@ -56,7 +56,10 @@ def decode(line, received_at, radio=None, receiver='PC-COM5'):
         return decode_json(text, received_at, radio, receiver)
     if not text.startswith('4,'):
         return None
-    fields = text.split(',')
+    return _decode_fields(text.split(','), received_at, radio, receiver, wire_protocol_version=4)
+
+
+def _decode_fields(fields, received_at, radio, receiver, *, wire_protocol_version):
     if len(fields) not in (21, 23):
         raise ValueError('CSV V4 requiere 21 o 23 campos')
     if not re.fullmatch(r'[A-Za-z0-9_:-]{1,100}', fields[1]):
@@ -87,10 +90,12 @@ def decode(line, received_at, radio=None, receiver='PC-COM5'):
         raise ValueError('Voltaje de bateria invalido')
     if (mv == -1) != (pct == -1):
         raise ValueError('Voltaje y porcentaje inconsistentes')
-    if present != 1 and (mv != -1 or pct != -1 or charging == 1):
+    # JSON V5 admite un ADC de bateria que no puede detectar su presencia.
+    can_measure_battery = present == 1 or (present == -1 and wire_protocol_version == 5)
+    if (mv != -1 and not can_measure_battery) or (charging == 1 and present != 1):
         raise ValueError('Datos de bateria sin bateria presente')
     quality = {
-        'wire_protocol_version': 4, 'uptime_ms': uptime,
+        'wire_protocol_version': wire_protocol_version, 'uptime_ms': uptime,
         'gps_age_ms': None if gps_age == -1 else gps_age,
         'acceleration_g': dict(zip(('x', 'y', 'z'), axes)),
         'battery_pct_est': None if pct == -1 else pct,

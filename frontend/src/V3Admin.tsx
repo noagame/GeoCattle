@@ -3,6 +3,7 @@ import { Activity, BarChart3, Building2, Cpu, KeyRound, Pencil, Plus, RefreshCw,
 import { date, message, query, useData, write } from './api';
 import { Badge, Detail, Empty, ErrorNotice, Loading, Modal, PageTitle, Panel, PanelTitle, Submit } from './ui';
 import { Pagination } from './PagesAnimals';
+import { ReportDownloads } from './ReportDownloads';
 import type { List, Audit } from './types';
 import type { Notify } from './App';
 import type { Farm, Kpis, KpiFarmOption, Owner } from './v3types';
@@ -119,7 +120,7 @@ export function AuditPage({ global = false }: { global?: boolean }) {
       <ErrorNotice error={filterError || farms.error} retry={farms.error ? farms.reload : undefined} />
       <div className="form-actions"><button type="button" className="button secondary" onClick={clear}>Restablecer</button><button type="submit" className="button primary">Buscar en servidor</button></div>
     </form></Panel>
-    <Panel><PanelTitle title="Resultados de auditoría" subtitle={`${audit.data?.total ?? '—'} registros coincidentes`} /><ErrorNotice error={audit.error} retry={audit.reload} />
+    <Panel><PanelTitle title="Resultados de auditoría" subtitle={`${audit.data?.total ?? '—'} registros coincidentes`} action={<ReportDownloads disabled={!audit.data?.total} path={format => `/v3/audit/export${query({ ...filters, format })}`} />} /><ErrorNotice error={audit.error} retry={audit.reload} />
       {audit.loading ? <Loading /> : audit.data?.items.length ? <div className="audit-list">
         {audit.data.items.map(item => <details key={item.id} className="audit-item">
           <summary><span className="notification-icon"><ShieldCheck size={17} /></span>

@@ -37,14 +37,14 @@ En ambos sistemas, [localhost:8084/api/v1/health](http://localhost:8084/api/v1/h
 
 ### Instalación desde cero en Windows
 
-Requisitos: Windows 10 u 11 de 64 bits, [Git](https://git-scm.com/download/win), [Python 3.12](https://www.python.org/downloads/windows/) (3.11 o posterior) y [Node.js 22 LTS](https://nodejs.org/). El prototipo nativo no usa Docker ni modifica un PostgreSQL instalado en Windows.
+Requisitos: Windows 10 u 11 de 64 bits, [Git](https://git-scm.com/download/win), [Python 3.12](https://www.python.org/downloads/windows/) y [Node.js 22 LTS](https://nodejs.org/). Las dependencias están verificadas con Python 3.11 y 3.12. Si tienes otra versión instalada, `py -3.12` elige la correcta. Para detectar collares y gateways por USB desde la web usa Chrome o Edge de escritorio. El prototipo nativo no usa Docker ni modifica un PostgreSQL instalado en Windows.
 
 1. Clona el repositorio y crea el entorno Python desde PowerShell:
 
    ```powershell
    git clone --branch main https://github.com/noagame/GeoCattle.git
    Set-Location GeoCattle
-   py -3 -m venv .venv
+   py -3.12 -m venv .venv
    .\.venv\Scripts\python.exe -m pip install -r backend\requirements.lock
    .\.venv\Scripts\python.exe -m pip install -r adapters\requirements.txt
    ```
@@ -79,11 +79,18 @@ Requisitos: Windows 10 u 11 de 64 bits, [Git](https://git-scm.com/download/win),
 
 6. Abre `Abrir-GeoCattle.cmd`. El primer arranque aplica las migraciones, crea la cuenta `prototipo@geocattle.local` con su predio y guarda la contraseña en `.runtime\acceso_prototipo.json`. También deja registrado el collar histórico `REAL01` sin asignación a bovino.
 
-Si falta un paso, el lanzador indica cuál ejecutar. Para enviar invitaciones por correo, agrega la configuración SMTP a `.env.academic`. [Correo SMTP](docs/OPERACION.md) · [Captura USB](#captura-usb-en-desarrollo-nativo)
+Si falta un paso, el lanzador indica cuál ejecutar. Comprueba la instalación en [localhost:8084/api/v1/health](http://localhost:8084/api/v1/health), que debe responder `status: ok`.
+
+Configuración opcional después del primer arranque:
+
+- **Correo de invitaciones.** Copia las variables `SMTP_*`, `INVITATION_BASE_URL` e `INVITATION_EMAIL_ENABLED=true` de `.env.example` a `.env.academic` con tus valores, prueba el envío con `.\.venv\Scripts\python.exe scripts\account_maintenance.py smtp-test --to CORREO` y vuelve a abrir el lanzador. [Correo SMTP](docs/OPERACION.md)
+- **Captura de collares.** Conecta la receptora y abre `Iniciar-Captura.cmd`. [Captura USB](#captura-usb-en-desarrollo-nativo)
+- **Alta de collares y gateways.** Se hace por USB desde la web. [Hardware](#incorporar-collares-y-gateways)
+- **Acceso desde otros equipos de la red.** Abre `Abrir-GeoCattle-LAN.cmd`. [Acceso HTTPS](#acceso-desde-otros-equipos-de-la-red-windows)
 
 ### Instalación desde cero en Linux
 
-Los pasos usan Ubuntu o Debian. Necesitas Git, Python 3.11 o posterior y Docker Engine con el plugin Compose 2. [Instalación de Docker Engine](https://docs.docker.com/engine/install/)
+Los pasos usan Ubuntu 24.04 o Debian 12, que traen Python 3.12 y 3.11. Necesitas Git, Python 3.11 o posterior como `python3` y Docker Engine con el plugin Compose 2. En Ubuntu 22.04, `python3` es la versión 3.10: instala una versión posterior antes de continuar. El iniciador no necesita Node.js ni PostgreSQL en el equipo, porque la interfaz y la base se construyen en contenedores. [Instalación de Docker Engine](https://docs.docker.com/engine/install/)
 
 ```bash
 sudo apt update
@@ -100,11 +107,22 @@ cd GeoCattle
 ./Abrir-GeoCattle.sh propietario@example.com "Mi predio"
 ```
 
-El primer arranque descarga y construye las imágenes. Después, el [inicio rápido en Linux](#inicio-rápido-en-linux) solo necesita `./Abrir-GeoCattle.sh`. Para capturar por USB, agrega tu usuario al grupo `dialout` con `sudo usermod -aG dialout "$USER"` y vuelve a iniciar sesión. [Captura con Docker](#docker-en-windows-y-linux)
+El primer arranque descarga y construye las imágenes, y tarda varios minutos. Al terminar, abre [localhost:8084](http://localhost:8084/) y entra con el correo indicado y la contraseña `ADMIN_PASSWORD` de `.env.docker`. Después, el [inicio rápido en Linux](#inicio-rápido-en-linux) solo necesita `./Abrir-GeoCattle.sh`. Para capturar por USB, agrega tu usuario al grupo `dialout` con `sudo usermod -aG dialout "$USER"` y vuelve a iniciar sesión. [Captura con Docker](#docker-en-windows-y-linux)
 
-Para usar el PC Windows como servidor para otros dispositivos de la misma red, inicia el prototipo y luego abre [`Abrir-GeoCattle-LAN.cmd`](Abrir-GeoCattle-LAN.cmd). En cada apertura muestra la URL HTTPS para la IP local vigente en el puerto `8445`. Un punto de acceso del celular puede proporcionar la red local. [Configuración de acceso desde otro dispositivo](docs/DESARROLLO_LOCAL.md#acceso-https-desde-otro-dispositivo)
+Para el correo de invitaciones copia las variables `SMTP_*` de `.env.example` a `.env.docker` con tus valores y vuelve a ejecutar el iniciador. Usa la misma `INVITATION_BASE_URL` para la API y el worker. [Correo SMTP](docs/OPERACION.md)
 
-Para incorporar un collar compatible, ejecuta [`Registrar-Collar-USB.cmd`](Registrar-Collar-USB.cmd) en el PC servidor o recibe su primera trama LoRa. Aprueba el alta en **Collares detectados** y asigna el collar después desde la web local o por HTTPS. [Alta por USB o LoRa](docs/DESARROLLO_LOCAL.md#incorporar-un-collar-por-usb-o-lora)
+### Acceso desde otros equipos de la red (Windows)
+
+Para usar el PC Windows como servidor para otros dispositivos de la misma red, inicia el prototipo y luego abre [`Abrir-GeoCattle-LAN.cmd`](Abrir-GeoCattle-LAN.cmd). En cada apertura muestra la URL HTTPS para la IP local vigente en el puerto `8445`. Instala en cada cliente el certificado público `.runtime/GeoCattle-LAN-CA.cer`. Desde la red el administrador entra con TOTP. Un punto de acceso del celular puede proporcionar la red local. [Configuración de acceso desde otro dispositivo](docs/DESARROLLO_LOCAL.md#acceso-https-desde-otro-dispositivo)
+
+### Incorporar collares y gateways
+
+1. **Firmware.** Carga el collar, la receptora o base T3 y los gateways XIAO desde `firmware/`. Los gateways comparten un solo sketch y requieren **RadioLib 7.8.1**, porque RadioLib 8.0 no lo compila. [Firmware](firmware/README.md)
+2. **Collar.** En Chrome o Edge, abre **Collares y dispositivos**, conecta el collar por USB al mismo equipo y pulsa **Detectar collar por USB**. Confirma el nombre y el intervalo, y asigna el collar a un bovino. También aparece en **Collares detectados** si llega su primera trama LoRa. Como alternativa en Windows, usa [`Registrar-Collar-USB.cmd`](Registrar-Collar-USB.cmd). [Alta de collares](docs/DESARROLLO_LOCAL.md#incorporar-un-collar-por-usb-o-lora)
+3. **Gateway.** En **Gateways instalados**, conecta el XIAO por USB y pulsa **Detectar gateway por USB**. GeoCattle reserva el nodo 1 o 2, lo graba en la placa y completa el alta cuando la placa confirma. Como alternativa, usa [`Registrar-Gateway-USB.cmd`](Registrar-Gateway-USB.cmd). [Alta de gateways](docs/DESARROLLO_LOCAL.md#incorporar-un-gateway-por-usb)
+4. **Recepción.** Conecta la T3 base y abre `Iniciar-Captura.cmd` en modo **Gateways**, o en modo **Directo** con la receptora T3.
+
+Cada detección, reserva, aprobación, descarte y alta queda en **Auditoría**, con su autor y origen.
 
 ## Estado del sistema
 
@@ -118,15 +136,16 @@ Funciones disponibles en `main`.
 | Inventario de gateways | Registro, ubicación, edición, archivado e historial de recepciones, con migración `005`. [Detalle](docs/CRUD_GATEWAYS.md). |
 | Captura USB | Selector **Directo** o **Gateways**, detección por identidad USB, lotes JSON, cola local y reintentos ante fallos de entrega o bloqueos breves del archivo de estado. [Operación](docs/DESARROLLO_LOCAL.md). |
 | Registro sanitario | Ficha técnica, mediciones y agenda con historial y autoría. El formulario adapta sus campos al tipo de evento. |
-| Reportes del rebaño | Vista previa y CSV de inventario, sanidad, agenda, mediciones, observaciones, asignaciones, alertas y actividad diaria. |
+| Reportes del rebaño | Vista previa, Excel y CSV de inventario, sanidad, agenda, mediciones, observaciones, asignaciones, alertas y actividad diaria. |
 | Indicadores del predio | Totales, serie de alertas y rankings de movimiento y salidas para dueño y administrador con predio seleccionado. |
-| Solicitudes y auditoría | Propuestas al dueño con seguimiento de la decisión, y solicitudes privadas de soporte atendidas por el administrador desde el panel global. |
+| Solicitudes y auditoría | Propuestas al dueño con seguimiento de la decisión, y solicitudes privadas de soporte atendidas por el administrador desde el panel global. La auditoría registra quién detecta, aprueba o descarta un collar o gateway y el origen de cada alta (USB, radio o manual). Se exporta a Excel o CSV con los filtros aplicados. |
 | Alertas de sensores | Umbral térmico, mínimo de actividad y duración configurables por predio. El simulador permite probar cambios antes de guardarlos. |
 | Acceso de administrador | Usuario y contraseña en desarrollo y simulación. El TOTP es configurable para ese inicio de sesión y se puede reemplazar, quitar o restablecer. [Configuración](#acceso-de-administrador). |
 | Invitaciones por correo | Envío SMTP opcional con STARTTLS o TLS, reintentos y prueba de configuración. Sin SMTP, el enlace se comparte manualmente. [Operación](docs/OPERACION.md). |
-| Collares detectados | La captura LoRa y el alta USB registran collares desconocidos en una bandeja por predio. Dueño o administrador los aprueba o descarta. [Alta por USB o LoRa](docs/DESARROLLO_LOCAL.md#incorporar-un-collar-por-usb-o-lora). |
+| Collares detectados | La captura LoRa y la detección USB desde la web registran collares desconocidos en una bandeja por predio. Dueño o administrador los aprueba o descarta. Un collar se puede desvincular, retirar o, si no tiene historial, eliminar. [Alta por USB o LoRa](docs/DESARROLLO_LOCAL.md#incorporar-un-collar-por-usb-o-lora). |
+| Gateways detectados | Detección por USB o radio. GeoCattle asigna el nodo 1 o 2 por USB, con migración `011`. [Alta de gateways](docs/DESARROLLO_LOCAL.md#incorporar-un-gateway-por-usb). |
 | Datos de validación | `scripts/seed_validation_data.py` carga 40 bovinos ficticios con historial en un predio de validación, con respaldo previo. [Verificación](docs/VERIFICACION.md#carga-de-un-rebaño-de-validación). |
-| Hardware | Código Arduino del collar, las dos receptoras y los dos repetidores. [Firmware](firmware/README.md). |
+| Hardware | Código Arduino del collar (perfiles T-Beam y T3), la receptora directa, la base T3 y un sketch único para los gateways. [Firmware](firmware/README.md). |
 | Docker y LoRaWAN | Docker levanta la aplicación y admite perfiles MQTT/ChirpStack. La validación física de LoRaWAN está pendiente. |
 
 El código de la aplicación y de la captura se mantiene en `main`. Para contribuir consulta [CONTRIBUTING.md](CONTRIBUTING.md). Las comprobaciones de GitHub cubren compilación del frontend, contratos de captura, reglas de dominio y API con PostGIS temporal. El ensayo físico por repetidores del 10 de noviembre verificó recepción y persistencia de lotes en el prototipo local.
@@ -137,7 +156,7 @@ El código de la aplicación y de la captura se mantiene en `main`. Para contrib
 - Contexto multipredio, gestión de clientes, invitaciones, membresías, confianza por acción y aprobación de propuestas del trabajador. Las invitaciones vencidas se consultan mediante el filtro correspondiente.
 - Bovinos con DIIO, ficha técnica y sanitaria, historial, tratamientos y agenda con autoría.
 - **Registro sanitario** exige producto y vía para vacuna y antibiótico. Vacuna ofrece vías intramuscular, subcutánea e intranasal. La vía oral aparece en el selector de antibiótico. Procedimiento admite productos opcionales y Muerte muestra las circunstancias y la causa si se conoce. La API valida estas reglas al guardar y al aprobar propuestas.
-- **Rebaño y salud → Reportes del rebaño** permite consultar registros del predio o de un bovino y descargar el filtro aplicado en CSV. Dueño y administrador pueden exportar los totales de bovinos, collares y módulos, agrupar alertas por día, semana o mes en la zona horaria del predio y consultar los rankings por porcentaje de muestras en movimiento o por aperturas de alertas de salida de geocerca. Los rankings muestran la cobertura que sustenta cada puesto. [Contrato de reportes](docs/CONTRATO_API.md#reportes-del-rebaño)
+- **Rebaño y salud → Reportes del rebaño** permite consultar registros del predio o de un bovino y descargar el filtro aplicado en Excel o CSV. Dueño y administrador pueden exportar los totales de bovinos, collares y módulos, agrupar alertas por día, semana o mes en la zona horaria del predio y consultar los rankings por porcentaje de muestras en movimiento o por aperturas de alertas de salida de geocerca. Los rankings muestran la cobertura que sustenta cada puesto. [Contrato de reportes](docs/CONTRATO_API.md#reportes-del-rebaño)
 - Mapa Leaflet con imagen satelital y cartografía vial locales, OpenStreetMap opcional, escala métrica, recentrado y dibujo de geocercas versionadas.
 - Asociaciones históricas entre collar y animal, sector y geocerca, con vigencias que preservan las lecturas anteriores. En **Territorio → Sectores y geocercas** se puede trasladar un animal con su collar a otro potrero.
 - Recepción académica LoRa directo mediante una T3 USB con CSV V4 y JSON V5, y captura de lotes JSON mediante una T3 base. La cola local deduplica y reintenta la entrega a la API.
@@ -260,6 +279,9 @@ python3 scripts/local_backend.py test
 
 # Contrato y adaptadores: sin placas ni escritura en la base operativa
 python -m unittest qa.test_capture_startup qa.test_serial_receiver qa.test_capture_runtime qa.test_lora_json qa.test_lora_usb qa.test_lora_bus qa.test_receiver_profiles qa.test_receiver_switching qa.test_esp32_contract qa.test_academic_bridge
+
+# Iniciadores y asistentes USB de collares y gateways
+python -m unittest qa.test_docker_project qa.test_docker_portability_safety qa.test_capture_portability qa.test_register_collar_usb qa.test_register_gateway_usb
 
 # Arranque, pruebas HTTP y persistencia en un proyecto Docker aislado
 python qa/docker_portability.py

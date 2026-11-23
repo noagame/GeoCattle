@@ -36,8 +36,7 @@ def admin_login_requires_mfa(request: Request) -> bool:
 
 
 def check_session_csrf(request, session):
-    csrf = request.headers.get("X-CSRF-Token", "")
-    if not hmac.compare_digest(csrf, session.csrf_token):
+    if not matches_secret_header(request, "X-CSRF-Token", session.csrf_token):
         raise HTTPException(403, "Token CSRF inválido")
     origin = request.headers.get("origin")
     allowed = {s.strip() for s in settings().allowed_origins.split(",") if s.strip()}
@@ -74,5 +73,12 @@ def operator(user=Depends(current_user)):
     if user.role not in ("owner","admin","operator","worker","veterinarian"): raise HTTPException(403,"Sin permiso de escritura")
     return user
 
+def matches_secret_header(request: Request, name: str, expected: str) -> bool:
+    # ASGI exposes header bytes through Starlette's Latin-1 decoding.
+    supplied = request.headers.get(name, "").encode("latin-1")
+    return hmac.compare_digest(supplied, expected.encode("utf-8"))
+
+
 def service_auth(request:Request):
-    if not hmac.compare_digest(request.headers.get("X-Ingest-Key",""),settings().ingest_key): raise HTTPException(401,"Credencial de ingestión inválida")
+    if not matches_secret_header(request, "X-Ingest-Key", settings().ingest_key):
+        raise HTTPException(401, "Credencial de ingestión inválida")

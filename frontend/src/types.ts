@@ -23,6 +23,7 @@ export type Device = {
   transport: 'academic' | 'lorawan'; enabled: boolean; interval_seconds: number; config_version: number;
   pending_config: { version: number; interval_seconds: number; status: string } | null;
   animal_id?: string | null; last_received_at?: string | null;
+  assignment_id: string | null; can_delete: boolean;
 };
 export type UsbCollar = { hardware_id: string; interval_seconds: number };
 export type Sector = { id: string; name: string; land_use?: 'grazing' | 'available' | 'cropped' | 'restricted' | 'other'; description?: string | null; active?: boolean };

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 from typing import Annotated, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -48,14 +49,15 @@ class DeviceCandidateApproval(Strict):
     @classmethod
     def aware(cls, value):
         return check_time(value)
-class AssignmentIn(Strict):
-    animal_id: UUID
-    device_id: UUID
+class AssignmentClose(Strict):
     effective_at: datetime | None = None
-    replace: bool = False
     @field_validator("effective_at")
     @classmethod
     def aware(cls,v): return check_time(v)
+class AssignmentIn(AssignmentClose):
+    animal_id: UUID
+    device_id: UUID
+    replace: bool = False
 class SectorIn(Strict):
     land_use: Literal["grazing","available","cropped","restricted","other"] = "grazing"
     description: str | None = Field(default=None,max_length=1000)
@@ -163,8 +165,12 @@ class TelemetryIn(Strict):
     def fix(self):
         if self.gnss_valid and (self.longitude is None or self.latitude is None): raise ValueError("Fix válido requiere longitud y latitud")
         if not self.gnss_valid and (self.longitude is not None or self.latitude is not None): raise ValueError("Sin fix las coordenadas deben ser nulas")
-        import json
-        if len(json.dumps(self.quality))>16384: raise ValueError("Quality demasiado grande")
+        try:
+            quality = json.dumps(self.quality, allow_nan=False)
+        except (TypeError, ValueError, RecursionError) as error:
+            raise ValueError("Quality requiere JSON válido") from error
+        if len(quality) > 16384:
+            raise ValueError("Quality demasiado grande")
         return self
 class ScenarioIn(Strict):
     scenario: Literal["normal","escape","return","low_battery","no_fix","timeout"]

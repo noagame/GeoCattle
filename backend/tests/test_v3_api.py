@@ -1039,6 +1039,68 @@ def test_candidate_dismissal_manual_conflict_and_lorawan_defaults(development_v3
     assert owner.post(route, json=other_descriptor).status_code == 409
 
 
+def test_collar_detection_lifecycle_and_device_origin_are_audited(development_v3):
+    v3 = development_v3
+    route = '/api/v1/v3/device-candidates'
+    owner = v3.client('owner')
+    capture = v3.client('owner', login=False)
+    headers = {'X-Ingest-Key': settings().ingest_key, 'X-Farm-ID': str(v3.farms['owner'].id)}
+
+    def entries(object_type, object_id):
+        return v3.db.execute(text("""SELECT action, actor_id, actor_kind, farm_id, before, after FROM audit_log
+            WHERE object_type=:kind AND object_id=:ident ORDER BY at, action"""),
+            {'kind': object_type, 'ident': str(object_id)}).mappings().all()
+
+    descriptor = {'hardware_id': f'GC-{uuid4().hex[:12].upper()}', 'transport': 'academic',
+                  'interval_seconds': 45, 'source': 'usb'}
+    first = owner.post(route, json=descriptor)
+    assert first.status_code == 201, first.text
+    assert owner.post(route, json=descriptor).json()['seen_count'] == 2
+    approved = owner.post(f"{route}/{first.json()['id']}/approve", json={})
+    assert approved.status_code == 200, approved.text
+    device_id = approved.json()['device']['id']
+    trail = entries('device_candidate', first.json()['id'])
+    assert [row['action'] for row in trail] == ['detect', 'approve']
+    assert all(row['actor_id'] == v3.users['owner'].id and row['farm_id'] == v3.farms['owner'].id for row in trail)
+    assert trail[0]['actor_kind'] == 'user' and trail[0]['after']['source'] == 'usb'
+    assert trail[1]['before']['status'] == 'pending' and trail[1]['after'] == {'status': 'approved', 'device_id': device_id}
+    created = entries('device', device_id)
+    assert [row['action'] for row in created] == ['create']
+    assert created[0]['after']['origin'] == {'source': 'usb', 'candidate_id': first.json()['id']}
+
+    radio = {'hardware_id': f'GC-{uuid4().hex[:12].upper()}', 'session_id': 'audit-session', 'seq': 1,
+             'observed_at': utcnow().isoformat(), 'gnss_valid': False, 'source': 'academic'}
+    receipt = capture.post('/api/v1/ingest/telemetry', json=radio, headers=headers)
+    assert receipt.status_code == 201, receipt.text
+    assert capture.post('/api/v1/ingest/telemetry', json={**radio, 'seq': 2}, headers=headers).status_code == 201
+    assert owner.post(f"{route}/{receipt.json()['id']}/dismiss").status_code == 200
+    trail = entries('device_candidate', receipt.json()['id'])
+    assert [row['action'] for row in trail] == ['detect', 'dismiss']
+    assert trail[0]['actor_id'] is None and trail[0]['actor_kind'] == 'service' and trail[0]['after']['source'] == 'radio'
+    assert trail[1]['after']['status'] == 'dismissed'
+
+    manual = owner.post('/api/v1/devices', json={
+        'hardware_id': f'GC-{uuid4().hex[:12].upper()}', 'name': 'Alta manual auditada', 'transport': 'academic',
+    })
+    assert manual.status_code == 201, manual.text
+    assert entries('device', manual.json()['id'])[0]['after']['origin'] == {'source': 'manual'}
+
+
+def test_capture_farms_lists_active_physical_farms_for_the_usb_assistant(development_v3):
+    v3 = development_v3
+    route = '/api/v1/v3/device-candidates/capture-farms'
+    capture = v3.client('owner', login=False)
+    assert capture.get(route).status_code == 401
+    assert capture.get(route, headers={'X-Ingest-Key': 'invalid'}).status_code == 401
+    response = capture.get(route, headers={'X-Ingest-Key': settings().ingest_key})
+    assert response.status_code == 200, response.text
+    listed = {item['id'] for item in response.json()['items']}
+    assert str(v3.farms['owner'].id) in listed
+    expected = {str(farm.id) for farm in v3.db.scalars(select(Farm).where(
+        Farm.environment == settings().app_env, Farm.active))}
+    assert listed == expected
+
+
 def test_simulation_refuses_physical_candidate_registration(v3, monkeypatch):
     monkeypatch.setattr(settings(), 'app_env', 'simulation')
     for farm in v3.farms.values():

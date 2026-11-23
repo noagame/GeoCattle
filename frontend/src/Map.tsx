@@ -144,11 +144,12 @@ function VertexMarker({ vertex, selected, onSelect, onMove, onDragStart }: { ver
 function GatewayMarker({ gateway, onMove, onDetail, selected=false, draft=false }: { gateway: Gateway; onMove?: (point: Point) => void; onDetail?: (gateway: Gateway) => void; selected?: boolean; draft?: boolean }) {
   const ref=useRef<L.Marker>(null);
   const icon=useMemo(()=>L.divIcon({className:`gateway-map-marker ${gateway.archived_at?'archived':''}`,html:'<span aria-hidden="true">G</span>',iconSize:[30,30],iconAnchor:[15,15]}),[gateway.archived_at]);
-  const title=draft?'Ubicación del gateway en edición':`Gateway ${gateway.name} · ${gateway.gateway_eui}`;
+  const identity=gateway.gateway_eui ?? (gateway.node_id ? `Nodo 0${gateway.node_id}` : 'EUI no informado');
+  const title=draft?'Ubicación del gateway en edición':`Gateway ${gateway.name} · ${identity}`;
   useEffect(()=>{const el=ref.current?.getElement();if(el){el.title=title;el.setAttribute('aria-label',title);el.classList.toggle('selected',selected||draft);}},[icon,title,selected,draft]);
   return <Marker ref={ref} position={[gateway.latitude!,gateway.longitude!]} icon={icon} title={title} draggable={!!onMove} bubblingMouseEvents={false} eventHandlers={{drag:event=>{const p=(event.target as L.Marker).getLatLng();onMove?.([p.lat,p.lng]);},click:event=>L.DomEvent.stopPropagation(event.originalEvent)}}>
-    <Tooltip permanent direction="top">{gateway.gateway_eui||'Nuevo gateway'}{gateway.archived_at?' · Archivado':''}</Tooltip>
-    {!draft&&<Popup><div className="map-popup"><strong>Gateway · {gateway.name}</strong><span>EUI {gateway.gateway_eui}</span><span>{gateway.latitude!.toFixed(6)}, {gateway.longitude!.toFixed(6)}</span><span>{gateway.archived_at?'Archivado · ':''}{gatewayStatus[gateway.status]??gateway.status}</span><span>Última recepción: {date(gateway.last_seen_at)}</span>{onDetail&&<button type="button" onClick={()=>onDetail(gateway)}>Ver detalle e historial</button>}</div></Popup>}
+    <Tooltip permanent direction="top">{draft ? 'Ubicación propuesta' : identity}{gateway.archived_at?' · Archivado':''}</Tooltip>
+    {!draft&&<Popup><div className="map-popup"><strong>Gateway · {gateway.name}</strong><span>{identity}</span><span>{gateway.latitude!.toFixed(6)}, {gateway.longitude!.toFixed(6)}</span><span>{gateway.archived_at?'Archivado · ':''}{gatewayStatus[gateway.status]??gateway.status}</span><span>Última recepción: {date(gateway.last_seen_at)}</span>{onDetail&&<button type="button" onClick={()=>onDetail(gateway)}>Ver detalle e historial</button>}</div></Popup>}
   </Marker>;
 }
 

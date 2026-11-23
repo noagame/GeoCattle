@@ -29,6 +29,35 @@ export type Kpis = { generated_at?: string; usage_period?: { start: string; end:
 export type Profile = { id: string; username: string; email?: string; full_name: string; phone?: string | null };
 export type UserNotice = { id: string; title?: string; body?: string; message?: string; read_at?: string | null; created_at?: string; status?: string; channel?: string; request_id?: string | null };
 export type ActivityCounts = { unread_notices: number; pending_changes: number; unread_support: number; pending_support: number };
+
+type OwnerExportContext = {
+  farm_id: string; farm_name: string; environment: string; origin: 'Físico' | 'Simulado';
+  timezone: string; start: string; end: string; generated_at: string;
+};
+export type OwnerMetric = {
+  code: string; name: string; value: number | null; unit: string; target: string;
+  status: 'Sí' | 'No' | 'Sin datos'; numerator: number | null; denominator: number | null;
+  window: string; method: string; observation: string; secondary_value: number | null; secondary_label: string | null;
+};
+export type OwnerMetricsExport = OwnerExportContext & { metrics: OwnerMetric[] };
+type ExportAsset = {
+  id: string; name: string; status: string; installed_at: string | null;
+  withdrawn_at: string | null; withdrawal_reason: string | null;
+};
+export type OwnerCollar = ExportAsset & {
+  hardware_id: string; dev_eui: string | null; transport: string; firmware_version: string | null;
+  interval_seconds: number; last_observed_at: string | null; last_received_at: string | null;
+  battery_mv: number | null; period_readings: number; diio: string | null; animal_name: string | null;
+  assigned_from: string | null; historical_assignments: number;
+};
+export type OwnerGateway = ExportAsset & {
+  gateway_eui: string | null; longitude: number | null; latitude: number | null;
+  last_seen_at: string | null; node_id: number | null; period_receptions: number;
+};
+export type OwnerDevicesExport = OwnerExportContext & {
+  summary: { collars: number; gateways: number; withdrawn_collars: number; withdrawn_gateways: number };
+  collars: OwnerCollar[]; gateways: OwnerGateway[];
+};
 export type SupportKind = 'close_account' | 'change_email' | 'access_issue';
 export type SupportStatus = 'pending' | 'resolved' | 'rejected';
 export type SupportRequest = {

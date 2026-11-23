@@ -93,3 +93,9 @@ export function query(values: Record<string, string>) {
   Object.entries(values).forEach(([key, value]) => { if (value) params.set(key, value); });
   return params.toString() ? `?${params.toString()}` : '';
 }
+
+export type OwnerExportPeriod = { days: '7' | '30' } | { start: string; end: string };
+export function ownerExportPath(kind: 'metricas' | 'dispositivos' | 'general', period: OwnerExportPeriod,
+  format: 'json' | 'csv' | 'xlsx' = 'json') {
+  return `/v3/owner-exports/${kind}${query({ ...period, format })}`;
+}

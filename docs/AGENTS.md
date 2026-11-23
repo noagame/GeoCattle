@@ -14,6 +14,7 @@ Este ámbito contiene operación, contratos, arquitectura, diseño V3, planifica
 - Documenta el uso del perfil y las invitaciones en [Usuarios y registro](USUARIOS_Y_REGISTRO.md), las rutas y estados en [Contrato de API](CONTRATO_API.md) y los pasos de consola y configuración privada en [Operación](OPERACION.md).
 - Mantén en [Verificación](VERIFICACION.md#carga-de-un-rebaño-de-validación) los comandos de carga ficticia, respaldo vinculado al destino y restauración en otra base.
 - Conserva en [Exportaciones tabulares](CONTRATO_API.md#exportaciones-tabulares) los filtros, límites y diferencias de representación entre Excel y las variantes CSV.
+- Mantén en [Exportación del dueño](CONTRATO_API.md#exportación-del-dueño) las fórmulas K01–K12 y la distinción entre medición, aproximación y ensayo de campo pendiente.
 - Mantén la instalación, atribución y alcance geográfico del mosaico local en [Mapa satelital](MAPA_SATELITAL.md).
 - Mantén la instalación, atribución y cobertura del mapa OpenStreetMap local en [Mapa OpenStreetMap local](MAPA_OSM_LOCAL.md).
 - Mantén los límites operativos del stack Docker y el ajuste opcional de WSL2 en [Desarrollo local](DESARROLLO_LOCAL.md#recursos-de-docker-desktop-y-wsl2). Documenta la liberación del volumen auxiliar del renderizador en [Mapa OpenStreetMap local](MAPA_OSM_LOCAL.md#liberar-espacio-y-actualizar).

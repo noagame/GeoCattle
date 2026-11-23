@@ -847,3 +847,34 @@
 .password-input>.password-toggle{position:absolute;inset-inline-end:3px;inset-block-start:50%;transform:translateY(-50%);display:grid;place-items:center;width:40px;height:40px;padding:0;border:0;border-radius:6px;background:transparent;color:#436047}
 .password-input>.password-toggle:hover:not(:disabled){background:#eaf2e4;color:#285b3a}
 .password-input>.password-toggle:focus-visible{outline:2px solid #487d57;outline-offset:-2px}
+
+/* Exportación del dueño */
+.owner-exports{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;min-inline-size:0;overflow-wrap:anywhere;font-size:14px}
+.owner-exports .panel,.owner-exports .page-title{margin-bottom:0}
+.owner-exports .panel,.owner-exports .panel-heading,.owner-exports .form-grid>label{min-inline-size:0}
+.owner-exports .panel-heading{flex-wrap:wrap;gap:12px}
+.owner-exports .button,.owner-exports .text-button,.owner-exports input,.owner-exports select{min-height:40px;font-size:13px}
+.owner-exports .eyebrow,.owner-exports .form-grid label,.owner-exports .panel-heading p,.owner-exports .page-title p,
+.owner-exports .notice,.owner-exports .loading,.owner-exports .empty p,.owner-export-table :is(th,td){font-size:13px}
+.owner-exports input,.owner-exports select{max-inline-size:100%;min-inline-size:0}
+.owner-export-actions,.owner-exports .report-downloads{display:flex;flex-wrap:wrap;gap:8px}
+.owner-export-metrics,.owner-export-inventory{display:grid;gap:12px;padding:16px}
+.owner-export-metrics>ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px;list-style:none;margin:0;padding:0}
+.owner-metric{display:grid;align-content:start;gap:6px;min-inline-size:0;padding:14px;border:1px solid #dce5d7;border-radius:8px;background:#f7faf5}
+.owner-metric-heading{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px}
+.owner-metric h3,.owner-metric p,.owner-export-inventory p,.owner-export-metrics>p{margin:0}
+.owner-metric h3{font-size:15px}
+.owner-metric .owner-metric-value{font-size:18px;font-weight:700}
+.owner-metric-state{border-radius:12px;padding:3px 8px;font-size:12px;font-weight:700}
+.owner-metric-state.pass{color:#245431;background:#e0f1e3}
+.owner-metric-state.fail{color:#783327;background:#f8e6df}
+.owner-metric-state.unknown{color:#424c3e;background:#e8eee4}
+.owner-metric summary{padding-block:10px;min-height:40px;cursor:pointer}
+.owner-export-table{min-inline-size:0;max-inline-size:100%;overflow-x:auto}
+.owner-export-table table{min-inline-size:28rem}
+.owner-export-table caption{text-align:left;font-size:15px;font-weight:700;padding-block:8px}
+.owner-export-table small{display:block;font-size:12px}
+@media(max-width:767px){
+  .owner-exports .form-grid{grid-template-columns:minmax(0,1fr)}
+  .owner-exports .panel-heading>div{max-inline-size:100%}
+}

@@ -672,3 +672,5 @@ from .hardware_api import router as hardware_router
 app.include_router(hardware_router)
 from .v3_animal_reports import router as animal_reports_router
 app.include_router(animal_reports_router)
+from .v3_owner_exports import router as owner_exports_router
+app.include_router(owner_exports_router)

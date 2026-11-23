@@ -1,0 +1,784 @@
+@startuml modelo_bd_completo
+hide circle
+hide empty members
+skinparam linetype ortho
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam nodesep 40
+skinparam ranksep 70
+skinparam class {
+  BorderColor #2F5D46
+  ArrowColor #4A6B5A
+  HeaderBackgroundColor #FFFFFF
+}
+title Mapa completo de la base de datos GeoCattle (PostgreSQL/PostGIS, migración 011_gateway_candidates.sql)
+
+package "Identidad y acceso" as dom0 #E8F3EC {
+  entity "users" as users {
+    * <b>id</b> : uuid <<PK>>
+    --
+    farm_id : uuid <<FK farms>>
+    * username : text
+    * password_hash : text
+    * role : text
+    * active : boolean
+    email : text
+    * full_name : text
+    phone : text
+    * version : bigint
+    email_verified_at : timestamptz
+    * created_at : timestamptz
+    * updated_at : timestamptz
+    * mfa_enrollment_required : boolean
+  }
+  entity "owner_accounts" as owner_accounts {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * owner_user_id : uuid <<FK users>>
+    * display_name : text
+    * max_farms : integer
+    * active : boolean
+    * created_at : timestamptz
+  }
+  entity "platform_admins" as platform_admins {
+    * <b>user_id</b> : uuid <<PK>> <<FK users>>
+    --
+    * active : boolean
+    * created_at : timestamptz
+  }
+  entity "roles" as roles {
+    * <b>code</b> : text <<PK>>
+    --
+    * name : text
+    * scope : text
+  }
+  entity "permissions" as permissions {
+    * <b>code</b> : text <<PK>>
+    --
+    * description : text
+  }
+  entity "role_permissions" as role_permissions {
+    * <b>role_code</b> : text <<PK>> <<FK roles>>
+    * <b>permission_code</b> : text <<PK>> <<FK permissions>>
+    --
+  }
+  entity "farm_memberships" as farm_memberships {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * user_id : uuid <<FK users>>
+    * role_code : text <<FK roles>>
+    * granted_by : uuid <<FK users>>
+    * valid_from : timestamptz
+    valid_to : timestamptz
+  }
+  entity "login_sessions" as login_sessions {
+    * <b>token_hash</b> : text <<PK>>
+    --
+    * user_id : uuid <<FK users>>
+    * csrf_token : text
+    * expires_at : timestamptz
+    active_farm_id : uuid <<FK farms>>
+    mfa_verified_at : timestamptz
+    step_up_at : timestamptz
+    * authenticated_at : timestamptz
+    * last_seen_at : timestamptz
+    revoked_at : timestamptz
+  }
+  entity "auth_challenges" as auth_challenges {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * user_id : uuid <<FK users>>
+    * token_hash : text
+    * purpose : text
+    session_token_hash : text <<FK login_sessions>>
+    operation_digest : text
+    * expires_at : timestamptz
+    verified_at : timestamptz
+    consumed_at : timestamptz
+    * attempts : integer
+    * created_at : timestamptz
+    factor_id : uuid <<FK mfa_factors>>
+  }
+  entity "mfa_factors" as mfa_factors {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * user_id : uuid <<FK users>>
+    * kind : text
+    credential_id : text
+    * protected_data : bytea
+    verified_at : timestamptz
+    revoked_at : timestamptz
+    * created_at : timestamptz
+  }
+  entity "mfa_recovery_codes" as mfa_recovery_codes {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * user_id : uuid <<FK users>>
+    * code_hash : text
+    used_at : timestamptz
+    * created_at : timestamptz
+  }
+  entity "account_tokens" as account_tokens {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * user_id : uuid <<FK users>>
+    * purpose : text
+    * token_hash : text
+    pending_email : text
+    * expires_at : timestamptz
+    consumed_at : timestamptz
+    * created_at : timestamptz
+  }
+  entity "invitations" as invitations {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * email : text
+    * role_code : text <<FK roles>>
+    * token_hash : text
+    * invited_by : uuid <<FK users>>
+    * expires_at : timestamptz
+    accepted_at : timestamptz
+    accepted_user_id : uuid <<FK users>>
+    revoked_at : timestamptz
+    * created_at : timestamptz
+  }
+  entity "invitation_mail" as invitation_mail {
+    * <b>invitation_id</b> : uuid <<PK>> <<FK invitations>>
+    * <b>kind</b> : text <<PK>>
+    --
+    * recipient : text
+    encrypted_token : bytea
+    * status : text
+    * attempts : integer
+    * created_at : timestamptz
+    * next_attempt_at : timestamptz
+    sent_at : timestamptz
+  }
+  entity "trust_grants" as trust_grants {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * membership_id : uuid <<FK farm_memberships>>
+    * action : text
+    * granted_by : uuid <<FK users>>
+    * valid_from : timestamptz
+    valid_to : timestamptz
+  }
+  entity "support_requests" as support_requests {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * requester_id : uuid <<FK users>>
+    * kind : text
+    * description : text
+    * status : text
+    * created_at : timestamptz
+    resolved_at : timestamptz
+    resolved_by : uuid <<FK users>>
+    response : text
+    read_at : timestamptz
+  }
+}
+
+package "Predio y configuración" as dom1 #EAF1F8 {
+  entity "farms" as farms {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * name : text
+    * environment : text
+    * timezone : text
+    account_id : uuid <<FK owner_accounts>>
+    rup : text
+    address : text
+    region : text
+    commune : text
+    boundary : geometry(MultiPolygon,4326)
+    * active : boolean
+    * created_at : timestamptz
+  }
+  entity "features" as features {
+    * <b>code</b> : text <<PK>>
+    --
+    * name : text
+  }
+  entity "farm_features" as farm_features {
+    * <b>farm_id</b> : uuid <<PK>> <<FK farms>>
+    * <b>feature_code</b> : text <<PK>> <<FK features>>
+    --
+    * enabled : boolean
+    * enabled_at : timestamptz
+  }
+  entity "sectors" as sectors {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * name : text
+    * land_use : text
+    description : text
+    * active : boolean
+  }
+  entity "geofences" as geofences {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * sector_id : uuid <<FK sectors>>
+    * name : text
+    * version : integer
+    * geometry : geometry(Polygon)
+    * active : boolean
+    * created_at : timestamptz
+    valid_to : timestamptz
+    created_by : uuid <<FK users>>
+    * geofence_key : uuid
+  }
+  entity "geofence_sectors" as geofence_sectors {
+    * <b>geofence_id</b> : uuid <<PK>> <<FK geofences>>
+    * <b>sector_id</b> : uuid <<PK>> <<FK sectors>>
+    --
+    * farm_id : uuid
+  }
+  entity "rule_settings" as rule_settings {
+    * <b>farm_id</b> : uuid <<PK>> <<FK farms>>
+    --
+    * version : integer
+    * battery_low_mv : integer
+    temperature_high_c : double precision
+    activity_low_threshold : double precision
+    * activity_window_minutes : integer
+    * proximity_meters : double precision
+    * temperature_enabled : boolean
+    * activity_enabled : boolean
+    * proximity_enabled : boolean
+  }
+  entity "pasture_assignments" as pasture_assignments {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * animal_id : uuid <<FK animals>>
+    * geofence_id : uuid <<FK geofences>>
+    * valid_from : timestamptz
+    valid_to : timestamptz
+    animal_holding_id : uuid <<FK animal_holdings>>
+    assigned_by : uuid <<FK users>>
+  }
+}
+
+package "Ganado y movimientos" as dom2 #FBF3E4 {
+  entity "animals" as animals {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * diio : text
+    * name : text
+    * orientation : text
+    * enabled : boolean
+    sector_id : uuid <<FK sectors>>
+    * species : text
+    breed : text
+    color : text
+    * sex : text
+    birth_date : date
+    * birth_date_estimated : boolean
+    * production_type : text
+    * status : text
+    * version : bigint
+    * created_at : timestamptz
+  }
+  entity "animal_holdings" as animal_holdings {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * animal_id : uuid <<FK animals>>
+    * valid_from : timestamptz
+    valid_to : timestamptz
+    * reason : text
+  }
+  entity "animal_states" as animal_states {
+    * <b>animal_id</b> : uuid <<PK>> <<FK animals>>
+    --
+    telemetry_id : uuid <<FK telemetry>>
+    observed_at : timestamptz
+    position_telemetry_id : uuid <<FK telemetry>>
+    * outside_count : integer
+    * geofence_status : text
+  }
+  entity "animal_measurements" as animal_measurements {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * animal_holding_id : uuid <<FK animal_holdings>>
+    * animal_id : uuid <<FK animals>>
+    * request_id : uuid <<FK change_requests>>
+    * measured_at : timestamptz
+    weight_kg : numeric
+    height_cm : numeric
+    corrects_id : uuid <<FK animal_measurements>>
+  }
+  entity "animal_reports" as animal_reports {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * animal_holding_id : uuid <<FK animal_holdings>>
+    * request_id : uuid <<FK change_requests>>
+    * description : text
+    * occurred_at : timestamptz
+  }
+  entity "sag_movements" as sag_movements {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    fma_folio : text
+    * origin_rup : text
+    * destination_rup : text
+    * status : text
+    departure_at : timestamptz
+    arrival_at : timestamptz
+    external_evidence : text
+    * created_by : uuid <<FK users>>
+    * created_at : timestamptz
+  }
+  entity "movement_animals" as movement_animals {
+    * <b>movement_id</b> : uuid <<PK>> <<FK sag_movements>>
+    * <b>animal_id</b> : uuid <<PK>> <<FK animals>>
+    --
+    * diio_snapshot : text
+  }
+  entity "movement_status_events" as movement_status_events {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * movement_id : uuid <<FK sag_movements>>
+    * status : text
+    * actor_id : uuid <<FK users>>
+    reason : text
+    * created_at : timestamptz
+  }
+}
+
+package "Salud" as dom3 #F8E9EC {
+  entity "health_events" as health_events {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * animal_holding_id : uuid <<FK animal_holdings>>
+    * request_id : uuid <<FK change_requests>>
+    * event_type : text
+    * operation : text
+    target_event_id : uuid <<FK health_events>>
+    * occurred_at : timestamptz
+    * recorded_by : uuid <<FK users>>
+    * description : text
+    diagnosis : text
+    * created_at : timestamptz
+  }
+  entity "health_schedules" as health_schedules {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * animal_holding_id : uuid <<FK animal_holdings>>
+    * request_id : uuid <<FK change_requests>>
+    * kind : text
+    * description : text
+    * due_at : timestamptz
+    * operation : text
+    target_schedule_id : uuid <<FK health_schedules>>
+    completed_event_id : uuid <<FK health_events>>
+    * created_by : uuid <<FK users>>
+    * created_at : timestamptz
+  }
+  entity "health_treatments" as health_treatments {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * health_event_id : uuid <<FK health_events>>
+    * product_name : text
+    product_registration : text
+    batch_number : text
+    * dose_value : numeric
+    * dose_unit : text
+    * route : text
+    * administered_at : timestamptz
+    withdrawal_meat_until : date
+    withdrawal_milk_until : date
+    withdrawal_basis : text
+  }
+}
+
+package "Dispositivos y captura" as dom4 #EFEAF8 {
+  entity "devices" as devices {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * hardware_id : text
+    dev_eui : text
+    * name : text
+    * transport : text
+    * enabled : boolean
+    * interval_seconds : integer
+    * config_version : integer
+    * installed_at : timestamptz
+    last_observed_at : timestamptz
+    last_received_at : timestamptz
+    last_telemetry_id : uuid <<FK telemetry>>
+    serial_number : text
+    hardware_revision : text
+    firmware_version : text
+    * status : text
+  }
+  entity "device_configs" as device_configs {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * device_id : uuid <<FK devices>>
+    * version : integer
+    * interval_seconds : integer
+    * status : text
+    * requested_at : timestamptz
+    sent_at : timestamptz
+    applied_at : timestamptz
+    error : text
+  }
+  entity "device_candidates" as device_candidates {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * hardware_id : text
+    * transport : text
+    dev_eui : text
+    * interval_seconds : integer
+    firmware_version : text
+    * source : text
+    * first_seen_at : timestamptz
+    * last_seen_at : timestamptz
+    * seen_count : bigint
+    * last_payload : jsonb
+    * status : text
+    resolved_at : timestamptz
+    resolved_by : uuid <<FK users>>
+    device_id : uuid <<FK devices>>
+  }
+  entity "device_candidate_captures" as device_candidate_captures {
+    * <b>farm_id</b> : uuid <<PK>>
+    * <b>hardware_id</b> : text <<PK>> <<FK device_candidates>>
+    * <b>session_id</b> : text <<PK>>
+    * <b>seq</b> : bigint <<PK>>
+    --
+    * candidate_id : uuid <<FK device_candidates>>
+  }
+  entity "assignments" as assignments {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * animal_id : uuid <<FK animals>>
+    * device_id : uuid <<FK devices>>
+    * valid_from : timestamptz
+    valid_to : timestamptz
+    animal_holding_id : uuid <<FK animal_holdings>>
+    assigned_by : uuid <<FK users>>
+    reason : text
+  }
+  entity "gateways" as gateways {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    gateway_eui : text
+    * name : text
+    position : geometry(Point)
+    * status : text
+    installed_at : timestamptz
+    last_seen_at : timestamptz
+    archived_at : timestamptz
+    archived_by : uuid <<FK users>>
+    * version : bigint
+    node_id : smallint
+    node_linked_at : timestamptz
+  }
+  entity "gateway_candidates" as gateway_candidates {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    node_id : smallint
+    reserved_node_id : smallint
+    gateway_eui : text
+    firmware : text
+    * source : text
+    * status : text
+    * first_seen_at : timestamptz
+    * last_seen_at : timestamptz
+    * seen_count : bigint
+    resolved_at : timestamptz
+    resolved_by : uuid <<FK users>>
+    gateway_id : uuid <<FK gateways>>
+  }
+  entity "gateway_bus_receipts" as gateway_bus_receipts {
+    * <b>farm_id</b> : uuid <<PK>> <<FK farms>>
+    * <b>hardware_id</b> : text <<PK>>
+    * <b>session_id</b> : text <<PK>>
+    * <b>seq</b> : bigint <<PK>>
+    * <b>node_id</b> : smallint <<PK>>
+    --
+  }
+  entity "maintenance" as maintenance {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * device_id : uuid <<FK devices>>
+    battery_id : text
+    * kind : text
+    * at : timestamptz
+    * responsible_id : uuid <<FK users>>
+    * result : text
+    request_id : uuid <<FK change_requests>>
+  }
+}
+
+package "Telemetría, eventos y avisos" as dom5 #E6F4F4 {
+  entity "telemetry" as telemetry {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * device_id : uuid <<FK devices>>
+    animal_id : uuid <<FK animals>>
+    assignment_id : uuid <<FK assignments>>
+    * session_id : text
+    * seq : bigint
+    * observed_at : timestamptz
+    * received_at : timestamptz
+    longitude : double precision
+    latitude : double precision
+    point : geometry(Point)
+    * gnss_valid : boolean
+    surface_temperature_c : double precision
+    activity_index : double precision
+    battery_mv : integer
+    * source : text
+    * quality : jsonb
+    config_version : integer
+  }
+  entity "telemetry_receptions" as telemetry_receptions {
+    * <b>telemetry_id</b> : uuid <<PK>> <<FK telemetry>>
+    * <b>gateway_id</b> : uuid <<PK>> <<FK gateways>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * received_at : timestamptz
+    rssi_dbm : numeric
+    snr_db : numeric
+  }
+  entity "events" as events {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    animal_id : uuid <<FK animals>>
+    * device_id : uuid <<FK devices>>
+    telemetry_id : uuid <<FK telemetry>>
+    geofence_id : uuid <<FK geofences>>
+    * type : text
+    * severity : text
+    * condition : text
+    * attention : text
+    * opened_at : timestamptz
+    resolved_at : timestamptz
+    * detail : jsonb
+    last_position_id : uuid <<FK telemetry>>
+  }
+  entity "event_actions" as event_actions {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * event_id : uuid <<FK events>>
+    * actor_id : uuid <<FK users>>
+    * action : text
+    * at : timestamptz
+    * note : text
+  }
+  entity "notifications" as notifications {
+    * <b>id</b> : uuid <<PK>>
+    --
+    event_id : uuid <<FK events>>
+    * status : text
+    * channel : text
+    requested_at : timestamptz
+    * created_at : timestamptz
+    * next_attempt_at : timestamptz
+    farm_id : uuid <<FK farms>>
+    recipient_id : uuid <<FK users>>
+    request_id : uuid <<FK change_requests>>
+    schedule_id : uuid <<FK health_schedules>>
+    recipient_address : text
+    * message : text
+    read_at : timestamptz
+  }
+  entity "notification_attempts" as notification_attempts {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * notification_id : uuid <<FK notifications>>
+    * attempt : integer
+    * at : timestamptz
+    * status : text
+    provider_id : text
+    error : text
+  }
+}
+
+package "Cambios, auditoría y operación" as dom6 #F1F1F1 {
+  entity "change_requests" as change_requests {
+    * <b>id</b> : uuid <<PK>>
+    --
+    * farm_id : uuid <<FK farms>>
+    * requested_by : uuid <<FK users>>
+    membership_id : uuid <<FK farm_memberships>>
+    * action : text
+    animal_holding_id : uuid <<FK animal_holdings>>
+    animal_id : uuid <<FK animals>>
+    device_id : uuid <<FK devices>>
+    expected_version : bigint
+    * payload : jsonb
+    * idempotency_key : uuid
+    * created_at : timestamptz
+  }
+  entity "change_decisions" as change_decisions {
+    * <b>request_id</b> : uuid <<PK>> <<FK change_requests>>
+    --
+    * decided_by : uuid <<FK users>>
+    * decision : text
+    trust_grant_id : uuid <<FK trust_grants>>
+    reason : text
+    * created_at : timestamptz
+  }
+  entity "change_applications" as change_applications {
+    * <b>request_id</b> : uuid <<PK>> <<FK change_decisions>>
+    --
+    * entity_type : text
+    * entity_id : uuid
+    * created_at : timestamptz
+  }
+  entity "audit_log" as audit_log {
+    * <b>id</b> : uuid <<PK>>
+    --
+    farm_id : uuid <<FK farms>>
+    actor_id : uuid <<FK users>>
+    * object_type : text
+    * object_id : text
+    * action : text
+    * at : timestamptz
+    before : jsonb
+    after : jsonb
+    account_id : uuid <<FK owner_accounts>>
+    session_token_hash : text <<FK login_sessions>>
+    * actor_kind : text
+    ip_address : inet
+    request_id : text
+  }
+  entity "request_metrics" as request_metrics {
+    * <b>id</b> : uuid <<PK>>
+    --
+    account_id : uuid <<FK owner_accounts>>
+    farm_id : uuid <<FK farms>>
+    actor_id : uuid <<FK users>>
+    * request_id : text
+    * method : text
+    * route_template : text
+    * status_code : integer
+    * duration_ms : numeric
+    * request_bytes : bigint
+    * response_bytes : bigint
+    * occurred_at : timestamptz
+  }
+  entity "schema_migrations" as schema_migrations {
+    * <b>version</b> : text <<PK>>
+    --
+    * applied_at : timestamptz
+  }
+}
+
+users ||--o{ account_tokens : user_id
+animals ||--o{ animal_holdings : animal_id
+animal_holdings ||--o{ animal_measurements : animal_holding_id
+animals ||--o{ animal_measurements : animal_id
+change_requests ||--o{ animal_measurements : request_id
+animal_measurements |o--o{ animal_measurements : corrects_id
+animal_holdings ||--o{ animal_reports : animal_holding_id
+change_requests ||--o{ animal_reports : request_id
+animals ||--o| animal_states : animal_id
+telemetry |o--o{ animal_states : telemetry_id
+telemetry |o--o{ animal_states : position_telemetry_id
+sectors |o--o{ animals : sector_id
+animals ||--o{ assignments : animal_id
+devices ||--o{ assignments : device_id
+animal_holdings |o--o{ assignments : animal_holding_id, animal_id
+login_sessions |o--o{ audit_log : session_token_hash
+owner_accounts |o--o{ audit_log : account_id
+users ||--o{ auth_challenges : user_id
+login_sessions |o--o{ auth_challenges : session_token_hash
+mfa_factors |o--o{ auth_challenges : factor_id
+change_decisions ||--o| change_applications : request_id
+change_requests ||--o| change_decisions : request_id
+trust_grants |o--o{ change_decisions : trust_grant_id
+farm_memberships |o--o{ change_requests : membership_id
+animal_holdings |o--o{ change_requests : animal_holding_id
+animals |o--o{ change_requests : animal_id
+devices |o--o{ change_requests : device_id
+device_candidates ||--o{ device_candidate_captures : candidate_id, hardware_id
+devices |o--o{ device_candidates : device_id
+devices ||--o{ device_configs : device_id
+telemetry |o--o{ devices : last_telemetry_id
+events ||--o{ event_actions : event_id
+devices ||--o{ events : device_id
+animals |o--o{ events : animal_id
+telemetry |o--o{ events : telemetry_id
+geofences |o--o{ events : geofence_id
+telemetry |o--o{ events : last_position_id
+features ||--o{ farm_features : feature_code
+users ||--o{ farm_memberships : user_id
+roles ||--o{ farm_memberships : role_code
+owner_accounts |o--o{ farms : account_id
+gateways |o--o{ gateway_candidates : gateway_id
+geofences ||--o{ geofence_sectors : geofence_id
+sectors ||--o{ geofence_sectors : sector_id
+sectors ||--o{ geofences : sector_id
+animal_holdings ||--o{ health_events : animal_holding_id
+change_requests ||--o{ health_events : request_id
+health_events |o--o{ health_events : target_event_id
+animal_holdings ||--o{ health_schedules : animal_holding_id
+change_requests ||--o{ health_schedules : request_id
+health_schedules |o--o{ health_schedules : target_schedule_id
+health_events |o--o{ health_schedules : completed_event_id
+health_events ||--o{ health_treatments : health_event_id
+invitations ||--o{ invitation_mail : invitation_id
+roles ||--o{ invitations : role_code
+users |o--o{ invitations : accepted_user_id
+users ||--o{ login_sessions : user_id
+devices ||--o{ maintenance : device_id
+change_requests |o--o{ maintenance : request_id
+users ||--o{ mfa_factors : user_id
+users ||--o{ mfa_recovery_codes : user_id
+sag_movements ||--o{ movement_animals : movement_id
+animals ||--o{ movement_animals : animal_id
+sag_movements ||--o{ movement_status_events : movement_id
+notifications ||--o{ notification_attempts : notification_id
+events |o--o{ notifications : event_id
+change_requests |o--o{ notifications : request_id
+health_schedules |o--o{ notifications : schedule_id
+users ||--o| owner_accounts : owner_user_id
+animals ||--o{ pasture_assignments : animal_id
+geofences ||--o{ pasture_assignments : geofence_id
+animal_holdings |o--o{ pasture_assignments : animal_holding_id, animal_id
+users ||--o| platform_admins : user_id
+owner_accounts |o--o{ request_metrics : account_id
+roles ||--o{ role_permissions : role_code
+permissions ||--o{ role_permissions : permission_code
+assignments |o--o{ telemetry : assignment_id
+devices ||--o{ telemetry : device_id
+animals |o--o{ telemetry : animal_id
+telemetry ||--o{ telemetry_receptions : telemetry_id
+gateways ||--o{ telemetry_receptions : gateway_id
+farm_memberships ||--o{ trust_grants : membership_id
+
+legend right
+  <b>Notación</b> (pata de gallo / IE)
+  * columna NOT NULL · <<PK>> clave primaria · <<FK tabla>> clave foránea
+  ||--o{ uno a muchos obligatorio · |o--o{ opcional · o| uno a uno
+  Las FK hacia <b>farms</b> (aislamiento por predio) y las de autoría hacia <b>users</b>
+  (*_by, actor_id, recipient_id) se indican en la columna y no se dibujan como línea.
+  Las FK compuestas (farm_id, x) garantizan que la referencia pertenezca al mismo predio.
+endlegend
+@enduml

@@ -21,6 +21,7 @@ Este ámbito contiene operación, contratos, arquitectura, diseño V3, planifica
 
 ## Child DOX Index
 
+- [diagramas/AGENTS.md](diagramas/AGENTS.md) — fuentes PlantUML, figuras del informe y catálogo de la base.
 - [especificacion-v3/AGENTS.md](especificacion-v3/AGENTS.md) — requisitos, casos de uso, modelos y entregables V3.
 - [planificacion/AGENTS.md](planificacion/AGENTS.md) — cronograma, correspondencia y evidencias de planificación.
 - [evidencias/AGENTS.md](evidencias/AGENTS.md) — resultados fechados y mediciones reproducibles.

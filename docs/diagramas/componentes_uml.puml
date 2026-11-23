@@ -1,0 +1,112 @@
+@startuml componentes_uml
+' Diagrama de componentes UML 2.5: componentes, interfaces ofrecidas (círculo) y requeridas (dependencia «use»).
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam packageStyle rectangle
+skinparam component {
+  BackgroundColor #FFFFFF
+  BorderColor #2F5D46
+}
+skinparam interface {
+  BackgroundColor #FFFFFF
+  BorderColor #2F5D46
+}
+skinparam ArrowColor #3E5F4E
+top to bottom direction
+skinparam nodesep 30
+skinparam ranksep 40
+title Diagrama de componentes de GeoCattle (UML 2.5)
+
+package "Campo" <<subsystem>> {
+  component "Firmware del collar\n(GNSS, temperatura, actividad,\nbuffer en flash)" as Collar <<component>>
+  component "Gateway LoRaWAN\nDragino LPS8N" as Gateway <<component>>
+  component "Receptor académico\nLilyGO T3 (USB)" as T3 <<component>>
+}
+
+interface "Uplink LoRaWAN\nAU915" as ILora
+interface "Uplink LoRa P2P\n(JSON V5 / CSV V4)" as IP2P
+Collar -- ILora
+Collar -- IP2P
+Gateway ..> ILora : <<use>>
+T3 ..> IP2P : <<use>>
+
+package "Servidor de la sede" <<subsystem>> {
+  component "ChirpStack\n(servidor de red)" as ChirpStack <<component>>
+  component "Broker Mosquitto\n(MQTT QoS 1)" as Broker <<component>>
+
+  package "Captura" <<subsystem>> {
+    component "Adaptador USB/serial\n(lora_usb, serial_receiver)" as UsbAdapter <<component>>
+    component "Ingestor MQTT\n(ingestor)" as Ingestor <<component>>
+    component "Cola durable SQLite\n(reintentos y deduplicación)" as Queue <<component>>
+  }
+
+  package "Backend FastAPI" <<subsystem>> {
+    component "Autenticación y autorización\n(sesión, CSRF, MFA, rol por predio)" as Auth <<component>>
+    component "Gestión predial\n(animales, sectores, geocercas,\ncollares, gateways, salud)" as Farm <<component>>
+    component "Ingesta de telemetría\n(hardware_api, receptions)" as Ingest <<component>>
+    component "Reglas y eventos\n(salida de geocerca, desconexión,\nbatería, anomalías)" as Rules <<component>>
+    component "Reportes y exportación\n(Excel, CSV)" as Reports <<component>>
+  }
+
+  component "Worker periódico\n(ausencia, avisos, correo)" as Worker <<component>>
+  component "PostgreSQL / PostGIS" as DB <<component>>
+  component "Nginx\n(mismo origen, teselas locales)" as Nginx <<component>>
+}
+
+package "Cliente" <<subsystem>> {
+  component "Aplicación web React\n(paneles, mapa Leaflet,\nleyenda interactiva)" as Spa <<component>>
+}
+
+component "Proveedor de avisos\n(SMTP / HTTPS)" as Provider <<external>>
+
+interface "Gateway Bridge\n(UDP/MQTT)" as IGw
+interface "MQTT uplink" as IMqtt
+interface "API de ingesta\nPOST /ingest/telemetry" as IIngest
+interface "API REST\n/api/v1" as IRest
+interface "SQL" as ISql
+interface "HTTPS" as IHttps
+interface "Correo / aviso" as INotify
+
+ChirpStack -- IGw
+Gateway ..> IGw : <<use>>
+Broker -- IMqtt
+ChirpStack ..> IMqtt : <<use>>
+Ingestor ..> IMqtt : <<use>>
+
+Ingest -- IIngest
+UsbAdapter ..> IIngest : <<use>>
+Ingestor ..> IIngest : <<use>>
+UsbAdapter ..> Queue : <<use>>
+Ingestor ..> Queue : <<use>>
+T3 ..> UsbAdapter : <<USB serial>>
+
+Auth -- IRest
+Farm ..> Auth : <<use>>
+Reports ..> Auth : <<use>>
+Ingest ..> Rules : <<use>>
+
+DB -- ISql
+Farm ..> ISql : <<use>>
+Ingest ..> ISql : <<use>>
+Rules ..> ISql : <<use>>
+Reports ..> ISql : <<use>>
+Worker ..> ISql : <<use>>
+
+Nginx -- IHttps
+Nginx ..> IRest : <<use>>
+Spa ..> IHttps : <<use>>
+
+Provider -- INotify
+Worker ..> INotify : <<use>>
+
+legend right
+  <b>Notación UML 2.5</b>
+  Rectángulo con «component»: componente desplegable
+  Círculo (lollipop): interfaz ofrecida
+  Flecha discontinua «use»: interfaz o componente requerido
+  «subsystem»: agrupación lógica; «external»: servicio fuera del sistema
+  ChirpStack, Broker e Ingestor MQTT se activan con los perfiles lorawan e iot.
+endlegend
+@enduml

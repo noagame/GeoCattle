@@ -1,0 +1,84 @@
+@startuml topologia_predio_uml
+' Diagrama de despliegue UML 2.5: nodos «device» y «executionEnvironment», artefactos y rutas de comunicación.
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam node {
+  BackgroundColor #F4F8F5
+  BorderColor #2F5D46
+}
+skinparam artifact {
+  BackgroundColor #FFFFFF
+  BorderColor #4A6B5A
+}
+skinparam ArrowColor #3E5F4E
+left to right direction
+title Topología propuesta del predio (diagrama de despliegue UML 2.5)
+
+package "Potreros" {
+  node "Collar bovino\n(x N, Wio-E5 + GNSS)" as Collar <<device>> {
+    artifact "firmware_collar.bin" as FwCollar
+  }
+}
+
+package "Estación remota (mástil con energía solar)" {
+  node "Gabinete IP65" as Cabinet <<device>> {
+    node "Gateway Dragino LPS8N" as Gateway <<device>> {
+      artifact "Packet forwarder\n(Semtech UDP)" as Forwarder
+    }
+    node "Puente CPE210\n(estación)" as CpeA <<device>>
+    node "Regulador solar\ny batería" as Solar <<device>>
+  }
+}
+
+package "Sede del predio" {
+  node "Puente CPE210\n(punto de acceso)" as CpeB <<device>>
+  node "Switch / router LAN" as Switch <<device>>
+  node "Router celular 4G" as Cell <<device>>
+  node "UPS" as Ups <<device>>
+  node "Servidor Lenovo" as Server <<device>> {
+    node "Ubuntu Server" as Os <<executionEnvironment>> {
+      node "Docker Engine" as Docker <<executionEnvironment>> {
+        artifact "chirpstack + redis +\npostgres (red)" as ArtChirp
+        artifact "mosquitto" as ArtBroker
+        artifact "ingestor + cola SQLite" as ArtIngest
+        artifact "api (FastAPI)" as ArtApi
+        artifact "worker" as ArtWorker
+        artifact "postgis (negocio)" as ArtDb
+        artifact "web (Nginx + React)" as ArtWeb
+      }
+    }
+  }
+  node "PC / teléfono del personal" as Client <<device>> {
+    node "Navegador web" as Browser <<executionEnvironment>>
+  }
+}
+
+cloud "Internet" as Internet {
+  node "Proveedor de avisos\n(correo / mensajería)" as Provider <<device>>
+}
+
+Collar -- Gateway : <<LoRaWAN AU915, clase A, OTAA>>
+Gateway -- CpeA : <<Ethernet, PoE>>
+CpeA -- CpeB : <<enlace 2,4 GHz punto a punto>>
+CpeB -- Switch : <<Ethernet>>
+Switch -- Server : <<Ethernet>>
+Switch -- Client : <<HTTPS en LAN / Wi-Fi>>
+Switch -- Cell : <<Ethernet>>
+Cell -- Provider : <<HTTPS sobre 4G>>
+Solar .. Gateway : alimenta
+Ups .. Server : respaldo eléctrico
+
+note bottom of Server
+  Punto único de falla mitigado con copias verificadas,
+  monitoreo y procedimiento de reinstalación.
+  La captura y la consulta en LAN siguen sin Internet.
+end note
+
+legend right
+  <b>Notación UML 2.5 (despliegue)</b>
+  Nodo «device»: equipo físico · «executionEnvironment»: sistema o contenedor
+  Artefacto: componente desplegado · Línea con estereotipo: ruta de comunicación y protocolo
+  Línea punteada: dependencia eléctrica (no es comunicación)
+endlegend
+@enduml

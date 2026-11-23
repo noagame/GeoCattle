@@ -1,0 +1,169 @@
+@startuml mer_resumido
+' MER resumido: entidades centrales del dominio con PK, FK y atributos clave (notación pata de gallo).
+hide circle
+hide empty members
+skinparam linetype ortho
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #2F5D46
+  ArrowColor #3E5F4E
+}
+title MER resumido de GeoCattle
+
+entity "owner_accounts\nCuenta propietaria" as owner_accounts {
+  * id <<PK>>
+  --
+  * owner_user_id <<FK>>
+  * display_name
+  * max_farms
+}
+entity "farms\nPredio" as farms {
+  * id <<PK>>
+  --
+  account_id <<FK>>
+  * name
+  * timezone
+}
+entity "users\nUsuario" as users {
+  * id <<PK>>
+  --
+  * username <<UK>>
+  email
+  * password_hash
+}
+entity "farm_memberships\nMembresía" as farm_memberships {
+  * id <<PK>>
+  --
+  * farm_id <<FK>>
+  * user_id <<FK>>
+  * role_code <<FK>>
+  * valid_from
+  valid_to
+}
+entity "sectors\nSector" as sectors {
+  * id <<PK>>
+  --
+  * farm_id <<FK>>
+  * name
+}
+entity "geofences\nGeocerca (versionada)" as geofences {
+  * id <<PK>>
+  --
+  * farm_id <<FK>>
+  * sector_id <<FK>>
+  * geofence_key
+  * version
+  * geometry (Polygon 4326)
+  * active
+}
+entity "animals\nBovino" as animals {
+  * id <<PK>>
+  --
+  * farm_id <<FK>>
+  sector_id <<FK>>
+  * diio <<UK>>
+  * orientation (carne/leche)
+}
+entity "devices\nCollar" as devices {
+  * id <<PK>>
+  --
+  * farm_id <<FK>>
+  * hardware_id <<UK>>
+  dev_eui <<UK>>
+  * interval_seconds
+}
+entity "assignments\nAsignación collar–bovino" as assignments {
+  * id <<PK>>
+  --
+  * animal_id <<FK>>
+  * device_id <<FK>>
+  * valid_from
+  valid_to
+}
+entity "gateways\nGateway" as gateways {
+  * id <<PK>>
+  --
+  * farm_id <<FK>>
+  * name
+  gateway_eui
+  position (Point 4326)
+}
+entity "telemetry\nLectura" as telemetry {
+  * id <<PK>>
+  --
+  * device_id <<FK>>
+  animal_id <<FK>>
+  assignment_id <<FK>>
+  * session_id, seq <<UK>>
+  * observed_at, received_at
+  point (Point 4326)
+  * gnss_valid
+}
+entity "events\nEvento / alerta" as events {
+  * id <<PK>>
+  --
+  * farm_id <<FK>>
+  * device_id <<FK>>
+  animal_id <<FK>>
+  telemetry_id <<FK>>
+  geofence_id <<FK>>
+  last_position_id <<FK>>
+  * type, severity
+  * condition, attention
+}
+entity "event_actions\nAtención" as event_actions {
+  * id <<PK>>
+  --
+  * event_id <<FK>>
+  * actor_id <<FK>>
+  * action, at
+}
+entity "notifications\nAviso" as notifications {
+  * id <<PK>>
+  --
+  * event_id <<FK>>
+  recipient_id <<FK>>
+  * channel, status
+}
+entity "health_events\nEvento sanitario" as health_events {
+  * id <<PK>>
+  --
+  * farm_id <<FK>>
+  * animal_holding_id <<FK>>
+  * event_type, occurred_at
+}
+
+users ||--o| owner_accounts
+owner_accounts |o--o{ farms
+farms ||--o{ farm_memberships
+users ||--o{ farm_memberships
+farms ||--o{ sectors
+sectors ||--o{ geofences
+farms ||--o{ geofences
+sectors |o--o{ animals
+farms ||--o{ animals
+farms ||--o{ devices
+farms ||--o{ gateways
+animals ||--o{ assignments
+devices ||--o{ assignments
+devices ||--o{ telemetry
+assignments |o--o{ telemetry
+telemetry |o--o{ events
+geofences |o--o{ events
+animals |o--o{ events
+events ||--o{ event_actions
+events ||--o{ notifications
+animals ||--o{ health_events : vía tenencia
+devices ||--o{ events
+
+legend right
+  <b>Notación</b> pata de gallo (IE): || exactamente uno · |o cero o uno · o{ cero o muchos
+  * obligatorio · <<PK>> clave primaria · <<FK>> clave foránea · <<UK>> único
+  Asignación vigente: valid_to nulo; no se superponen asignaciones del mismo collar.
+  La lectura se deduplica por dispositivo, sesión y secuencia antes de resolver la asignación.
+  Vista resumida: el mapa completo está en modelo_bd_completo.
+endlegend
+@enduml

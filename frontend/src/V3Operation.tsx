@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { api, write } from './api';
+import { PasswordInput } from './PasswordInput';
 
 type ProtectedMethod = 'POST' | 'PATCH' | 'DELETE';
 
@@ -31,7 +32,7 @@ export function useVerifiedOperation(busy: boolean) {
   const fields = <fieldset className="v3-operation-verification" disabled={busy}>
     <legend><ShieldCheck size={16} />Verificación de esta operación</legend>
     <p>Introduce tu contraseña y un código nuevo de seis dígitos de la aplicación autenticadora. Cada código se usa una sola vez. Si acabas de verificar el acceso, espera al siguiente código.</p>
-    <label>Contraseña de verificación<input type="password" autoComplete="current-password" required maxLength={256} value={password} onChange={event => setPassword(event.target.value)} /></label>
+    <PasswordInput label="Contraseña de verificación" autoComplete="current-password" required maxLength={256} value={password} onChange={event => setPassword(event.target.value)} />
     <label>Código nuevo para esta operación<input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" minLength={6} maxLength={6} required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} /></label>
     <small>La autorización queda ligada a los datos y al destino de este cambio.</small>
   </fieldset>;

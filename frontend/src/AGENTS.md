@@ -6,6 +6,7 @@
 
 ## Contratos locales
 
+- `PasswordInput` permite revelar las contraseñas sin modificar los campos de TOTP o recuperación. Conserva el foco y la selección al alternar y vuelve a ocultar la contraseña al enviar el formulario o volver a montar el campo.
 - El ciclo de vida de collares se confirma en `CollarLifecycle.tsx`. El inventario usa `assignment_id` y `can_delete`; solo dueño o administrador del predio ve las acciones. La ficha bovina permite terminar su asociación vigente. Al cambiarla se recargan los datos de la superficie activa y del panel.
 - En Collares y dispositivos, la detección USB es la acción principal y el alta manual es secundaria. Las dos tablas usan `card-table` y acciones con nombre accesible y título; en móvil, esos controles miden al menos 40 px. `CollarDialog` devuelve el foco al control que abrió el diálogo si sigue disponible. La bandeja destaca su contador solo si hay pendientes y se reduce a una línea al quedar vacía.
 - El inventario distingue collares retirados, sin asignar, activos y sin comunicación. Usa la recepción relativa con fecha exacta en `title`; el umbral de frescura es `3 × interval_seconds + 30 s` inclusive. Sin recepción conocida se muestra «Sin datos», no se supone una desconexión.

@@ -837,3 +837,13 @@
   .collar-table td::before{position:absolute;left:0;text-align:left;color:#65765e}
   .collar-table td.card-table-action{position:static;width:100%;padding-top:9px!important}
 }
+
+/* Campo de contraseña con revelado */
+.password-field{display:flex;flex-direction:column;gap:7px;min-width:0}
+.password-field>small{font-size:11px;color:var(--muted)}
+.password-input{position:relative;display:block}
+.password-input>input{display:block;padding-inline-end:48px}
+.password-input>input::-ms-reveal{display:none}
+.password-input>.password-toggle{position:absolute;inset-inline-end:3px;inset-block-start:50%;transform:translateY(-50%);display:grid;place-items:center;width:40px;height:40px;padding:0;border:0;border-radius:6px;background:transparent;color:#436047}
+.password-input>.password-toggle:hover:not(:disabled){background:#eaf2e4;color:#285b3a}
+.password-input>.password-toggle:focus-visible{outline:2px solid #487d57;outline-offset:-2px}

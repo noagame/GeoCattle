@@ -120,6 +120,49 @@ RTO de dos horas y RPO de 24 horas son metas del informe. Registrar tiempos medi
 
 No eliminar observaciones sin política aprobada. La preserie propone 30 días de alta resolución y consulta al productor antes de borrar. Los registros inmutables y auditoría requieren un procedimiento de retención/migración explícito.
 
+### Compartir una copia del prototipo
+
+Desde la raíz de GeoCattle en el Windows de origen, con PostgreSQL del prototipo en ejecución:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/compartir_base.py exportar --verificar
+```
+
+El comando toma una instantánea de solo lectura. La opción `--verificar` restaura la copia en otra base del servidor, compara conteos, identidades y factores MFA con la instantánea y elimina la base temporal. El directorio fechado de `.runtime/compartir/` contiene `geocattle.dump`, `geocattle.sha256` y `LEEME.md`. Las filas de métricas HTTP quedan fuera por defecto. Usa `--incluir-metricas` si la prueba las necesita.
+
+Comprime los tres archivos juntos para enviarlos por un canal privado con acceso limitado al destinatario. El archivo contiene datos personales, historiales, hashes de contraseñas y datos cifrados de MFA. Mantén la copia y la configuración privada fuera de Git y de canales públicos. Las colas SQLite de captura y los `.env` quedan en el equipo de origen. Comparte la contraseña de acceso por un canal privado separado del archivo.
+
+#### Preparar la instalación del destinatario
+
+Usa la misma versión de GeoCattle que el origen o una más reciente. La copia sustituye los datos de desarrollo del destinatario. El importador comprueba el SHA-256, respalda la base existente en `.runtime/backups/`, restaura en una base vacía del mismo servidor y aplica las migraciones y los permisos con la configuración privada del destino. Activa la base preparada después de esas comprobaciones. Si la copia requiere una migración que falta en el código local, actualiza el repositorio y vuelve a importar. Mantén el entorno en desarrollo con `SIMULATION_ENABLED=false`.
+
+**Windows nativo.** Completa la [instalación desde cero](../README.md) hasta inicializar el clúster PostgreSQL/PostGIS. Detén el prototipo activo y cualquier captura iniciada aparte. Desde la raíz, con los archivos extraídos en `.runtime/compartir/recibido/`, ejecuta:
+
+```powershell
+.\Detener-Prototipo.ps1
+.\.venv\Scripts\python.exe scripts/compartir_base.py importar .runtime/compartir/recibido/geocattle.dump --destino nativo
+```
+
+El importador inicia solo PostgreSQL si hace falta. Cuando termine, abre `Abrir-GeoCattle.cmd` y entra en `http://localhost:8084`.
+
+**Docker en Linux.** Detén la captura del anfitrión si estaba activa para ese destino. Desde la raíz, con los archivos extraídos en `.runtime/compartir/recibido/`, ejecuta:
+
+```bash
+python3 scripts/docker_project.py prepare --environment development
+python3 scripts/docker_project.py stop --environment development
+python3 scripts/compartir_base.py importar .runtime/compartir/recibido/geocattle.dump --destino docker
+python3 scripts/docker_project.py start --environment development
+```
+
+En Docker para Windows, usa `py -3` en lugar de `python3`. Si el stack usaba perfiles, incluye los mismos `--profile` al detenerlo. El arranque anterior conserva las cuentas importadas y muestra el puerto de `.env.docker` (`8086` en una configuración nueva o `8084` si ya se usaba `Abrir-GeoCattle.sh`).
+
+#### Iniciar sesión y conservar TOTP
+
+Inicia una sesión nueva con el correo y la contraseña de origen. La verificación Argon2 usa el hash guardado en la base y funciona con los secretos propios del destinatario.
+
+- Para seguir usando el TOTP de origen, configura `MFA_ENCRYPTION_KEY` en el archivo privado del destino (`.env.academic` o `.env.docker`) antes de iniciar la aplicación. Usa el valor de `MFA_ENCRYPTION_KEY` del origen si está definido, o el valor de `SESSION_SECRET` del origen si se usaba como clave de cifrado. Comparte ese valor aparte por un canal privado. Conserva el `SESSION_SECRET` del destino y usa un código vigente del autenticador original. Los códigos de recuperación de origen están vinculados a su `SESSION_SECRET`.
+- Para usar un autenticador propio en la copia, aplica el [restablecimiento de TOTP por consola](#restablecer-el-autenticador-por-consola) en el destino y completa la inscripción al entrar. La contraseña se conserva. El restablecimiento afecta solo la copia importada y permite mantener privadas las claves de origen.
+
 ## Revisión de operación
 
 - Diaria: módulos ausentes, frescura, eventos, avisos, disco, energía y última copia.

@@ -9,6 +9,7 @@
 - Al cambiar arranque o captura revisa los lanzadores de la raíz y sus argumentos. Mantén alineados entorno, archivo de configuración, URL de API y directorio de captura.
 - `prototype_windows.py init` inicializa `.runtime/pgdata-academic` con el usuario y la contraseña de `.env.academic` usando los binarios portátiles de `.runtime/postgres16/pgsql`. Nunca reinicializa una base existente. `start` y `prepare` explican el paso faltante si falta la configuración, PostgreSQL, PostGIS o la base. Mantén alineados estos mensajes con la instalación desde cero del [README](../README.md).
 - Conserva los volúmenes, respaldos y colas al detener o reiniciar servicios. Mantén las pruebas con efectos sobre datos en una instancia QA.
+- `compartir_base.py` exporta una instantánea de solo lectura del prototipo nativo. Verifica el SHA-256 de la copia antes de tocar el destino de desarrollo y conserva su respaldo. Restaura y migra en una base temporal antes de activar el reemplazo. Los paquetes, respaldos, claves y colas quedan fuera de Git. [Operación](../docs/OPERACION.md#compartir-una-copia-del-prototipo)
 - `serve_lan_windows.py` sirve el prototipo por HTTPS en el puerto `8445` de una IPv4 privada. Reutiliza PostgreSQL local y la interfaz compilada. Aplica cookie segura y MFA para administrador. Guarda las claves en `%LOCALAPPDATA%\GeoCattle\lan-tls` y exporta solo el certificado público a `.runtime/`.
 - El iniciador LAN detecta la IPv4 al abrirse y muestra el enlace aunque GeoCattle ya esté escuchando en ella. Guarda el último enlace verificado en `.runtime/GeoCattle-LAN-URL.txt`. Si hay varias direcciones sin una ruta preferida, la opción `--bind` selecciona la red.
 - `account_maintenance.py` prueba SMTP y restablece TOTP en el prototipo. Usa `.env.academic` como configuración privada predeterminada y se conecta por loopback con la cuenta de aplicación para el restablecimiento. [Operación](../docs/OPERACION.md)
@@ -23,3 +24,5 @@
 Usa `python -m unittest qa.test_docker_project qa.test_docker_portability_safety` desde la raíz para cambios de orquestación Docker. Para el inicio de captura usa `qa.test_capture_startup` y `qa.test_capture_portability` en el entorno de [CI](../.github/workflows/validacion.yml). [Portabilidad Docker](../docs/REVISION_DOCKER_PORTABILIDAD.md) · [Prototipo Windows](../docs/DESARROLLO_LOCAL.md)
 
 Para la carga de validación ejecuta `backend/tests/test_seed_validation_data.py` en PostGIS de QA y comprueba la vista previa, la carga y su repetición con el archivo privado de esa base. [Verificación](../docs/VERIFICACION.md#carga-de-un-rebaño-de-validación)
+
+Para la copia compartida usa `python -m unittest qa.test_compartir_base` y `exportar --verificar` en el prototipo nativo para comprobar la restauración temporal.

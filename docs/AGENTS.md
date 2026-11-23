@@ -13,6 +13,7 @@ Este ámbito contiene operación, contratos, arquitectura, diseño V3, planifica
 - Mantén alineados el [contrato de detecciones de collares](CONTRATO_API.md#detección-y-alta-de-collares), los pasos de [incorporación](DESARROLLO_LOCAL.md#incorporar-un-collar-por-usb-o-lora) y la [guía de captura](USB_COM5.md).
 - Documenta el uso del perfil y las invitaciones en [Usuarios y registro](USUARIOS_Y_REGISTRO.md), las rutas y estados en [Contrato de API](CONTRATO_API.md) y los pasos de consola y configuración privada en [Operación](OPERACION.md).
 - Mantén en [Verificación](VERIFICACION.md#carga-de-un-rebaño-de-validación) los comandos de carga ficticia, respaldo vinculado al destino y restauración en otra base.
+- Mantén en [Operación](OPERACION.md#compartir-una-copia-del-prototipo) los pasos de exportación privada, importación en desarrollo y acceso con TOTP conservado o restablecido.
 - Conserva en [Exportaciones tabulares](CONTRATO_API.md#exportaciones-tabulares) los filtros, límites y diferencias de representación entre Excel y las variantes CSV.
 - Mantén en [Exportación del dueño](CONTRATO_API.md#exportación-del-dueño) las fórmulas K01–K12 y la distinción entre medición, aproximación y ensayo de campo pendiente.
 - Mantén la instalación, atribución y alcance geográfico del mosaico local en [Mapa satelital](MAPA_SATELITAL.md).

@@ -7,6 +7,7 @@
 ## Contratos locales
 
 - Conserva las rutas `/api` al ajustar el proxy. Revisa cómo Compose monta los archivos y propaga la configuración a cada servicio.
+- Compose monta `.runtime/mapa-satelital/` y `.runtime/mapa-osm/` de solo lectura en `web`. Nginx usa un worker y sirve `/mapa-local/satelite/` y `/mapa-local/osm/` con `Cache-Control: public, max-age=86400` para teselas WebP y PNG y `no-cache` para el manifiesto. Los recursos ausentes devuelven 404 y conservan las cabeceras de seguridad.
 - Mantén opcionales el broker MQTT y ChirpStack. La recepción LoRa directa usa el capturador USB del anfitrión y la API. Conserva las credenciales fuera de los archivos de infraestructura versionados.
 
 ## Verificación

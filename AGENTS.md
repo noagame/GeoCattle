@@ -25,6 +25,7 @@ GeoCattle supervisa ganado por predio. Integra gestión bovina y sanitaria, mapa
 ## Arranque y verificación
 
 - **Simulación con Docker**, desde la raíz: `py -3 scripts/docker_project.py start` en Windows o `python3 scripts/docker_project.py start` en Linux. La web usa el puerto `8080` por defecto. Para entorno físico y prototipo Windows, consulta las configuraciones y los pasos del [README](README.md) y de [Desarrollo local](docs/DESARROLLO_LOCAL.md).
+- Compose aplica topes de CPU y memoria y rota logs por servicio. El arranque base usa PostgreSQL/PostGIS, API, worker y web. Los perfiles explícitos habilitan servicios auxiliares. La generación OSM corre bajo demanda, fuera del arranque. [Recursos de Docker Desktop y WSL2](docs/DESARROLLO_LOCAL.md#recursos-de-docker-desktop-y-wsl2)
 - **Frontend**, desde `frontend/`: `npm ci`, `npm test` y `npm run build`. El build incluye la comprobación de TypeScript.
 - **Reglas del backend**, desde `backend/`: `uv sync --extra test` y `uv run pytest tests/test_rules.py -q`.
 - **Integración del backend**, desde la raíz: `py -3 scripts/local_backend.py test --env-file RUTA_QA` en Windows o `python3 scripts/local_backend.py test --env-file RUTA_QA` en Linux. Usa una configuración de simulación que apunte a PostgreSQL/PostGIS de QA previamente migrado. Si ejecutas pytest directamente, apunta `TEST_DATABASE_URL` y `DATABASE_URL` a la misma base aislada. `qa/test_hardware_api.py` requiere además `GEOCATTLE_TEST_DATABASE=1` y fixtures preparados. [Verificación](docs/VERIFICACION.md)
@@ -118,6 +119,8 @@ Default section order:
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 
 - El README presenta primero los arranques de desarrollo en `localhost:8084`. Windows usa `Abrir-GeoCattle.cmd` y Linux usa `Abrir-GeoCattle.sh` con Docker Compose y `.env.docker`. Vite se documenta para la recarga en caliente.
+- La base satelital local cubre La Araucanía (detalle máximo solo en Temuco) y se instala fuera de Git en `.runtime/mapa-satelital/`. La cuadrícula WGS84 es el respaldo y OpenStreetMap queda disponible en línea. [Instalación y fuente](docs/MAPA_SATELITAL.md)
+- OpenStreetMap local se genera con Docker desde el extracto completo de Chile (sin recortar) y se instala fuera de Git en `.runtime/mapa-osm/`; la interfaz lo ofrece como base aparte de la satelital. [Instalación y fuente](docs/MAPA_OSM_LOCAL.md)
 
 ## Child DOX Index
 

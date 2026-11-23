@@ -11,3 +11,6 @@ backups
 .runtime
 **/*.tsbuildinfo
 **/.venv-capture
+**/*.log
+docs/evidencias
+frontend/public/mapa-local

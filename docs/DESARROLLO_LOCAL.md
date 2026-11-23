@@ -14,6 +14,37 @@ Para preparar un equipo nuevo, sigue la [instalación desde cero en Windows](../
 
 La configuración local está en `.env.academic` y el acceso del prototipo en `.runtime/acceso_prototipo.json`. Conserva ambos archivos fuera de Git. Para un reinicio completo ejecuta `Detener-Prototipo.ps1` en PowerShell y vuelve a abrir los iniciadores que necesites.
 
+## Recursos de Docker Desktop y WSL2
+
+El arranque Docker habitual ejecuta PostgreSQL/PostGIS, la API, el worker y Nginx, más la migración inicial. Los cuatro servicios permanentes tienen un tope combinado de 1.088 MiB y 3,25 CPU. Los topes se aplican por contenedor y Docker Desktop usa memoria adicional para WSL2. Nginx y Uvicorn usan un proceso de trabajo cada uno. Compose rota los logs de los contenedores con un máximo de tres archivos de 10 MB cada uno. MQTT y ChirpStack se activan con `--profile iot` y `--profile lorawan` en `scripts/docker_project.py`. La generación de cartografía OSM tiene su propio flujo. [Mapa OpenStreetMap local](MAPA_OSM_LOCAL.md).
+
+En un equipo Windows de 16 GB, este ejemplo de `%USERPROFILE%\.wslconfig` deja hasta 6 GB y 4 procesadores lógicos para el conjunto de distribuciones WSL2:
+
+```ini
+[wsl2]
+memory=6GB
+processors=4
+swap=2GB
+
+[experimental]
+autoMemoryReclaim=gradual
+```
+
+Para aplicar el cambio, guarda el trabajo abierto en tus distribuciones y ejecuta `wsl --shutdown` antes de volver a abrir Docker Desktop. El comando detiene las distribuciones WSL2. La importación del mapa OSM puede necesitar más memoria de WSL2 si otros contenedores están activos. [Configuración de WSL](https://learn.microsoft.com/windows/wsl/wsl-config#wslconfig).
+
+Consulta `docker stats --no-stream` para ver consumo en ejecución y `docker system df -v` para revisar uso en disco. Estos comandos de limpieza actúan sobre la caché que no se haya usado en siete días y las imágenes colgantes, respectivamente:
+
+```sh
+docker builder prune --filter until=168h
+docker image prune --filter dangling=true
+```
+
+Los volúmenes guardan bases de datos y colas. Para liberar espacio de la base auxiliar de OSM, sigue el procedimiento dedicado. [Liberar espacio de OpenStreetMap](MAPA_OSM_LOCAL.md#liberar-espacio-y-actualizar).
+
+## Instalar el mapa satelital
+
+Genera el mosaico con `python scripts/preparar_mapa_satelital.py --araucania` desde la raíz y con las dependencias del conversor instaladas en un entorno aparte. El inicio nativo, Vite y Docker sirven `.runtime/mapa-satelital/` sin copiar las imágenes al build. Recarga la vista del mapa o pulsa **Reintentar mapa** cuando termine. [Fuente y verificación](MAPA_SATELITAL.md).
+
 ## Acceso HTTPS desde otro dispositivo
 
 Conecta el PC servidor y el otro dispositivo al mismo Wi-Fi. Puedes usar el punto de acceso de un celular o la **Zona con cobertura inalámbrica móvil** de Windows si es compatible con el adaptador. La conexión a Internet móvil sirve para compartir la red. GeoCattle usa la dirección privada del PC dentro de esa red.

@@ -258,16 +258,17 @@ En **Alertas y atención → Configurar alertas**, dueño y administrador pueden
 
 ### Mapa local y traslado de collares
 
-En **Sectores y geocercas**, elige **Satélite local** para abrir la imagen incluida. Cubre 24 × 24 km de Temuco y alrededores, con resolución de origen de 10 m por píxel. Las posiciones y geocercas se dibujan encima y se conservan al cambiar de fondo. GeoCattle y PostgreSQL deben estar disponibles en el PC o la red local. [Fuente y licencia de Sentinel-2](frontend/public/mapa-local/satelite/FUENTE.md).
+En **Sectores y geocercas**, **Satélite local** muestra el mosaico de La Araucanía desde el servidor de GeoCattle. Instálalo una vez con conexión a Internet. Las imágenes quedan en `.runtime/mapa-satelital/` y luego se pueden consultar sin Internet. Si falta la imagen se muestra la cuadrícula WGS84. **OpenStreetMap** está disponible como opción en línea. Las posiciones y geocercas se conservan al cambiar de fondo.
 
-**Caminos locales** admite una capa opcional `frontend/public/mapa-local/base.geojson`. Exporta cartografía autorizada a GeoJSON `FeatureCollection` en WGS84, con coordenadas `[longitud, latitud]`. Si falta la capa, aparece la cuadrícula WGS84. **OpenStreetMap** utiliza el servicio en línea.
-
-Para instalar una ortofoto del predio, usa un GeoTIFF RGB de 8 bits georreferenciado. El conversor usa `rasterio` y `Pillow` en un entorno Python aparte. Tras generar la carpeta, instala su contenido en `frontend/public/mapa-local/satelite`. En la instalación nativa recompila `frontend` con `npm run build`. En Docker recompila y recrea el servicio `web` usando la configuración con la que se inició ese proyecto.
+Desde la raíz del proyecto, crea un entorno Python independiente. En Windows usa `py -3 -m venv .runtime/mapa-tools` y ejecuta los dos últimos comandos con `.runtime\mapa-tools\Scripts\python.exe`. En Linux puedes ejecutar el bloque completo.
 
 ```bash
-python -m pip install rasterio Pillow
-python scripts/preparar_mapa_satelital.py predio.tif satelite-nuevo --nombre "Ortofoto del predio" --atribucion "Fuente y fecha" --max-zoom 17
+python3 -m venv .runtime/mapa-tools
+.runtime/mapa-tools/bin/python -m pip install rasterio Pillow
+.runtime/mapa-tools/bin/python scripts/preparar_mapa_satelital.py --araucania
 ```
+
+[Instalación, fuente y procesamiento del mapa satelital](docs/MAPA_SATELITAL.md).
 
 El panel **Trasladar collar entre geocercas** preselecciona el collar cuando solo hay uno asociado y destaca su zona vigilada. Selecciona el potrero de destino y confirma el traslado. Cada animal conserva su propio collar, historial y alerta. La salida se confirma con dos posiciones GPS válidas consecutivas fuera de su zona vigente. Para supervisar varios animales a la vez, cada uno necesita un collar activo.
 

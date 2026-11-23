@@ -556,6 +556,7 @@
 .map-on-satellite .offline-map-tile{background-color:#3d4839;background-image:linear-gradient(#ffffff0f 1px,transparent 1px),linear-gradient(90deg,#ffffff0f 1px,transparent 1px);border-color:#ffffff0a}
 .map-on-satellite .offline-map-tile>span{color:#a9b49d}
 .map-on-satellite .cattle-map{background:#3d4839}
+.map-note>span{font-size:12px}.map-note code{overflow-wrap:anywhere}
 .map-viewport {
   position: relative;
   min-width: 0;

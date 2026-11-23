@@ -59,6 +59,10 @@ async def security_headers(request,call_next):
     response.headers['X-Request-ID']=request.state.request_id
     response.headers["X-Content-Type-Options"]="nosniff"
     response.headers["Cache-Control"]="no-store"
+    if getattr(app.state, 'native_local_app', False) and request.url.path.startswith(('/mapa-local/satelite/', '/mapa-local/osm/')):
+        if response.status_code == 200 and request.url.path.endswith(('.webp', '.png')):
+            response.headers["Cache-Control"]="public, max-age=86400"
+        return response
     try:
         elapsed_ms=max(0,(time.monotonic()-request.state.started)*1000)
         await run_in_threadpool(persist_request_metrics,request,response,elapsed_ms)

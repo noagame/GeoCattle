@@ -8,6 +8,8 @@
 
 - Reutiliza los controles de `security.py`, `v3_auth.py`, `v3_security.py` y `v3_operation_auth.py` según el router. Si cambia una operación con alcance de predio, revisa las consultas y permisos de lectura y escritura.
 - Compara las credenciales de encabezado y los tokens CSRF en bytes con `matches_secret_header`. `local_app.py` aplica CSP, protección contra marcos y política de remitente al servir la interfaz en el inicio nativo.
+- En el inicio nativo `local_app.py` monta `.runtime/mapa-satelital/` en `/mapa-local/satelite/`. Los recursos satelitales se sirven sin persistir métricas en PostgreSQL y la ruta devuelve 404 si faltan.
+- `local_app.py` monta también `.runtime/mapa-osm/` en `/mapa-local/osm/` con las mismas reglas (sin métricas, 404 si falta).
 - Para cambios de API revisa `schemas.py`, los tipos y clientes de [frontend](../../frontend/src/AGENTS.md) y el [contrato de API](../../docs/CONTRATO_API.md). Para cambios de almacenamiento revisa `models.py` y [database](../../database/AGENTS.md).
 - Conserva el origen y las fechas de observación y recepción al procesar telemetría. Las alertas y su atención conservan estados distintos. [Arquitectura](../../docs/ARQUITECTURA.md)
 - `device_candidates.py` registra detecciones físicas por predio. La captura académica HTTP conserva un recibo por hardware, sesión y secuencia hasta después de resolver el candidato. `v3_device_candidates.py` aplica la autorización del predio y usa `device_inventory.py` para compartir validación y auditoría con el alta manual.

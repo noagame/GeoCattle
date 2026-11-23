@@ -337,7 +337,7 @@ class Smoke:
             role_api.call("POST", "/auth/logout")
 
         second_animal = self.request("POST", "/animals", dict(animal_body, diio="QA2" + self.run_id, name="Reasignación QA " + self.run_id), 201)
-        self.request("POST", "/assignments", {"animal_id": second_animal["id"], "device_id": device_id, "replace": True}, 201)
+        reassignment = self.request("POST", "/assignments", {"animal_id": second_animal["id"], "device_id": device_id, "replace": True}, 201)
         historical_body, historical = self.ingest(observed=first_time + timedelta(microseconds=2))
         self.check("Reasignación conserva asociación histórica", historical["animal_id"] == animal["id"] and not historical.get("state_updated", True))
         dedup_global = self.request("POST", "/ingest/telemetry", body, 201, csrf=False,
@@ -345,7 +345,11 @@ class Smoke:
         self.check("Deduplicación anterior a resolver asignación", dedup_global["duplicate"] and dedup_global["id"] == first["id"] and dedup_global["animal_id"] == animal["id"])
         _, newest = self.ingest()
         self.check("Nueva captura pertenece a animal reasignado", newest["animal_id"] == second_animal["id"])
-        retired = self.request("PATCH", "/devices/" + device_id, {"enabled": False})
+        device_path = "/devices/" + device_id
+        self.request("PATCH", device_path, {"enabled": False}, 409)
+        closed = self.request("POST", f"/assignments/{reassignment['id']}/close")
+        self.check("Desvinculación cierra la asignación vigente", bool(closed["valid_to"]))
+        retired = self.request("PATCH", device_path, {"enabled": False})
         self.check("Retiro técnico explícito", not retired["enabled"])
         self.request("PATCH", "/animals/" + animal["id"], {"enabled": False})
         self.request("PATCH", "/animals/" + second_animal["id"], {"enabled": False})

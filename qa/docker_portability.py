@@ -22,6 +22,7 @@ import sys
 import threading
 import time
 from urllib.parse import urlparse
+from urllib.error import HTTPError
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 PROJECT_PREFIX = 'geocattle-portability-qa-'
@@ -196,15 +197,41 @@ class Runner:
         for asset in sorted(assets):
             body,asset_headers=get(asset)
             self.check('Asset real '+asset.split('/')[-1],bool(body) and 'text/html' not in asset_headers.get('Content-Type',''))
-        if (self.root/'frontend/public/mapa-local/satelite/manifest.json').is_file():
-            manifest=json.loads(get('/mapa-local/satelite/manifest.json')[0])
-            south,west,north,east=manifest['bounds']
-            zoom=manifest['minZoom']; tiles=1<<zoom
-            x=int(tiles*((west+east)/2+180)/360)
-            y=int(tiles*(1-asinh(tan(radians((south+north)/2)))/pi)/2)
-            tile,tile_headers=get(f'/mapa-local/satelite/{zoom}/{x}/{y}.webp')
-            self.check('Nginx sirve imagen satelital local',tile[:4]==b'RIFF' and tile[8:12]==b'WEBP'
-                       and 'image/webp' in tile_headers.get('Content-Type',''))
+        for route, directory, ext, image_format, signature in (
+            ('satelite', 'mapa-satelital', 'webp', slice(8, 12), b'WEBP'),
+            ('osm', 'mapa-osm', 'png', slice(0, 8), b'\x89PNG\r\n\x1a\n'),
+        ):
+            base = f'/mapa-local/{route}'
+            manifest_path = f'{base}/manifest.json'
+            security_headers = ('X-Content-Type-Options', 'Referrer-Policy', 'X-Frame-Options', 'Content-Security-Policy')
+            missing = [f'{base}/30/0/0.{ext}']
+            if (self.root / '.runtime' / directory / 'manifest.json').is_file():
+                raw_manifest, manifest_headers = get(manifest_path)
+                manifest = json.loads(raw_manifest)
+                self.check(f'Nginx sirve el manifiesto de {directory} con no-cache',
+                           manifest_headers.get_content_type() == 'application/json'
+                           and manifest_headers.get('Cache-Control') == 'no-cache')
+                south, west, north, east = manifest['bounds']
+                zoom = manifest['minZoom']
+                tiles = 1 << zoom
+                x = int(tiles * ((west + east) / 2 + 180) / 360)
+                y = int(tiles * (1 - asinh(tan(radians((south + north) / 2))) / pi) / 2)
+                tile, tile_headers = get(f'{base}/{zoom}/{x}/{y}.{ext}')
+                self.check(f'Nginx sirve teselas {ext} de {directory} con caché de un día',
+                           tile[image_format] == signature and tile_headers.get_content_type() == f'image/{ext}'
+                           and tile_headers.get('Cache-Control') == 'public, max-age=86400')
+                self.check(f'Nginx conserva cabeceras de seguridad en {directory}',
+                           all(manifest_headers.get(key) == tile_headers.get(key) == headers[key] for key in security_headers)
+                           and all(headers.get(key) for key in security_headers))
+            else:
+                missing.append(manifest_path)
+            for path in missing:
+                try:
+                    get(path)
+                except HTTPError as error:
+                    self.check(f'Nginx devuelve 404 para {path}', error.code == 404 and error.headers.get('Cache-Control') is None)
+                else:
+                    self.check(f'Nginx devuelve 404 para {path}', False)
         csp=headers.get('Content-Security-Policy','')
         source=next((part.strip().split()[1:] for part in csp.split(';') if part.strip().startswith('img-src ')),[])
         self.check('CSP admite dominio exacto de teselas OSM','https://tile.openstreetmap.org' in source)

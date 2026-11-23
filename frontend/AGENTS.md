@@ -7,7 +7,8 @@ Vite sirve la interfaz React y los recursos en `public/`. `vite.config.ts` dirig
 ## Guía de trabajo
 
 - Si cambian las dependencias, conserva sincronizados `package.json` y `package-lock.json`. `npm ci` es el flujo reproducible de CI.
-- Las capas cartográficas locales en `public/mapa-local/` se consumen por URL desde `Map.tsx`. Conserva el manifiesto, la atribución y el respaldo cartográfico al actualizar teselas. El generador actual está en [scripts](../scripts/AGENTS.md).
+- Vite sirve la carpeta `.runtime/mapa-satelital/` de la raíz del repositorio en `/mapa-local/satelite/` en desarrollo y previsualización. El build excluye esta carpeta. Conserva el manifiesto, la atribución y la cuadrícula de respaldo. [Mapa satelital](../docs/MAPA_SATELITAL.md)
+- Vite sirve igualmente `.runtime/mapa-osm/` en `/mapa-local/osm/`. El build excluye esta carpeta.
 
 ## Verificación
 

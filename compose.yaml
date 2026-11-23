@@ -1,5 +1,11 @@
 name: ${COMPOSE_PROJECT_NAME:-geocattle-simulation}
 
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+
 x-backend: &backend
   image: ${COMPOSE_PROJECT_NAME:-geocattle-simulation}-backend:0.1.0
   build:
@@ -52,12 +58,35 @@ x-backend: &backend
     NOTIFICATION_MAX_ATTEMPTS: ${NOTIFICATION_MAX_ATTEMPTS:-3}
     NOTIFICATION_EXPIRY_HOURS: ${NOTIFICATION_EXPIRY_HOURS:-24}
   restart: unless-stopped
+  mem_limit: 256m
+  cpus: 0.75
+  logging: *logging
   security_opt:
     - no-new-privileges:true
 
 services:
   database:
     image: postgis/postgis:16-3.4
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - max_connections=40
+      - -c
+      - maintenance_work_mem=48MB
+      - -c
+      - autovacuum_work_mem=24MB
+      - -c
+      - autovacuum_max_workers=2
+      - -c
+      - max_parallel_workers_per_gather=1
+    mem_limit: 384m
+    cpus: 1.0
+    shm_size: 128m
+    logging: *logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-geocattle_simulation}
       POSTGRES_USER: ${POSTGRES_USER:-geocattle}
@@ -69,9 +98,10 @@ services:
     healthcheck:
       # The temporary server used by initdb only accepts Unix socket connections.
       test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
-      interval: 5s
+      interval: 15s
       timeout: 5s
-      retries: 20
+      retries: 8
+      start_period: 15s
     restart: unless-stopped
 
   migrate:
@@ -84,18 +114,21 @@ services:
 
   api:
     <<: *backend
+    mem_limit: 384m
+    cpus: 1.0
     environment:
       <<: *backend-env
       DATABASE_URL: postgresql+psycopg://geocattle_app:${APP_DATABASE_PASSWORD:?Ejecute scripts/configure.py}@database:5432/${POSTGRES_DB:-geocattle_simulation}
-    command: [uvicorn, geocattle.main:app, --host, 0.0.0.0, --port, '8000']
+    command: [uvicorn, geocattle.main:app, --host, 0.0.0.0, --port, '8000', --workers, '1']
     depends_on:
       migrate:
         condition: service_completed_successfully
     healthcheck:
       test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://localhost:8000/api/v1/health", timeout=3)']
-      interval: 10s
+      interval: 20s
       timeout: 5s
-      retries: 10
+      retries: 6
+      start_period: 15s
 
   worker:
     <<: *backend
@@ -111,8 +144,14 @@ services:
     build:
       context: .
       dockerfile: infrastructure/web.Dockerfile
+    mem_limit: 64m
+    cpus: 0.5
+    logging: *logging
     ports:
       - 127.0.0.1:${WEB_PORT:-8080}:80
+    volumes:
+      - ./.runtime/mapa-satelital:/var/lib/geocattle/mapa-satelital:ro
+      - ./.runtime/mapa-osm:/var/lib/geocattle/mapa-osm:ro
     depends_on:
       api:
         condition: service_healthy
@@ -147,6 +186,9 @@ services:
   tls:
     image: caddy:2-alpine
     profiles: [tls]
+    mem_limit: 128m
+    cpus: 0.5
+    logging: *logging
     ports:
       - 127.0.0.1:${TLS_PORT:-8443}:443
     volumes:
@@ -161,6 +203,9 @@ services:
   broker:
     image: eclipse-mosquitto:2.0
     profiles: [iot]
+    mem_limit: 64m
+    cpus: 0.5
+    logging: *logging
     environment:
       MQTT_USERNAME: ${MQTT_USERNAME:-geocattle}
       MQTT_PASSWORD: ${MQTT_PASSWORD:?Ejecute scripts/configure.py}
@@ -190,6 +235,11 @@ services:
   chirpstack-database:
     image: postgres:16-alpine
     profiles: [lorawan]
+    command: [postgres, -c, shared_buffers=32MB, -c, work_mem=2MB, -c, max_connections=30,
+              -c, maintenance_work_mem=32MB, -c, autovacuum_work_mem=16MB, -c, autovacuum_max_workers=2]
+    mem_limit: 256m
+    cpus: 0.75
+    logging: *logging
     environment:
       POSTGRES_DB: chirpstack
       POSTGRES_USER: chirpstack
@@ -198,14 +248,18 @@ services:
       - chirpstack-database-data:/var/lib/postgresql/data
     healthcheck:
       test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U chirpstack -d chirpstack']
-      interval: 5s
+      interval: 15s
       timeout: 5s
-      retries: 20
+      retries: 8
+      start_period: 15s
     restart: unless-stopped
 
   chirpstack-init:
     image: postgres:16-alpine
     profiles: [lorawan]
+    mem_limit: 64m
+    cpus: 0.5
+    logging: *logging
     environment:
       PGPASSWORD: ${CHIRPSTACK_DB_PASSWORD:?Ejecute scripts/configure.py}
     command: [psql, --host, chirpstack-database, --username, chirpstack, --dbname, chirpstack, -v, ON_ERROR_STOP=1, -c, 'CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS hstore;']
@@ -217,6 +271,9 @@ services:
   redis:
     image: redis:7-alpine
     profiles: [lorawan]
+    mem_limit: 256m
+    cpus: 0.5
+    logging: *logging
     command: [redis-server, --appendonly, 'yes']
     volumes:
       - redis-data:/data
@@ -225,6 +282,9 @@ services:
   chirpstack:
     image: chirpstack/chirpstack:4
     profiles: [lorawan]
+    mem_limit: 256m
+    cpus: 1.0
+    logging: *logging
     command: [-c, /etc/chirpstack]
     environment:
       CHIRPSTACK_DB_PASSWORD: ${CHIRPSTACK_DB_PASSWORD:?Ejecute scripts/configure.py}

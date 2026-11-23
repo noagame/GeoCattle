@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { CircleMarker, GeoJSON, Marker, MapContainer, Pane, Polygon as MapPolygon, Polyline, Popup, ScaleControl, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import type { FeatureCollection } from 'geojson';
-import { Layers, LocateFixed, MapPin, RotateCw } from 'lucide-react';
+import { ChevronDown, Compass, Fence, Layers, LocateFixed, MapPin, Radio, RotateCw } from 'lucide-react';
 import type { Animal, Geofence, Telemetry } from './types';
 import { age, date } from './api';
 import { Badge } from './ui';
@@ -12,6 +12,17 @@ import { gatewayStatus, hasGatewayPosition } from './gatewayCoordinates';
 export type CollarLocation = { hardware_id: string; latitude: number; longitude: number; observed_at: string; stale: boolean };
 export type Point = [number, number]; // Leaflet [latitude, longitude]; GeoJSON uses the reverse order.
 const statusColors = { normal: '#2c8d65', warning: '#bc821f', critical: '#c1534f', unknown: '#7a8580' };
+const staleColor = '#77887c';
+const allLayers = { fences: true, gateways: true };
+type MapLayer = keyof typeof allLayers;
+type MapSelection = { layer: MapLayer; id: string };
+type MapLocationGroup = { layer: MapLayer; items: { id: string; label: string; focus: () => void }[] };
+const locationLabels = {
+  fences: { label: 'Geocercas', icon: Fence, all: 'Todas las geocercas', empty: 'Sin geocercas', hide: 'Ocultar geocercas', hidden: 'Geocercas ocultas' },
+  gateways: { label: 'Gateways', icon: Radio, all: 'Todos los gateways', empty: 'Sin ubicación', hide: 'Ocultar gateways', hidden: 'Gateways ocultos' },
+};
+const locationOrder = new Intl.Collator('es', { numeric: true, sensitivity: 'base' });
+type MapFence = { fence: Geofence; rings: Point[][]; bounds: L.LatLngBounds };
 const basePreference = 'geocattle.map.base';
 type LocalBasemap = FeatureCollection & { source?: string; name?: string };
 type SatelliteBasemap = { name: string; attribution: string; bounds: [number, number, number, number]; minZoom: number; maxZoom: number };
@@ -93,6 +104,10 @@ function MapSize() {
   }, [map]);
   return null;
 }
+function fitMap(map: L.Map, bounds: L.LatLngBounds, options?: L.FitBoundsOptions) {
+  map.invalidateSize({ pan: false });
+  map.fitBounds(bounds, { padding: [35, 35], maxZoom: 17, ...options });
+}
 function Fit({ points, requestedPoints, request, drawing }: { points: Point[]; requestedPoints: Point[]; request: number; drawing: boolean }) {
   const map = useMap(); const fitted = useRef(false); const lastRequest = useRef(request);
   const signature = points.map(p => p.join(',')).join('|');
@@ -101,26 +116,56 @@ function Fit({ points, requestedPoints, request, drawing }: { points: Point[]; r
     const explicit = lastRequest.current !== request; lastRequest.current = request;
     const target = explicit ? requestedPoints : points;
     if (!target.length || (!explicit && (fitted.current || drawing))) return;
-    map.invalidateSize({ pan: false });
-    map.fitBounds(L.latLngBounds(target), { padding: [35, 35], maxZoom: 17, animate: false }); fitted.current = true;
+    fitMap(map, L.latLngBounds(target), { animate: false });
+    fitted.current = true;
     // New telemetry must not move the viewport while the user draws or explores.
   }, [map, signature, requestedSignature, request, drawing]);
   return null;
 }
-// Una geocerca de pocos píxeles se pierde en la vista regional; un marcador la mantiene visible y acerca el mapa.
-function SmallFenceMarkers({ fences, color }: { fences: Geofence[]; color: string }) {
-  const map = useMap(); const [zoom, setZoom] = useState(() => map.getZoom());
+function FenceLayers({ fences, satellite, selectedId, watchedId, drawing, onSelect }: {
+  fences: MapFence[]; satellite: boolean; selectedId?: string; watchedId?: string;
+  drawing: boolean; onSelect?: (fence: MapFence) => void;
+}) {
+  const map = useMap();
+  const [zoom, setZoom] = useState(() => map.getZoom());
   useMapEvents({ zoomend: () => setZoom(map.getZoom()) });
-  return <>{fences.filter(fence => fence.active).map(fence => {
-    const area = L.latLngBounds(fence.geometry.coordinates.flatMap(ring => ring.map(c => [c[1], c[0]] as Point)));
-    const corner = map.project(area.getNorthWest(), zoom); const opposite = map.project(area.getSouthEast(), zoom);
-    if (Math.max(Math.abs(opposite.x - corner.x), Math.abs(opposite.y - corner.y)) >= 18) return null;
-    return <CircleMarker key={`small-${fence.id}-${fence.version}`} center={area.getCenter()} radius={7}
-      pathOptions={{ color, weight: 2, fillColor: '#9dc4a0', fillOpacity: .85 }}
-      eventHandlers={{ click: () => map.fitBounds(area, { padding: [35, 35], maxZoom: 18 }) }}>
-      <Tooltip direction="top" offset={[0, -6]}>{fence.name} · clic para acercar</Tooltip>
-    </CircleMarker>;
-  })}</>;
+
+  const layers = fences.map(area => {
+    const { fence, rings, bounds } = area;
+    const selected = fence.id === selectedId;
+    const watched = fence.id === watchedId;
+    const color = selected ? (satellite ? '#b7f9d0' : '#15533b')
+      : watched ? (satellite ? '#fff29c' : '#236b52')
+      : satellite ? (fence.active ? '#ffe18d' : '#eee8d8') : (fence.active ? '#55937a' : '#8e9e92');
+    const weight = selected ? 5 : watched ? 4 : 2;
+    const dashArray = fence.active ? undefined : '6 4';
+    const fill = { fillColor: '#9dc4a0', fillOpacity: selected ? .32 : watched ? .24 : fence.active ? .16 : .07 };
+    const tooltip = <Tooltip sticky>{fence.name} · v{fence.version}{watched && ' · zona vigilada'}{!fence.active && ' · histórica'}</Tooltip>;
+    const handlers = onSelect ? { click: () => onSelect(area) } : undefined;
+    const key = `${fence.id}-${fence.version}`;
+    const footprint = map.project(bounds.getNorthWest(), zoom).subtract(map.project(bounds.getSouthEast(), zoom));
+    // El punto conserva un blanco de clic mientras un marcador de 22 px puede cubrir casi toda la geocerca.
+    const small = fence.active && Math.max(Math.abs(footprint.x), Math.abs(footprint.y)) < 26;
+    return {
+      body: <MapPolygon key={key} positions={rings} interactive={!drawing} bubblingMouseEvents={!onSelect}
+        pathOptions={{ ...fill, color, weight, dashArray, stroke: !onSelect }} eventHandlers={handlers}>
+        {!drawing && tooltip}
+      </MapPolygon>,
+      // El contorno puede recibir clics sobre un marcador. El interior deja accesibles los marcadores.
+      target: <MapPolygon key={key} positions={rings} bubblingMouseEvents={false}
+        pathOptions={{ color, weight, dashArray, fill: false }} eventHandlers={handlers}>{tooltip}</MapPolygon>,
+      dot: small && <CircleMarker key={key} center={bounds.getCenter()} radius={selected ? 7 : 6} bubblingMouseEvents={false}
+        pathOptions={{ color, weight: selected ? 3 : 2, fillColor: '#9dc4a0', fillOpacity: .9 }} eventHandlers={handlers}>
+        <Tooltip direction="top">{fence.name} · clic para acercar</Tooltip>
+      </CircleMarker>,
+    };
+  });
+  return <>{layers.map(layer => layer.body)}
+    <Pane name="fence-targets" style={{ zIndex: 610 }}>
+      {onSelect && layers.map(layer => layer.target)}
+      {onSelect && layers.map(layer => layer.dot)}
+    </Pane>
+  </>;
 }
 function Drawing({ onPoint }: { onPoint?: (point: Point) => void }) {
   useMapEvents({ click: event => {
@@ -130,9 +175,55 @@ function Drawing({ onPoint }: { onPoint?: (point: Point) => void }) {
   } });
   return null;
 }
-function Recenter({ points }: { points: Point[] }) {
-  const map = useMap();
-  return <button type="button" className="map-button" title="Encuadrar geometrías y posiciones" aria-label="Encuadrar geometrías y posiciones" disabled={!points.length} onClick={() => { map.invalidateSize({ pan: false }); map.fitBounds(L.latLngBounds(points), { padding: [35, 35], maxZoom: 17 }); }}><LocateFixed size={18} /></button>;
+function MapLegend({ groups, visible, selection, onVisibility, onFitAll, canFitAll, hasPositions }: {
+  groups: MapLocationGroup[]; visible: typeof allLayers; selection: MapSelection | null;
+  onVisibility: (layer: MapLayer, visible: boolean) => void; onFitAll: () => void; canFitAll: boolean; hasPositions: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
+  return <aside className="map-layer-panel" aria-label="Explorar mapa">
+    <h3 className="map-legend-heading"><Compass size={17} aria-hidden="true" />Explorar mapa</h3>
+    <button type="button" className="map-legend-disclosure" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(value => !value)}>
+      <Compass size={17} aria-hidden="true" />Explorar mapa<ChevronDown size={16} aria-hidden="true" />
+    </button>
+    <div id={contentId} className={`map-legend-content${expanded ? ' expanded' : ''}`}>
+      <div className="map-location-fields">
+        {groups.map(({ layer, items }) => {
+          const { label, icon: Icon, all, empty, hide, hidden } = locationLabels[layer];
+          const selected = selection?.layer === layer && items.find(item => item.id === selection.id);
+          const value = !visible[layer] && items.length ? 'hidden' : selected ? selected.id : '';
+          return <label key={layer} className={`map-location-field map-location-${layer}`}>
+            <span className="map-location-label"><Icon size={15} aria-hidden="true" />{label}<small aria-hidden="true">{items.length}</small></span>
+            <span className="map-location-input">
+              <select aria-label={`${label} del mapa`} title={selected ? selected.label : undefined} value={value} disabled={!items.length} onChange={event => {
+                const id = event.currentTarget.value;
+                if (id === '' || id === 'hidden') onVisibility(layer, id !== 'hidden');
+                else items.find(item => item.id === id)?.focus();
+              }}>
+                <option value="">{items.length ? all : empty}</option>
+                {!!items.length && <option value="hidden">{visible[layer] ? hide : hidden}</option>}
+                {[...items].sort((a, b) => locationOrder.compare(a.label, b.label)).map(item =>
+                  <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+              <ChevronDown size={15} aria-hidden="true" />
+            </span>
+          </label>;
+        })}
+      </div>
+      <button type="button" className="map-legend-fit" disabled={!canFitAll} onClick={onFitAll}><LocateFixed size={16} aria-hidden="true" />Ver todo</button>
+      <ul className="map-legend-colors" aria-label="Colores del mapa">
+        {hasPositions && [
+          ['Normal', statusColors.normal],
+          ['Advertencia', statusColors.warning],
+          ['Crítico', statusColors.critical],
+          ['Posición vencida', staleColor],
+        ].map(([label, color]) => <li key={label}>
+          <span className="map-legend-swatch" style={{ backgroundColor: color }} aria-hidden="true" />{label}
+        </li>)}
+        <li><span className="map-legend-fence-line" aria-hidden="true" />Geocerca activa</li>
+      </ul>
+    </div>
+  </aside>;
 }
 function VertexMarker({ vertex, selected, onSelect, onMove, onDragStart }: { vertex: { id: string; point: Point; label: number }; selected: boolean; onSelect?: (id: string) => void; onMove?: (id: string, point: Point) => void; onDragStart?: () => void }) {
   const ref=useRef<L.Marker>(null);
@@ -141,19 +232,31 @@ function VertexMarker({ vertex, selected, onSelect, onMove, onDragStart }: { ver
   return <Marker ref={ref} position={vertex.point} draggable={!!onMove} bubblingMouseEvents={false} icon={icon} title={`Punto ${vertex.label}`} eventHandlers={{ click:event=>{L.DomEvent.stopPropagation(event.originalEvent);onSelect?.(vertex.id);},dragstart:()=>{onSelect?.(vertex.id);onDragStart?.();},drag:event=>{const p=(event.target as L.Marker).getLatLng();onMove?.(vertex.id,[p.lat,p.lng]);} }}><Tooltip>Punto {vertex.label} · arrastra para mover</Tooltip></Marker>;
 }
 
-function GatewayMarker({ gateway, onMove, onDetail, selected=false, draft=false }: { gateway: Gateway; onMove?: (point: Point) => void; onDetail?: (gateway: Gateway) => void; selected?: boolean; draft?: boolean }) {
+function GatewayMarker({ gateway, onMove, onDetail, onSelect, selected=false, draft=false }: {
+  gateway: Gateway; onMove?: (point: Point) => void; onDetail?: (gateway: Gateway) => void;
+  onSelect?: () => void; selected?: boolean; draft?: boolean;
+}) {
   const ref=useRef<L.Marker>(null);
-  const icon=useMemo(()=>L.divIcon({className:`gateway-map-marker ${gateway.archived_at?'archived':''}`,html:'<span aria-hidden="true">G</span>',iconSize:[30,30],iconAnchor:[15,15]}),[gateway.archived_at]);
+  const icon = useMemo(() => {
+    const size = draft ? 30 : 22;
+    return L.divIcon({
+      className: `gateway-map-marker${gateway.archived_at ? ' archived' : ''}${draft ? ' draft' : ''}`,
+      html: '<span aria-hidden="true">G</span>', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+    });
+  }, [gateway.archived_at, draft]);
   const identity=gateway.gateway_eui ?? (gateway.node_id ? `Nodo 0${gateway.node_id}` : 'EUI no informado');
   const title=draft?'Ubicación del gateway en edición':`Gateway ${gateway.name} · ${identity}`;
   useEffect(()=>{const el=ref.current?.getElement();if(el){el.title=title;el.setAttribute('aria-label',title);el.classList.toggle('selected',selected||draft);}},[icon,title,selected,draft]);
-  return <Marker ref={ref} position={[gateway.latitude!,gateway.longitude!]} icon={icon} title={title} draggable={!!onMove} bubblingMouseEvents={false} eventHandlers={{drag:event=>{const p=(event.target as L.Marker).getLatLng();onMove?.([p.lat,p.lng]);},click:event=>L.DomEvent.stopPropagation(event.originalEvent)}}>
-    <Tooltip permanent direction="top">{draft ? 'Ubicación propuesta' : identity}{gateway.archived_at?' · Archivado':''}</Tooltip>
+  return <Marker ref={ref} position={[gateway.latitude!,gateway.longitude!]} icon={icon} title={title} draggable={!!onMove} bubblingMouseEvents={false} eventHandlers={{
+    drag: event => { const p = (event.target as L.Marker).getLatLng(); onMove?.([p.lat, p.lng]); },
+    click: event => { L.DomEvent.stopPropagation(event.originalEvent); onSelect?.(); },
+  }}>
+    <Tooltip permanent={draft} direction="top">{draft ? 'Ubicación propuesta' : identity}{gateway.archived_at?' · Archivado':''}</Tooltip>
     {!draft&&<Popup><div className="map-popup"><strong>Gateway · {gateway.name}</strong><span>{identity}</span><span>{gateway.latitude!.toFixed(6)}, {gateway.longitude!.toFixed(6)}</span><span>{gateway.archived_at?'Archivado · ':''}{gatewayStatus[gateway.status]??gateway.status}</span><span>Última recepción: {date(gateway.last_seen_at)}</span>{onDetail&&<button type="button" onClick={()=>onDetail(gateway)}>Ver detalle e historial</button>}</div></Popup>}
   </Marker>;
 }
 
-export function CattleMap({ animals = [], geofences = [], gateways = [], history = [], collars = [], onAnimal, drawPoints = [], drawHoles = [], onPoint, height = 'main', externalTiles = false, focusPoints = [], fitRequest = 0, drawVertices = [], selectedVertex, onVertexSelect, onVertexMove, onVertexDragStart, gatewayDraft, onGatewayMove, onGateway, selectedGatewayId, watchedFenceId }: {
+export function CattleMap({ animals = [], geofences = [], gateways = [], history = [], collars = [], onAnimal, drawPoints = [], drawHoles = [], onPoint, height = 'main', externalTiles = false, focusPoints = [], fitRequest = 0, drawVertices = [], selectedVertex, onVertexSelect, onVertexMove, onVertexDragStart, gatewayDraft, onGatewayMove, onGateway, selectedGatewayId, watchedFenceId, interactiveLegend = false }: {
   gatewayDraft?: Gateway; onGatewayMove?: (point: Point) => void; onGateway?: (gateway: Gateway) => void; selectedGatewayId?: string | null;
   collars?: CollarLocation[]; animals?: Animal[]; geofences?: Geofence[]; gateways?: Gateway[]; history?: Telemetry[]; onAnimal?: (animal: Animal) => void;
   drawPoints?: Point[]; drawHoles?: Point[][]; onPoint?: (point: Point) => void; height?: 'main' | 'small' | 'editor'; externalTiles?: boolean;
@@ -161,13 +264,28 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
   drawVertices?: { id: string; point: Point; label: number }[]; selectedVertex?: string | null;
   onVertexSelect?: (id: string) => void; onVertexMove?: (id: string, point: Point) => void; onVertexDragStart?: () => void;
   watchedFenceId?: string;
+  interactiveLegend?: boolean;
 }) {
+  const [map, setMap] = useState<L.Map | null>(null);
   const [base, setBase] = useState(() => savedBase(externalTiles ? 'osm' : 'satellite'));
   const external = base === 'osm';
   const [tileError, setTileError] = useState(false); const [tileBusy, setTileBusy] = useState(false); const [tileAttempt, setTileAttempt] = useState(0);
-  const [legendOpen, setLegendOpen] = useState(false);
+  const [visibleLayers, setVisibleLayers] = useState(allLayers);
+  const [selection, setSelection] = useState<MapSelection | null>(null);
+  const [compactLegendOpen, setCompactLegendOpen] = useState(false);
+  const browsing = height !== 'editor' && !onPoint;
+  const showLegend = interactiveLegend && height === 'main' && browsing;
+  const visible = showLegend ? visibleLayers : allLayers;
   const [satelliteError, setSatelliteError] = useState(false);
   const [outsideCoverage, setOutsideCoverage] = useState(false);
+  useEffect(() => {
+    if (selectedGatewayId) {
+      setSelection({ layer: 'gateways', id: selectedGatewayId });
+      setVisibleLayers(current => current.gateways ? current : { ...current, gateways: true });
+    } else {
+      setSelection(current => current?.layer === 'gateways' ? null : current);
+    }
+  }, [selectedGatewayId, fitRequest]);
   const satellite = useLocalAsset('/mapa-local/satelite/manifest.json', base === 'satellite', parseSatellite);
   const showSatellite = base === 'satellite' && !!satellite && !satelliteError;
   const showRoads = base === 'roads' || (base === 'satellite' && (satellite === null || satelliteError));
@@ -176,17 +294,25 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
     setBase(value); setTileError(false); setTileBusy(false); setSatelliteError(false);
     try { localStorage.setItem(basePreference, value); } catch { /* Storage can be unavailable in private mode. */ }
   }
-  const positioned = animals.filter(animal => validPosition(animal.last_position));
+  const mappedFences = useMemo(() => geofences.map(fence => {
+    const rings = fence.geometry.coordinates.map(ring => ring.map(c => [c[1], c[0]] as Point));
+    return { fence, rings, bounds: L.latLngBounds(rings.flat()) };
+  }).filter(area => area.bounds.isValid()), [geofences]);
+  const positioned = useMemo(() => animals.flatMap(animal => {
+    const telemetry = animal.last_position;
+    return validPosition(telemetry) ? [{ animal, telemetry, point: [telemetry.latitude, telemetry.longitude] as Point }] : [];
+  }), [animals]);
+  const locatedGateways = useMemo(() => gateways.filter(hasGatewayPosition), [gateways]);
   const bounds = useMemo<Point[]>(() => {
     const points: Point[] = [];
-    geofences.forEach(f => f.geometry.coordinates.forEach(r => r.forEach(c => points.push([c[1], c[0]]))));
-    positioned.forEach(a => { if (validPosition(a.last_position)) points.push([a.last_position.latitude, a.last_position.longitude]); });
-    gateways.filter(hasGatewayPosition).forEach(g => points.push([g.latitude!, g.longitude!]));
+    mappedFences.forEach(area => area.rings.forEach(ring => points.push(...ring)));
+    positioned.forEach(({ point }) => points.push(point));
+    locatedGateways.forEach(g => points.push([g.latitude!, g.longitude!]));
     if (gatewayDraft && hasGatewayPosition(gatewayDraft)) points.push([gatewayDraft.latitude!,gatewayDraft.longitude!]);
     collars.forEach(c => points.push([c.latitude, c.longitude]));
     history.filter(validPosition).forEach(t => points.push([t.latitude, t.longitude]));
     return points;
-  }, [geofences, animals, gateways, history, collars, gatewayDraft]);
+  }, [mappedFences, positioned, locatedGateways, history, collars, gatewayDraft]);
   const orderedHistory = useMemo(() => [...history].sort((a, b) => Date.parse(a.observed_at) - Date.parse(b.observed_at)), [history]);
   const fixes = orderedHistory.filter(validPosition);
   const tracks = useMemo(() => {
@@ -205,50 +331,117 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
     ? [[satellite.bounds[0], satellite.bounds[1]], [satellite.bounds[2], satellite.bounds[3]]]
     : showRoads && coverage?.length === 4 && coverage.every(Number.isFinite) ? [[coverage[1], coverage[0]], [coverage[3], coverage[2]]] : [];
   const requestedPoints = focusPoints.length ? focusPoints : drawPoints.length ? drawPoints : bounds;
+  const recenterPoints = drawPoints.length ? drawPoints : initialPoints.length ? initialPoints : basemapPoints;
+  const allPoints = bounds.length ? bounds : basemapPoints;
   const localLayerName = !showRoads || !localMap ? 'Cuadrícula local' : typeof localMap.name === 'string' ? localMap.name : 'Cartografía local';
   const status = external ? (tileBusy ? 'Cargando mapa…' : tileError ? 'Carga parcial' : 'Cartografía en línea')
     : showSatellite ? (outsideCoverage ? 'Centro del mapa fuera de la imagen descargada' : 'Imagen guardada en el servidor')
       : showRoads ? (localMap ? 'Cartografía guardada en el servidor' : localMap === null ? 'Cuadrícula WGS84' : 'Cargando caminos…') : 'Cargando imagen satelital…';
   const drawColor = showSatellite ? '#ffe18d' : '#236b52';
-  return <div className={`map-wrapper map-${height}${showSatellite ? ' map-on-satellite' : ''}`}>
+  function selectFence(area: MapFence) {
+    if (!map) return;
+    map.closePopup();
+    setVisibleLayers(current => current.fences ? current : { ...current, fences: true });
+    setSelection({ layer: 'fences', id: area.fence.id });
+    fitMap(map, area.bounds, { maxZoom: 18, animate: false });
+  }
+  function selectGateway(gateway: Gateway) {
+    if (!map) return;
+    map.closePopup();
+    setVisibleLayers(current => current.gateways ? current : { ...current, gateways: true });
+    setSelection({ layer: 'gateways', id: gateway.id });
+    map.setView([gateway.latitude!, gateway.longitude!], Math.max(17, map.getZoom()), { animate: false });
+  }
+  function changeLayerVisibility(layer: MapLayer, shown: boolean) {
+    setVisibleLayers(current => ({ ...current, [layer]: shown }));
+    setSelection(current => shown || current?.layer === layer ? null : current);
+    if (shown && map) {
+      const area = L.latLngBounds([]);
+      if (layer === 'fences') mappedFences.forEach(fence => area.extend(fence.bounds));
+      else locatedGateways.forEach(gateway => area.extend([gateway.latitude!, gateway.longitude!]));
+      if (area.isValid()) {
+        map.closePopup();
+        fitMap(map, area, { animate: false });
+      }
+    }
+  }
+  function showAll() {
+    setVisibleLayers(allLayers);
+    setSelection(null);
+    if (map && allPoints.length) {
+      map.closePopup();
+      fitMap(map, L.latLngBounds(allPoints), { animate: false });
+    }
+  }
+  const legendGroups: MapLocationGroup[] = showLegend ? [
+    { layer: 'fences', items: mappedFences.map(area => ({
+      id: area.fence.id,
+      label: area.fence.active ? area.fence.name : `${area.fence.name} · histórica v${area.fence.version}`,
+      focus: () => selectFence(area),
+    })) },
+    { layer: 'gateways', items: locatedGateways.map(gateway => ({
+      id: gateway.id,
+      label: gateway.archived_at ? `${gateway.name} · archivado` : gateway.name,
+      focus: () => selectGateway(gateway),
+    })) },
+  ] : [];
+  return <div className={`map-wrapper map-${height}${showSatellite ? ' map-on-satellite' : ''}${showLegend ? ' map-with-legend' : ''}`}>
     <div className="map-base-toolbar" role="group" aria-label="Base del mapa"><Layers size={16} /><button type="button" aria-pressed={base === 'satellite'} onClick={() => selectBase('satellite')}>Satélite local</button><button type="button" aria-pressed={base === 'roads'} onClick={() => selectBase('roads')}>Caminos locales</button><button type="button" aria-pressed={external} onClick={() => selectBase('osm')}>OpenStreetMap</button><span role="status">{status}</span></div>
-    <MapContainer center={[-39, -72.5]} zoom={7} maxZoom={20} scrollWheelZoom className={`cattle-map ${onPoint ? 'map-drawing' : ''}`} aria-label={height === 'editor' ? 'Editor de geocerca' : 'Mapa de animales y geocercas'}>
-      <OfflineGrid />
-      {showRoads && localMap && <LocalCartography data={localMap} />}
-      {showSatellite && <SatelliteTiles data={satellite} onOutside={setOutsideCoverage} onError={() => setSatelliteError(true)} />}
-      {external && <TileLayer key={tileAttempt} url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" zIndex={1} maxNativeZoom={19} maxZoom={20} referrerPolicy="strict-origin-when-cross-origin" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' eventHandlers={{ loading: () => setTileBusy(true), load: () => setTileBusy(false), tileerror: () => setTileError(true) }} />}
-      <MapSize /><Fit points={initialPoints} requestedPoints={requestedPoints} request={fitRequest} drawing={!!onPoint} /><Drawing onPoint={onPoint} /><ScaleControl position="bottomleft" imperial={false} />
-      {drawVertices.map(v => <VertexMarker key={v.id} vertex={v} selected={selectedVertex===v.id} onSelect={onVertexSelect} onMove={onVertexMove} onDragStart={onVertexDragStart} />)}
-      {geofences.map(fence => {
-        const watched = fence.id === watchedFenceId;
-        const outline = watched ? (showSatellite ? '#fff29c' : '#236b52') : showSatellite ? (fence.active ? '#ffe18d' : '#eee8d8') : (fence.active ? '#55937a' : '#8e9e92');
-        return <MapPolygon key={`${fence.id}-${fence.version}`} positions={fence.geometry.coordinates.map(r => r.map(c => [c[1], c[0]] as Point))}
-          pathOptions={{ color: outline, weight: watched ? 4 : 2, fillColor: '#9dc4a0', fillOpacity: watched ? .24 : fence.active ? .16 : .07, dashArray: fence.active ? undefined : '6 4' }}>
-          <Tooltip sticky>{fence.name} · v{fence.version}{watched && ' · zona vigilada'}{!fence.active && ' · histórica'}</Tooltip>
-        </MapPolygon>;
-      })}
-      {!onPoint && <SmallFenceMarkers fences={geofences} color={showSatellite ? '#ffe18d' : '#236b52'} />}
-      {gateways.filter(hasGatewayPosition).map(g => <GatewayMarker key={g.id} gateway={g} onDetail={onGateway} selected={selectedGatewayId===g.id} />)}
-      {gatewayDraft && hasGatewayPosition(gatewayDraft) && <GatewayMarker gateway={gatewayDraft} onMove={onGatewayMove} draft />}
-      {tracks.map((track, i) => <Polyline key={i} positions={track} pathOptions={{ color: showSatellite ? '#86f3e2' : '#276e68', weight: 3, opacity: .85 }} />)}
-      {fixes.length > 0 && <><CircleMarker center={[fixes[0].latitude, fixes[0].longitude]} radius={5} pathOptions={{ color: '#fff', fillColor: '#276e68', fillOpacity: 1 }}><Tooltip>Inicio · {date(fixes[0].observed_at)}</Tooltip></CircleMarker><CircleMarker center={[fixes[fixes.length - 1].latitude, fixes[fixes.length - 1].longitude]} radius={5} pathOptions={{ color: '#fff', fillColor: '#c68a3c', fillOpacity: 1 }}><Tooltip>Fin · {date(fixes[fixes.length - 1].observed_at)}</Tooltip></CircleMarker></>}
-      {collars.map(c => <Marker key={`collar-${c.hardware_id}`} position={[c.latitude, c.longitude]} title={`Collar ${c.hardware_id} · ${c.stale ? 'Última posición histórica' : 'Posición reciente'}`} icon={L.divIcon({className:`collar-location-marker ${c.stale ? 'historical' : 'recent'}`,html:'<span aria-hidden="true">●</span>',iconSize:[26,26],iconAnchor:[13,13]})}><Tooltip>{c.hardware_id} · {c.stale ? 'Última posición histórica' : 'Posición reciente'}</Tooltip><Popup><div className="map-popup"><strong>Collar {c.hardware_id}</strong><span>{date(c.observed_at)}</span><span>{c.latitude.toFixed(6)}, {c.longitude.toFixed(6)}</span><span>{c.stale ? 'Posición histórica; no indica ubicación actual.' : 'Última posición válida recibida.'}</span></div></Popup></Marker>)}
-      {positioned.map(animal => {
-        const t = animal.last_position!; const stale = animal.position_status !== 'fresh';
-        return <CircleMarker key={animal.id} center={[t.latitude!, t.longitude!]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: stale ? '#77887c' : statusColors[animal.status], fillOpacity: stale ? .65 : 1, dashArray: stale ? '3 2' : undefined }}>
-          <Tooltip direction="top">{animal.name || animal.diio} · {age(animal.position_age_seconds)}{stale && ' · posición vencida'}</Tooltip>
-          <Popup><div className="map-popup"><strong>{animal.name || animal.diio}</strong><span>DIIO {animal.diio}</span><Badge status={animal.status} /><span>{age(animal.position_age_seconds)} · {animal.position_status === 'fresh' ? 'Posición vigente' : 'Posición vencida'}</span><span>Origen: {t.source === 'sim' ? 'simulado' : t.source === 'academic' ? 'nodo académico' : 'LoRaWAN'}</span>{onAnimal && <button onClick={() => onAnimal(animal)}>Ver ficha del animal →</button>}</div></Popup>
-        </CircleMarker>;
-      })}
-      {drawPoints.length >= 3 && <MapPolygon positions={[drawPoints, ...drawHoles]} pathOptions={{ color: drawColor, fillColor: '#68b28e', fillOpacity: .25, weight: 2, dashArray: '5 4' }} />}
-      {drawPoints.length === 2 && <Polyline positions={drawPoints} pathOptions={{ color: drawColor, weight: 2, dashArray: '5 4' }} />}
-      {!drawVertices.length && drawPoints.map((p, i) => <CircleMarker key={i} center={p} radius={5} pathOptions={{ color: '#fff', fillColor: '#236b52', fillOpacity: 1, weight: 2 }}><Tooltip permanent direction="top">{i + 1}</Tooltip></CircleMarker>)}
-      <div className="map-controls leaflet-control"><Recenter points={drawPoints.length ? drawPoints : initialPoints.length ? initialPoints : basemapPoints} /></div>
-    </MapContainer>
-    <div className="map-caption"><span><span className={`connection-dot ${external && !tileError ? 'green' : ''}`} />{external ? 'OpenStreetMap · requiere Internet' : showSatellite ? `${satellite.name} · ${satellite.attribution}` : `${localLayerName} · disponible sin Internet`}</span><button type="button" onClick={() => setLegendOpen(!legendOpen)} className="text-button">{legendOpen ? 'Ocultar leyenda' : 'Leyenda'}</button></div>
-    {legendOpen && <div className="map-legend"><Badge status="normal" /><Badge status="warning" /><Badge status="critical" /><Badge status="unknown">Posición vencida</Badge><span className="legend-line">Geocerca activa</span></div>}
+    <div className={showLegend ? 'map-legend-layout' : undefined}>
+      <div className="map-viewport">
+        <MapContainer ref={setMap} center={[-39, -72.5]} zoom={7} maxZoom={20} scrollWheelZoom className={`cattle-map ${onPoint ? 'map-drawing' : ''}`} aria-label={height === 'editor' ? 'Editor de geocerca' : 'Mapa de animales y geocercas'}>
+          <OfflineGrid />
+          {showRoads && localMap && <LocalCartography data={localMap} />}
+          {showSatellite && <SatelliteTiles data={satellite} onOutside={setOutsideCoverage} onError={() => setSatelliteError(true)} />}
+          {external && <TileLayer key={tileAttempt} url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" zIndex={1} maxNativeZoom={19} maxZoom={20} referrerPolicy="strict-origin-when-cross-origin" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' eventHandlers={{ loading: () => setTileBusy(true), load: () => setTileBusy(false), tileerror: () => setTileError(true) }} />}
+          <MapSize /><Fit points={initialPoints} requestedPoints={requestedPoints} request={fitRequest} drawing={!!onPoint} /><Drawing onPoint={onPoint} /><ScaleControl position="bottomleft" imperial={false} />
+          {drawVertices.map(v => <VertexMarker key={v.id} vertex={v} selected={selectedVertex===v.id} onSelect={onVertexSelect} onMove={onVertexMove} onDragStart={onVertexDragStart} />)}
+          <FenceLayers fences={visible.fences ? mappedFences : []} satellite={showSatellite} drawing={!!onPoint}
+            selectedId={selection?.layer === 'fences' ? selection.id : undefined} watchedId={watchedFenceId}
+            onSelect={browsing ? selectFence : undefined} />
+          {visible.gateways && locatedGateways.map(g => <GatewayMarker key={g.id} gateway={g} onDetail={onGateway}
+            selected={selection?.layer === 'gateways' && selection.id === g.id}
+            onSelect={showLegend ? () => setSelection({ layer: 'gateways', id: g.id }) : undefined} />)}
+          {gatewayDraft && hasGatewayPosition(gatewayDraft) && <GatewayMarker gateway={gatewayDraft} onMove={onGatewayMove} draft />}
+          {tracks.map((track, i) => <Polyline key={i} positions={track} pathOptions={{ color: showSatellite ? '#86f3e2' : '#276e68', weight: 3, opacity: .85 }} />)}
+          {fixes.length > 0 && <><CircleMarker center={[fixes[0].latitude, fixes[0].longitude]} radius={5} pathOptions={{ color: '#fff', fillColor: '#276e68', fillOpacity: 1 }}><Tooltip>Inicio · {date(fixes[0].observed_at)}</Tooltip></CircleMarker><CircleMarker center={[fixes[fixes.length - 1].latitude, fixes[fixes.length - 1].longitude]} radius={5} pathOptions={{ color: '#fff', fillColor: '#c68a3c', fillOpacity: 1 }}><Tooltip>Fin · {date(fixes[fixes.length - 1].observed_at)}</Tooltip></CircleMarker></>}
+          {collars.map(c => {
+            const id = `collar-${c.hardware_id}`;
+            const freshness = c.stale ? 'Última posición histórica' : 'Posición reciente';
+            return <Marker key={id} position={[c.latitude, c.longitude]} title={`Collar ${c.hardware_id} · ${freshness}`}
+              icon={L.divIcon({ className: `collar-location-marker ${c.stale ? 'historical' : 'recent'}`,
+                html: '<span aria-hidden="true">●</span>', iconSize: [20, 20], iconAnchor: [10, 10] })}>
+              <Tooltip>{c.hardware_id} · {freshness}</Tooltip>
+              <Popup><div className="map-popup"><strong>Collar {c.hardware_id}</strong><span>{date(c.observed_at)}</span><span>{c.latitude.toFixed(6)}, {c.longitude.toFixed(6)}</span><span>{c.stale ? 'Posición histórica; no indica ubicación actual.' : 'Última posición válida recibida.'}</span></div></Popup>
+            </Marker>;
+          })}
+          {positioned.map(({ animal, telemetry: t, point }) => {
+            const stale = animal.position_status !== 'fresh';
+            return <CircleMarker key={animal.id} center={point} radius={6}
+              pathOptions={{ color: '#fff', weight: 2, fillColor: stale ? staleColor : statusColors[animal.status], fillOpacity: stale ? .65 : 1, dashArray: stale ? '3 2' : undefined }}>
+              <Tooltip direction="top">{animal.name || animal.diio} · {age(animal.position_age_seconds)}{stale && ' · posición vencida'}</Tooltip>
+              <Popup><div className="map-popup"><strong>{animal.name || animal.diio}</strong><span>DIIO {animal.diio}</span><Badge status={animal.status} /><span>{age(animal.position_age_seconds)} · {animal.position_status === 'fresh' ? 'Posición vigente' : 'Posición vencida'}</span><span>Origen: {t.source === 'sim' ? 'simulado' : t.source === 'academic' ? 'nodo académico' : 'LoRaWAN'}</span>{onAnimal && <button onClick={() => onAnimal(animal)}>Ver ficha del animal →</button>}</div></Popup>
+            </CircleMarker>;
+          })}
+          {drawPoints.length >= 3 && <MapPolygon positions={[drawPoints, ...drawHoles]} pathOptions={{ color: drawColor, fillColor: '#68b28e', fillOpacity: .25, weight: 2, dashArray: '5 4' }} />}
+          {drawPoints.length === 2 && <Polyline positions={drawPoints} pathOptions={{ color: drawColor, weight: 2, dashArray: '5 4' }} />}
+          {!drawVertices.length && drawPoints.map((p, i) => <CircleMarker key={i} center={p} radius={5} pathOptions={{ color: '#fff', fillColor: '#236b52', fillOpacity: 1, weight: 2 }}><Tooltip permanent direction="top">{i + 1}</Tooltip></CircleMarker>)}
+        </MapContainer>
+        <div className="map-controls">
+          <button type="button" className="map-button" title="Encuadrar geometrías y posiciones" aria-label="Encuadrar geometrías y posiciones"
+            disabled={!map || !(showLegend ? allPoints : recenterPoints).length}
+            onClick={showLegend ? showAll : () => { if (map) fitMap(map, L.latLngBounds(recenterPoints)); }}><LocateFixed size={18} /></button>
+        </div>
+        {!bounds.length && !drawPoints.length && !focusPoints.length && <div className="map-empty-hint"><MapPin size={18} /><span>{height === 'editor' ? 'Acerca el mapa a tu predio o centra unas coordenadas antes de dibujar.' : 'Sin posiciones ni geocercas guardadas. Vista regional de referencia.'}</span></div>}
+      </div>
+      {showLegend && <MapLegend groups={legendGroups} visible={visible} selection={selection} onVisibility={changeLayerVisibility}
+        onFitAll={showAll} canFitAll={!!map && !!allPoints.length} hasPositions={!!(animals.length || collars.length)} />}
+    </div>
+    <div className="map-caption"><span><span className={`connection-dot ${external && !tileError ? 'green' : ''}`} />{external ? 'OpenStreetMap · requiere Internet' : showSatellite ? `${satellite.name} · ${satellite.attribution}` : `${localLayerName} · disponible sin Internet`}</span>
+      {!showLegend && <button type="button" aria-expanded={compactLegendOpen} onClick={() => setCompactLegendOpen(value => !value)} className="text-button">{compactLegendOpen ? 'Ocultar leyenda' : 'Leyenda'}</button>}
+    </div>
+    {!showLegend && compactLegendOpen && <div className="map-legend"><Badge status="normal" /><Badge status="warning" /><Badge status="critical" /><Badge status="unknown">Posición vencida</Badge><span className="legend-line">Geocerca activa</span></div>}
     {external && tileError && <div className="map-note" role="status">Algunas teselas no cargaron. Puedes elegir Satélite local y seguir trabajando con el mismo dibujo.<button className="text-button" type="button" onClick={() => { setTileError(false); setTileAttempt(v => v + 1); }}><RotateCw size={13} />Reintentar mapa</button></div>}
     {base === 'satellite' && !showSatellite && showRoads && <div className="map-note" role="status">Imagen satelital local no disponible. Se muestra la base de respaldo.</div>}
-    {!bounds.length && !drawPoints.length && !focusPoints.length && <div className="map-empty-hint"><MapPin size={18} /><span>{height === 'editor' ? 'Acerca el mapa a tu predio o centra unas coordenadas antes de dibujar.' : 'Sin posiciones ni geocercas guardadas. Vista regional de referencia.'}</span></div>}
   </div>;
 }

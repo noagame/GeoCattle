@@ -13,7 +13,7 @@ function bytes(value:number|null|undefined) { if(value==null)return 'Sin medici�
 function dateBounds(from: string, through: string) {
   const start = from ? new Date(`${from}T00:00:00`) : null;
   const end = through ? new Date(`${through}T00:00:00`) : null;
-  if (start && Number.isNaN(start.getTime()) || end && Number.isNaN(end.getTime())) throw new Error('Ingresa fechas válidas.');
+  if ((start && Number.isNaN(start.getTime())) || (end && Number.isNaN(end.getTime()))) throw new Error('Ingresa fechas válidas.');
   if (end) end.setDate(end.getDate() + 1);
   if (start && end && start >= end) throw new Error('La fecha inicial debe ser anterior o igual a la fecha final.');
   return { start: start?.toISOString() ?? '', end: end?.toISOString() ?? '' };

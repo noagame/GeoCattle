@@ -1,4 +1,4 @@
-"""Independent timer and notification outbox. No provider call when unconfigured."""
+"""Temporizador y bandeja de salida de notificaciones independientes. No llama al proveedor si no está configurado."""
 import logging
 import signal
 import threading

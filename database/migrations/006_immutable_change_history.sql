@@ -1,5 +1,5 @@
--- The request is immutable. Foreign keys and the unique decision key protect
--- the reference without taking a row lock that requires UPDATE privileges.
+-- La solicitud es inmutable. Las claves foráneas y la clave de decisión única protegen
+-- la referencia sin tomar un bloqueo de fila que requiera privilegios UPDATE.
 
 CREATE OR REPLACE FUNCTION validate_decision() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE r change_requests; m farm_memberships; grant_row trust_grants;

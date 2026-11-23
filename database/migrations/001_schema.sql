@@ -1,4 +1,4 @@
--- PostgreSQL 16 + PostGIS 3.4. UTC timestamptz; coordinates WGS84.
+-- PostgreSQL 16 + PostGIS 3.4. UTC timestamptz; coordenadas WGS84.
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 CREATE TABLE farms (id uuid PRIMARY KEY, name text NOT NULL, environment text NOT NULL CHECK(environment IN ('simulation','development','production')), timezone text NOT NULL DEFAULT 'America/Santiago');
@@ -30,7 +30,7 @@ CREATE TABLE audit_log (id uuid PRIMARY KEY, farm_id uuid NOT NULL REFERENCES fa
 CREATE INDEX audit_farm_time ON audit_log(farm_id,at DESC);
 CREATE TABLE notifications (id uuid PRIMARY KEY, event_id uuid NOT NULL REFERENCES events, status text NOT NULL CHECK(status IN ('pending','accepted','failed','expired','disabled')), channel text NOT NULL, requested_at timestamptz, created_at timestamptz NOT NULL, next_attempt_at timestamptz NOT NULL);
 CREATE TABLE notification_attempts (id uuid PRIMARY KEY, notification_id uuid NOT NULL REFERENCES notifications, attempt integer NOT NULL CHECK(attempt>0), at timestamptz NOT NULL, status text NOT NULL CHECK(status IN ('accepted','failed','expired','disabled')), provider_id text, error text, UNIQUE(notification_id,attempt));
-CREATE FUNCTION prevent_immutable_mutation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Immutable record cannot be updated or deleted'; END $$;
+CREATE FUNCTION prevent_immutable_mutation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'El registro es inmutable y no puede actualizarse ni eliminarse'; END $$;
 CREATE TRIGGER telemetry_immutable BEFORE UPDATE OR DELETE ON telemetry FOR EACH ROW EXECUTE FUNCTION prevent_immutable_mutation();
 CREATE TRIGGER actions_immutable BEFORE UPDATE OR DELETE ON event_actions FOR EACH ROW EXECUTE FUNCTION prevent_immutable_mutation();
 CREATE TRIGGER audit_immutable BEFORE UPDATE OR DELETE ON audit_log FOR EACH ROW EXECUTE FUNCTION prevent_immutable_mutation();

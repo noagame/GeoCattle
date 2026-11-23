@@ -1,4 +1,4 @@
-"""One reader alternates exact USB profiles; hardware and server are simulated."""
+"""Un lector alterna perfiles USB exactos; hardware y servidor están simulados."""
 import json
 from pathlib import Path
 from types import SimpleNamespace

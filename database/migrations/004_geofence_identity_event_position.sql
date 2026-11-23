@@ -1,4 +1,4 @@
--- Keep every version UUID and all telemetry/pasture/event references intact.
+-- Mantiene cada UUID de versión y todas las referencias de telemetría/pastoreo/evento intactas.
 ALTER TABLE geofences ADD COLUMN geofence_key uuid;
 WITH roots AS (
   SELECT id, first_value(id) OVER (PARTITION BY farm_id, sector_id ORDER BY version, created_at, id) AS root
@@ -12,8 +12,8 @@ ALTER TABLE geofences DROP CONSTRAINT geofences_sector_id_version_key;
 ALTER TABLE geofences ADD CONSTRAINT geofence_identity_version UNIQUE (geofence_key, version);
 CREATE UNIQUE INDEX geofence_one_active_identity ON geofences(geofence_key) WHERE active;
 
--- Associations are versioned along with the geometry. sector_id remains the
--- primary/default sector for compatibility; it is included in this relation.
+-- Las asociaciones se versionan junto con la geometría. sector_id sigue siendo el
+-- sector primario/predeterminado por compatibilidad; se incluye en esta relación.
 CREATE TABLE geofence_sectors (
   geofence_id uuid NOT NULL,
   sector_id uuid NOT NULL,
@@ -28,8 +28,8 @@ CREATE INDEX geofence_sectors_by_sector ON geofence_sectors(farm_id,sector_id);
 ALTER TABLE events ADD COLUMN last_position_id uuid;
 ALTER TABLE events ADD CONSTRAINT event_position_same_farm
   FOREIGN KEY (last_position_id,farm_id) REFERENCES telemetry(id,farm_id);
--- Only observations actually received before detection and attributed to the
--- same collar/animal assignment count. Late arrivals cannot rewrite history.
+-- Solo las observaciones efectivamente recibidas antes de la detección y atribuidas a la
+-- misma asignación collar/animal cuentan. Las llegadas tardías no pueden reescribir la historia.
 UPDATE events e SET last_position_id=(
   SELECT t.id FROM telemetry t
   JOIN assignments a ON a.id=t.assignment_id AND a.device_id=e.device_id AND a.animal_id=e.animal_id

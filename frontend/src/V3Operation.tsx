@@ -4,13 +4,13 @@ import { api, write } from './api';
 
 type ProtectedMethod = 'POST' | 'PATCH' | 'DELETE';
 
-/** One authorization is bound to the exact mutation and consumed by the server. */
+/** Una autorización queda ligada a la mutación exacta y el servidor la consume una sola vez. */
 export function useVerifiedOperation(busy: boolean) {
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
 
   async function perform<T>(path: string, payload: Record<string, unknown>, method: ProtectedMethod = 'POST'): Promise<T> {
-    // Capture a single JSON representation before authorizing or dispatching the mutation.
+    // Captura una representación JSON única antes de autorizar o despachar la mutación.
     const serialized = JSON.stringify(payload);
     const authorization = await write<{ operation_token: string; expires_at: string }>('/auth/operation', {
       password,

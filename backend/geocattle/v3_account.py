@@ -1,4 +1,4 @@
-"""Account security, private support requests and assisted recovery."""
+"""Seguridad de cuenta, solicitudes de soporte privadas y recuperación asistida."""
 import re
 import secrets
 import time
@@ -86,7 +86,7 @@ class RecoveryLogin(Strict):
 
 
 def _reauthenticate(db, request, actor, password, code, require_mfa=False, recovery_code=None):
-    """Persistent identity budget; lock order matches all other MFA endpoints."""
+    """Presupuesto de identidad persistente; el orden de bloqueo coincide con todos los demás endpoints MFA."""
     one(db, 'SELECT id FROM users WHERE id=:u FOR UPDATE', u=actor.id)
     identity = db.get(User, actor.id)
     if not identity or not identity.active:
@@ -281,7 +281,7 @@ def _public_origin(request):
 @router.post('/mfa/recovery-login')
 def recovery_login(body: RecoveryLogin, request: Request, response: Response, db=Depends(get_db, scope='function')):
     _public_origin(request)
-    # Unknown identities also have a bounded password-verification workload.
+    # Las identidades desconocidas también tienen una carga de verificación de contraseña acotada.
     key = (request.client.host if request.client else 'unknown', body.username.strip().lower())
     attempts = _unknown_attempts[key]
     now = time.monotonic()
@@ -326,12 +326,12 @@ def recovery_login(body: RecoveryLogin, request: Request, response: Response, db
 def issue_password_reset(body: ResetIssue, request: Request, user=Depends(current_user), db=Depends(get_db, scope='function')):
     if user.base_role != 'admin':
         raise HTTPException(403, 'Solo el administrador puede emitir recuperación asistida')
-    # Two administrators resetting each other acquire both identities in one
-    # deterministic order, before either authentication factor is locked.
+    # Dos administradores que se restablecen mutuamente adquieren ambas identidades en un
+    # orden determinista, antes de que se bloquee cualquier factor de autenticación.
     for ident in sorted({user.id, body.user_id}, key=str):
         one(db, 'SELECT id FROM users WHERE id=:u FOR UPDATE', u=ident)
     _reauthenticate(db, request, user, body.password, body.code, require_mfa=True)
-    # The consumer also locks the target user before its token, avoiding races.
+    # El consumidor también bloquea al usuario objetivo antes de su token, evitando condiciones de carrera.
     one(db, 'SELECT id FROM users WHERE id=:u FOR UPDATE', u=body.user_id)
     target = db.get(User, body.user_id)
     if not target:

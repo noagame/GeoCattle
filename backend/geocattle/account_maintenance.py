@@ -1,4 +1,4 @@
-"""Local account maintenance. This module has no HTTP entry point."""
+"""Mantenimiento local de cuentas. Este módulo no tiene punto de entrada HTTP."""
 import argparse
 from uuid import uuid4
 

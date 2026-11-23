@@ -1,4 +1,4 @@
-"""USB and API handshake tests using fake streams and no physical boards."""
+"""Pruebas de protocolo USB y API usando flujos falsos sin placas físicas."""
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory

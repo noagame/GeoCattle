@@ -28,7 +28,7 @@ async function apiResponse(path: string, init: RequestInit = {}): Promise<Respon
       const body = await response.json();
       if (typeof body.detail === 'string') detail = body.detail;
       else if (Array.isArray(body.detail)) detail = body.detail.map((error: { msg?: string; loc?: string[] }) => `${error.loc?.slice(1).join('.') ?? 'Campo'}: ${error.msg ?? 'valor inválido'}`).join(' · ');
-    } catch { /* Non-JSON infrastructure error retains the HTTP explanation. */ }
+    } catch { /* Error de infraestructura sin JSON: se conserva la descripción HTTP. */ }
     if (response.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('session-expired'));
     throw new ApiError(detail, response.status);
   }

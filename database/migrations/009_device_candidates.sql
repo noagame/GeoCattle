@@ -27,8 +27,8 @@ CREATE UNIQUE INDEX device_candidates_pending_identity
 CREATE INDEX device_candidates_farm_status_seen
     ON device_candidates (farm_id, status, last_seen_at DESC);
 
--- A capture acknowledged as a detection remains a detection on redelivery,
--- including after the collar is approved or dismissed.
+-- Una captura confirmada como detección permanece como detección al reenviarla,
+-- incluso después de que el collar sea aprobado o descartado.
 CREATE TABLE device_candidate_captures (
     farm_id uuid NOT NULL,
     hardware_id text NOT NULL,

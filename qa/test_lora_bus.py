@@ -1,4 +1,4 @@
-"""Bus capture contract: simulated USB and temporary SQLite only."""
+"""Contrato de captura bus: USB simulado y SQLite temporal únicamente."""
 import copy
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -170,7 +170,7 @@ class BusProtocolTests(unittest.TestCase):
 
 class BusCaptureTests(unittest.TestCase):
     def exercise(self, folder, frames, on_write=None, write_error=None):
-        # Reuse the checkout's serial fixture; never open a physical USB port.
+        # Reutiliza el fixture serie del checkout; nunca abre un puerto USB físico.
         from qa.test_capture_runtime import Connection, Event, IdleThread, usb
         directory = Path(folder)
         select_mode(directory, 'gateways')
@@ -236,7 +236,7 @@ class BusCaptureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             def assert_committed(ack):
                 self.assertEqual(ack, b'#GCACK,A1B2C3D4-9\n')
-                # A separate connection sees the row only after the commit.
+                # Una conexión separada ve la fila solo después del commit.
                 with closing(sqlite3.connect(Path(folder) / 'captures.sqlite3')) as db:
                     self.assertEqual(db.execute('SELECT count(*) FROM captures').fetchone()[0], 1)
                     self.assertEqual(db.execute('SELECT status FROM captures').fetchone()[0], 'pending')
@@ -266,7 +266,7 @@ class BusCaptureTests(unittest.TestCase):
 
     def test_archive_rejection_never_acknowledges_bus(self):
         frame = wire(bus()).encode() + b'\n'
-        # A ValueError represents archive's conflicting identity rejection.
+        # Un ValueError representa el rechazo de identidad conflictiva del archivo.
         with tempfile.TemporaryDirectory() as folder:
             with patch.object(staged.Archive, 'enqueue', side_effect=ValueError('synthetic archive failure')):
                 with self.assertLogs('geocattle.usb', level='WARNING'):

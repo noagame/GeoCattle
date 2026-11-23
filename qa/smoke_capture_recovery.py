@@ -54,7 +54,7 @@ def run(options, url):
     endpoint = url + API + INGEST
     key = os.environ['INGEST_KEY']
     with api_process(url, options.directory, 'queue-before'):
-        # Probe the same API and database that will receive the backlog.
+        # Sondea la misma API y base de datos que recibirá el backlog.
         assert httpx.get(url + API + '/health', trust_env=False).is_success
     stopped_at = time.monotonic()
     original = Archive(options.directory / 'queue')

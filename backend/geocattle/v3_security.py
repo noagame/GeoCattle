@@ -1,4 +1,4 @@
-"""V3 identity, tenant context and TOTP. No caller-supplied actor is trusted."""
+"""Identidad V3, contexto de inquilino y TOTP. No se confía en ningún actor declarado por el llamador."""
 import base64
 import hashlib
 import hmac

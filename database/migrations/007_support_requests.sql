@@ -18,7 +18,7 @@ CREATE TABLE support_requests (
 CREATE INDEX support_requests_requester_time ON support_requests(requester_id, created_at DESC, id);
 CREATE INDEX support_requests_pending_time ON support_requests(created_at DESC, id) WHERE status = 'pending';
 
--- Preserve existing references and use the latest recorded reason for each folio.
+-- Preserva las referencias existentes y usa el motivo registrado más reciente para cada folio.
 INSERT INTO support_requests(id, requester_id, kind, description, created_at)
 SELECT t.id, t.user_id, 'close_account',
        coalesce(nullif(btrim(a.after->>'reason'), ''), 'Motivo sin registrar'), t.created_at

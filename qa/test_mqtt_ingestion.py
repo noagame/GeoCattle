@@ -38,7 +38,7 @@ def main():
     if code != 200 or dashboard["farm"]["environment"] != "simulation":
         raise SystemExit("Predio de simulación requerido")
 
-    # Global backend modules must be imported only after the private local URL.
+    # Los módulos backend globales deben importarse solo después de la URL local privada.
     os.environ.update(config)
     os.environ["DATABASE_URL"] = ("postgresql+psycopg://geocattle_app:" + quote(config["APP_DATABASE_PASSWORD"], safe="") +
                                   "@127.0.0.1:" + config["DB_PORT"] + "/" + config["POSTGRES_DB"])
@@ -47,7 +47,7 @@ def main():
     from geocattle.ingestor import Ingestor, Spool
     from geocattle.settings import settings
 
-    logging.disable(logging.CRITICAL)  # Never emit exception parameters/secrets.
+    logging.disable(logging.CRITICAL)  # Nunca emitir parámetros de excepción ni secretos.
     topic = "geocattle/qa/" + run_id + "/telemetry"
     ack_topic = "geocattle/qa/" + run_id + "/committed"
     spool_path = ROOT / "qa" / "spool" / ("mqtt-" + run_id + ".sqlite3")
@@ -100,7 +100,7 @@ def main():
 
     def start_ingestor():
         instance = Ingestor(cfg)
-        # Observe real transport acknowledgements without replacing their effect.
+        # Observa los acuses de transporte reales sin reemplazar su efecto.
         original_ack = instance.client.ack
         instance.qa_ack_calls = []
         def observed_ack(mid, qos):
@@ -119,7 +119,7 @@ def main():
         return instance, thread
 
     try:
-        # Rejection proves allow_anonymous=false independently of the happy path.
+        # El rechazo demuestra allow_anonymous=false independientemente del camino feliz.
         rejected = threading.Event()
         rejection = []
         anonymous = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="qa-anonymous-" + run_id)
@@ -186,7 +186,7 @@ def main():
         queued = json.dumps(payload(2, captured)).encode()
         spool = Spool(str(spool_path))
         key = spool.put(topic, queued, 0, 1, 0)
-        # Controlled arrival time models a previous interruption, not real WAN loss.
+        # El tiempo de llegada controlado modela una interrupción anterior, no una pérdida WAN real.
         with spool.connect() as db:
             db.execute("UPDATE messages SET received=? WHERE key=?", (captured.timestamp(), key))
         reopened = Spool(str(spool_path))
@@ -217,7 +217,7 @@ def main():
         check("Cuarentena no escribe telemetría ni confirma commit", request("GET", f"/animals/{animal['id']}/history")["total"] == 2 and
               not any(receipt.get("seq") == 3 and receipt.get("status") == "committed" for receipt in list(receipts.queue)))
     except Exception as exc:
-        # Do not serialize raw exceptions, connection URLs, payloads or config.
+        # No serializar excepciones crudas, URLs de conexión, payloads ni configuración.
         error = str(exc) if isinstance(exc, RuntimeError) else "Prueba abortada: " + type(exc).__name__
         print(error, flush=True)
     finally:

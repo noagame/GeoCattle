@@ -1,4 +1,4 @@
-"""Cross-platform host-capture configuration; no USB, Docker or DB is touched."""
+"""Configuración de captura multiplataforma en el host; sin USB, Docker ni BD."""
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile

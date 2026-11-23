@@ -1,8 +1,8 @@
 #ifndef GEOCATTLE_GC_TRANSPORT_H
 #define GEOCATTLE_GC_TRANSPORT_H
 
-// Portable C++14 wire codec. All integers are explicitly little endian.
-// Reassembly is RAM only; completion is not a database acknowledgement.
+// Códec de trama C++14 portable. Todos los enteros son explícitamente little endian.
+// El reensamblado es solo en RAM; la finalización no equivale a un acuse de base de datos.
 #include <stddef.h>
 #include <stdint.h>
 
@@ -32,7 +32,7 @@ struct Header {
   uint32_t elapsed_ms = 0;
 };
 
-// Helpers require callers to provide an adequately sized pointer.
+// Los helpers requieren que los llamadores provean un puntero de tamaño adecuado.
 constexpr uint16_t read16(const uint8_t* p) {
   return static_cast<uint16_t>(p[0]) |
          static_cast<uint16_t>(static_cast<uint16_t>(p[1]) << 8);
@@ -91,7 +91,7 @@ constexpr bool encodeHeader(const Header& h, uint8_t* out, size_t capacity) {
   write32(out + 22, h.elapsed_ms);
   return true;
 }
-// Decodes ONLY the header. Callers must check payload size and beacon CRC.
+// Decodifica SOLO la cabecera. Los llamadores deben verificar el tamaño del payload y el CRC del beacon.
 constexpr bool decodeHeader(const uint8_t* frame, size_t length, Header& result) {
   if (frame == nullptr || length < HEADER_SIZE || frame[0] != 'G' ||
       frame[1] != 'C' || frame[2] != 1) return false;
@@ -109,8 +109,8 @@ class Reassembly {
  public:
   constexpr Reassembly() = default;
 
-  // Complete data remains owned by this object until clearCompleted().
-  // Consume and clear it immediately before feeding another distinct batch.
+  // Los datos completos pertenecen a este objeto hasta clearCompleted().
+  // Consúmelos y limpia inmediatamente antes de alimentar otro lote distinto.
   constexpr ReassemblyResult ingest(const Header& h, const uint8_t* payload,
                                     size_t length, uint32_t now) {
     expire(now);

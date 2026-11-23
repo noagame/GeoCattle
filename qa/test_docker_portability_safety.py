@@ -1,4 +1,4 @@
-"""Safety guards for the Docker QA runner; no daemon is accessed."""
+"""Guardias de seguridad del ejecutor QA Docker; no se accede al daemon."""
 from pathlib import Path
 import os
 from unittest.mock import patch

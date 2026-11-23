@@ -1,4 +1,4 @@
-"""Exercise collar identification without opening a physical serial port."""
+"""Ejercita la identificación de collar sin abrir un puerto serie físico."""
 import json
 from io import BytesIO
 import unittest

@@ -1,4 +1,4 @@
-"""Receiver methods use metadata only; no real USB or application database."""
+"""Los métodos de receptor usan solo metadatos; sin USB real ni base de datos de aplicación."""
 import importlib.util
 import json
 import os

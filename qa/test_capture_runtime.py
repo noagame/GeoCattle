@@ -1,4 +1,4 @@
-"""Capture safety: no real serial ports or PostgreSQL are used."""
+"""Seguridad de captura: no se usan puertos serie reales ni PostgreSQL."""
 from datetime import datetime, timezone
 import json
 import os

@@ -1,4 +1,4 @@
-"""PostgreSQL integration checks. All fixture changes are rolled back."""
+"""Verificaciones de integración PostgreSQL. Todos los cambios del fixture se revierten."""
 import json
 import os
 from pathlib import Path
@@ -35,8 +35,8 @@ class HardwareTests(unittest.TestCase):
         self.db = Session(connection, join_transaction_mode='create_savepoint', expire_on_commit=False)
         self.addCleanup(self.db.close)
 
-        # Freeze the API clock at local noon: pagination still sees both fixture
-        # readings when CI happens to run in the first ten minutes of a day.
+        # Congela el reloj de la API al mediodía local: la paginación sigue viendo ambas lecturas
+        # del fixture cuando CI ocurre en los primeros diez minutos del día.
         self.now = datetime.now(ZoneInfo('America/Santiago')).replace(hour=12, minute=0,
             second=0, microsecond=0).astimezone(timezone.utc)
         fixed_now = self.now

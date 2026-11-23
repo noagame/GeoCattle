@@ -1,4 +1,4 @@
-"""Session-bound MFA enrollment, login verification, context and step-up."""
+"""Inscripción MFA ligada a sesión, verificación de acceso, contexto y elevación de privilegio."""
 from datetime import timedelta
 from uuid import UUID
 from fastapi import APIRouter,Depends,HTTPException,Request,Response

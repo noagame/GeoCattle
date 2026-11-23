@@ -116,7 +116,7 @@ class Smoke:
         return body, result
 
     def run(self):
-        # BEFORE login or any writable API: require local AND remote simulation.
+        # ANTES del login o cualquier API de escritura: exigir simulación local Y remota.
         if self.config.get("APP_ENV") != "simulation" or self.config.get("SIMULATION_ENABLED", "").lower() != "true":
             raise RuntimeError("Guard: sólo APP_ENV=simulation y SIMULATION_ENABLED=true permiten ejecutar QA")
         health = self.request("GET", "/health")
@@ -166,8 +166,8 @@ class Smoke:
         device = self.request("POST", "/devices", {"hardware_id": self.hardware,
                               "name": "Collar QA " + self.run_id, "transport": "academic", "interval_seconds": 300}, 201)
         device_id = device["id"]
-        # New V3 animals have a holding that starts at registration. A fixture
-        # must not backdate its collar outside that holding's valid interval.
+        # Los animales V3 nuevos tienen una permanencia que empieza al registrarlos. Un fixture
+        # no debe retrofechar su collar fuera del intervalo válido de esa permanencia.
         assignment_body = {"animal_id": animal["id"], "device_id": device_id}
         self.request("POST", "/assignments", assignment_body, 201)
         self.request("POST", "/assignments", assignment_body, 409)
@@ -198,7 +198,7 @@ class Smoke:
         state = self.request("GET", "/animals/" + animal["id"])
         self.check("Lectura interior asociada y vigente", first["animal_id"] == animal["id"] and
                    state["geofence_status"] == "inside" and state["position_status"] == "fresh")
-        self.ingest(-72.65,-38.745)  # Edge: ST_Covers includes it.
+        self.ingest(-72.65,-38.745)  # Borde: ST_Covers lo incluye.
         state = self.request("GET", "/animals/" + animal["id"])
         self.check("Borde se incluye en geocerca", state["geofence_status"] == "inside")
         self.ingest(-72.66,-38.745)
@@ -265,9 +265,9 @@ class Smoke:
         self.request("POST", "/pasture-assignments", {"animal_id": animal["id"], "geofence_id": fence["id"]}, 409)
         self.ingest()
         self.check("Nueva versión conserva asignación vigente", self.request("GET", "/animals/" + animal["id"])["geofence_status"] == "inside")
-        # A newly registered holding/assignment must get its own supervision
-        # window; it cannot inherit silence from before the collar was assigned.
-        # The seed has day-old assignments suitable for this timeout scenario.
+        # Una permanencia/asignación recién registrada debe tener su propia ventana de supervisión;
+        # no puede heredar el silencio previo a la asignación del collar.
+        # El seed tiene asignaciones con días de antigüedad aptas para este escenario de timeout.
         timeout_animal = next((row for row in baseline["animals"] if row.get("device_id")), None)
         if timeout_animal is None:
             raise RuntimeError("Falta un animal del seed con asignacion antigua para comprobar ausencia")
@@ -300,7 +300,7 @@ class Smoke:
         report = self.request("GET", "/reports")
         self.check("Reporte identifica origen simulado", report["simulated_samples"] == report["telemetry_count"] and report["telemetry_count"] > 0)
 
-        # Optional seed roles: each is only tested when explicitly provisioned.
+        # Roles seed opcionales: cada uno se prueba solo cuando está explícitamente provisionado.
         for role in ("viewer", "operator", "other"):
             role_username = self.config.get("SMOKE_" + role.upper() + "_USERNAME")
             if not role_username:
@@ -386,7 +386,7 @@ def main():
     try:
         smoke.run()
     except (RuntimeError, URLError, KeyError, StopIteration, TypeError, ValueError) as exc:
-        # Never serialize request/response bodies or configuration/secrets.
+        # Nunca serializar cuerpos de petición/respuesta ni configuración/secretos.
         error = str(exc) if isinstance(exc, RuntimeError) else "Prueba abortada: " + type(exc).__name__
         print(error, file=sys.stderr)
     smoke.save(args.output, error)

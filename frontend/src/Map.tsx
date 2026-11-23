@@ -9,7 +9,7 @@ import type { Gateway } from './v3types';
 import { gatewayStatus, hasGatewayPosition } from './gatewayCoordinates';
 
 export type CollarLocation = { hardware_id: string; latitude: number; longitude: number; observed_at: string; stale: boolean };
-export type Point = [number, number]; // Leaflet [latitude, longitude]; GeoJSON uses the reverse order.
+export type Point = [number, number]; // Leaflet [latitud, longitud]; GeoJSON usa el orden inverso.
 const statusColors = { normal: '#2c8d65', warning: '#bc821f', critical: '#c1534f', unknown: '#7a8580' };
 const staleColor = '#77887c';
 const allLayers = { fences: true, gateways: true };
@@ -177,7 +177,7 @@ function Fit({ points, requestedPoints, request, drawing }: { points: Point[]; r
     if (!target.length || (!explicit && (fitted.current || drawing))) return;
     fitMap(map, L.latLngBounds(target), { animate: false });
     fitted.current = true;
-    // New telemetry must not move the viewport while the user draws or explores.
+    // La telemetría nueva no debe mover el viewport mientras el usuario dibuja o explora el mapa.
   }, [map, signature, requestedSignature, request, drawing]);
   return null;
 }
@@ -368,7 +368,7 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
     setBase(value); setTileError(false); setTileBusy(false); setSatelliteError(false); setLocalOsmError(false);
     if (base === value && value === 'osm-local' && (localOsm === null || localOsmError)) retryLocalOsm();
     if (base === value && value === 'satellite' && (satellite === null || satelliteError)) retrySatellite();
-    try { localStorage.setItem(basePreference, value); } catch { /* Storage can be unavailable in private mode. */ }
+    try { localStorage.setItem(basePreference, value); } catch { /* El almacenamiento puede no estar disponible en modo privado. */ }
   }
   const mappedFences = useMemo(() => geofences.map(fence => {
     const rings = fence.geometry.coordinates.map(ring => ring.map(c => [c[1], c[0]] as Point));

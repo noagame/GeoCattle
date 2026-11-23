@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Isolated Docker/Linux portability test; never opens USB or the live database.
+"""Prueba de portabilidad Docker/Linux aislada; nunca abre USB ni la base de datos en vivo.
 
-Run with normal user Docker access: python qa/docker_portability.py
-Credentials stay in a private QA env file or process environment, never argv.
-Default cleanup stops only this generated QA project, preserving its volumes.
+Ejecutar con acceso Docker de usuario normal: python qa/docker_portability.py
+Las credenciales permanecen en un archivo de entorno QA privado o en el entorno del proceso, nunca en argv.
+La limpieza predeterminada detiene solo este proyecto QA generado, preservando sus volúmenes.
 """
 from __future__ import annotations
 import argparse
@@ -87,8 +87,8 @@ class Runner:
             CHIRPSTACK_API_SECRET=secret(), CHIRPSTACK_PORT='18085', TLS_PORT='18445',
             CONFIG_DOWNLINK_ENABLED='false', CONFIG_CODEC_VALIDATED='false',
             CHIRPSTACK_APPLICATION_ID='', CONFIG_FPORT='10', NOTIFICATION_WEBHOOK_URL='')
-        # Every mapped operational setting belongs to this isolated QA run.
-        # Host pilot settings must not change the smoke contract or call providers.
+        # Cada ajuste operativo mapeado pertenece a esta ejecución QA aislada.
+        # La configuración del piloto anfitrión no debe cambiar el contrato smoke ni llamar a proveedores.
         self.config.update(SESSION_HOURS='12', MQTT_ACK_TOPIC='geocattle/academic/committed',
             MQTT_CLIENT_ID=self.project+'-ingestor', MQTT_TLS='false',
             PREVENTIVE_RULES_VALIDATED='false', WORKER_INTERVAL_SECONDS='15',
@@ -346,7 +346,7 @@ finally:
         self.check('MQTT QoS1 llega a ingestor PostgreSQL y API','MQTT_COMMITTED_AND_VISIBLE=1' in output)
 
     def worker_integration(self):
-        """Observe the scheduled worker without invoking the timeout scenario."""
+        """Observa el worker planificado sin invocar el escenario de timeout."""
         code = r'''
 import json, os, time
 from datetime import datetime, timedelta
@@ -371,8 +371,8 @@ def api(path, body=None):
     with opener.open(request, timeout=5) as response:
         return json.load(response) if response.status != 204 else None
 
-# Both the remote API and this container's configuration must prove simulation
-# before selecting or changing any row. Credentials are never printed.
+# Tanto la API remota como la configuración de este contenedor deben confirmar simulación
+# antes de seleccionar o modificar cualquier fila. Las credenciales nunca se imprimen.
 health = api('/health')
 assert health.get('status') == 'ok' and health.get('environment') == 'simulation', 'Remote API is not QA simulation'
 cfg = settings()
@@ -404,7 +404,7 @@ try:
         ).all()
         for assignment, animal, device in candidates:
             threshold = 3 * device.interval_seconds + 30
-            # A new installation is intentionally protected by its own baseline.
+            # Una instalación nueva está intencionalmente protegida por su propia línea base.
             if assignment.valid_from > now - timedelta(seconds=threshold + 2):
                 continue
             seed = db.scalar(select(Telemetry).where(
@@ -438,8 +438,8 @@ try:
             if not rows or offset >= page.get('total', offset):
                 return result
 
-    # This creates a NEW synthetic observation through ingestion; immutable
-    # telemetry and historical assignment timestamps are never rewritten.
+    # Esto crea UNA NUEVA observación sintética mediante ingestión; las marcas de tiempo
+    # inmutables de telemetría y asignación histórica nunca se reescriben.
     normal = api('/simulation/scenarios', {'scenario': 'normal', 'animal_id': animal_id})
     assert normal.get('source') == 'sim', 'Baseline observation is not synthetic'
     assert not events_for('active'), 'Normal scenario did not clear previous communication timeout'
@@ -462,8 +462,8 @@ try:
         device.last_received_at = now - timedelta(seconds=3 * device.interval_seconds + 31)
     backdated = True
 
-    # No timeout function, worker command or timeout scenario is called here.
-    # Only the separately scheduled Compose worker can create the new event.
+    # No se llama aquí a ninguna función de timeout, comando de worker ni escenario de timeout.
+    # Solo el worker de Compose programado por separado puede crear el nuevo evento.
     deadline = time.monotonic() + 45
     detected = None
     while True:
@@ -495,8 +495,8 @@ finally:
                 api('/simulation/scenarios', {'scenario': 'normal', 'animal_id': str(selected['animal'])})
                 assert not events_for('active'), 'Cleanup observation did not resolve the synthetic timeout'
             except Exception:
-                # Restore only the mutable device clock if HTTP cleanup fails.
-                # A failure still propagates: this fallback is not a QA pass.
+                # Restaura solo el reloj mutable del dispositivo si la limpieza HTTP falla.
+                # Un fallo sigue propagándose: este fallback no es un pase de QA.
                 with SessionLocal.begin() as db:
                     farm = db.get(Farm, farm_id)
                     device = db.get(Device, selected['device'], with_for_update=True)
@@ -571,7 +571,7 @@ finally:
 
 
 def main():
-    # Docker and pip report progress with Unicode, even on legacy Windows consoles.
+    # Docker y pip reportan progreso con Unicode, incluso en consolas Windows antiguas.
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, 'reconfigure'):
             stream.reconfigure(errors='backslashreplace')

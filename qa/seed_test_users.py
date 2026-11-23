@@ -47,7 +47,7 @@ def main():
             db.flush()
             append_audit(db, user.farm_id, owner.id, "user", user.id, "qa_fixture",
                          after={"role": user.role, "source": "simulation", "purpose": "SW08"})
-        # Optional browser-only fixture: no .env password enters CUA/browser logs.
+        # Fixture opcional solo para navegador: ninguna contraseña del .env entra en los registros CUA/navegador.
         browser_password = os.environ.get("QA_BROWSER_PASSWORD")
         if browser_password:
             if len(browser_password) < 12:
@@ -57,7 +57,7 @@ def main():
             if browser:
                 if browser.farm_id != owner.farm_id or browser.role != "owner":
                     raise SystemExit("Fixture browser incompatible; se conserva sin cambios")
-                # Existing password and active state are always preserved.
+                # La contraseña existente y el estado activo se preservan siempre.
             else:
                 browser = User(id=uuid4(), username=browser_name, farm_id=owner.farm_id,
                                role="owner", active=True, password_hash=hash_password(browser_password))

@@ -111,7 +111,7 @@ class DecoderTests(unittest.TestCase):
                 archive.enqueue(*decode(WIRE, NOW))
                 url = f'http://127.0.0.1:{server.server_port}/api/v1/ingest/telemetry'
                 archive.deliver(url, 'qa-key', farm_id)
-                # Reopening the spool and delivering again must make no further HTTP request.
+                # Reabrir la cola y entregar de nuevo no debe hacer ninguna petición HTTP adicional.
                 Archive(temp).deliver(url, 'qa-key', farm_id)
                 self.assertEqual(Handler.seen, [(farm_id, 'REAL01')])
                 with archive.connection() as db:

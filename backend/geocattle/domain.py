@@ -62,7 +62,7 @@ def freshness(observed_at,received_at,interval,now):
     return position,communication
 
 def resolve_assignment_events(db,assignment,actor_id=None,at=None):
-    """End the old monitoring context without changing its sensor evidence."""
+    """Cierra el contexto de monitoreo anterior sin modificar la evidencia de sensor asociada."""
     at=at or utcnow()
     events=db.scalars(select(Event).where(Event.device_id==assignment.device_id,Event.animal_id==assignment.animal_id,Event.condition=="active").with_for_update()).all()
     for event in events:
@@ -122,7 +122,7 @@ def ingest(db,payload:TelemetryIn,received_at=None,*,detect_candidates=False,cap
     Procesa la ingesta transaccional de un paquete de telemetría de dispositivos IoT.
     Args:
         db: Sesión activa de SQLAlchemy.
-        payload: Esquema de validación con los datos de telemtría entrantes.
+        payload: Esquema de validación con los datos de telemetría entrantes.
         received_at: Timestamp opcional de recepción en servidor.
         detect_candidates: Registra detecciones académicas desconocidas en la captura HTTP.
         capture_farm_id: Predio opcional indicado por el capturador autenticado.
@@ -196,7 +196,7 @@ def ingest(db,payload:TelemetryIn,received_at=None,*,detect_candidates=False,cap
     persist_receptions(db,row,payload.receptions,now)
     newer=device.last_observed_at is None or row.observed_at>device.last_observed_at
     recent=(now-row.observed_at).total_seconds()<=2*device.interval_seconds+30
-    # A delayed or duplicate packet cannot rejuvenate effective communication.
+    # Un paquete tardío o duplicado no puede rejuvenecer la comunicación efectiva.
     if newer:
         device.last_observed_at=row.observed_at
         device.last_telemetry_id=row.id
@@ -207,7 +207,7 @@ def ingest(db,payload:TelemetryIn,received_at=None,*,detect_candidates=False,cap
     current_assignment=db.scalar(select(Assignment).where(Assignment.device_id==device.id,at_time(Assignment,now)))
     if current_assignment and assignment and current_assignment.id==assignment.id:
         condition(db,device,row.animal_id,"communication_timeout",False,telemetry=row,at=now)
-    # Applied configuration is proven by the device, never by saving a form.
+    # La configuración aplicada la prueba el dispositivo, nunca el guardado de un formulario.
     if row.config_version is not None and row.config_version>device.config_version:
         config=db.scalar(select(DeviceConfig).where(DeviceConfig.device_id==device.id,DeviceConfig.version==row.config_version).with_for_update())
         if config and row.observed_at>=config.requested_at:
@@ -216,7 +216,7 @@ def ingest(db,payload:TelemetryIn,received_at=None,*,detect_candidates=False,cap
             condition(db,device,row.animal_id,"config_timeout",False,telemetry=row)
             append_audit(db,device.farm_id,None,"device_config",config.id,"applied",after={"version":config.version})
     if not assignment or not current_assignment or assignment.id!=current_assignment.id: return {"id":str(row.id),"duplicate":False,"animal_id":str(row.animal_id) if row.animal_id else None,"state_updated":False}
-    # Serialize spatial evaluation with changes to this animal's pasture.
+    # Serializa la evaluación espacial con cambios en el potrero de este animal.
     animal=db.get(Animal,assignment.animal_id,with_for_update={"key_share":True})
     if not animal.enabled: return {"id":str(row.id),"duplicate":False,"animal_id":str(row.animal_id),"state_updated":False}
     state=db.get(AnimalState,animal.id,with_for_update=True)
@@ -240,7 +240,7 @@ def ingest(db,payload:TelemetryIn,received_at=None,*,detect_candidates=False,cap
         state.outside_count=count;state.geofence_status=status
         condition(db,device,animal.id,"escape",evidence,severity="critical",telemetry=row,geofence=fence,detail={"rule":"two_consecutive_valid_outside","geofence_version":fence.version})
     elif zone is None: state.outside_count=0;state.geofence_status="unknown"
-    # Prevent a concurrent rule change from leaving an alert open under a disabled rule.
+    # Evita que un cambio concurrente de regla deje una alerta abierta bajo una regla deshabilitada.
     rules=db.get(RuleSettings,device.farm_id,with_for_update={"read":True})
     if rules:
         if row.battery_mv is not None: condition(db,device,animal.id,"low_battery",row.battery_mv<rules.battery_low_mv,telemetry=row,detail={"battery_mv":row.battery_mv,"threshold_mv":rules.battery_low_mv,"rule_version":rules.version})
@@ -262,7 +262,7 @@ def ingest(db,payload:TelemetryIn,received_at=None,*,detect_candidates=False,cap
 
 def check_timeouts(db,now=None):
     now=now or utcnow()
-    # Lock order matches ingestion; SKIP LOCKED permits several workers.
+    # Orden de bloqueo igual al de ingesta; SKIP LOCKED permite varios workers simultáneos.
     devices=db.scalars(select(Device).where(Device.enabled.is_(True)).order_by(Device.id).with_for_update(skip_locked=True)).all()
     for d in devices:
         assignment=db.scalar(select(Assignment).where(Assignment.device_id==d.id,at_time(Assignment,now)))

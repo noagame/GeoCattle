@@ -22,7 +22,7 @@ def create_session(db,user):
     return token,session
 
 def admin_login_requires_mfa(request: Request) -> bool:
-    """Allow password-only admin sessions on the opted-in native loopback app."""
+    """Permite sesiones de administrador solo con contraseña en la aplicación nativa de loopback habilitada."""
     config = settings()
     if config.admin_login_requires_mfa:
         return True

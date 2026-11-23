@@ -87,7 +87,7 @@ def fixture(label, nodes, users, password):
 def reading(farm, index, seq, session, millivolts):
     period = PERIODS[index % len(PERIODS)] * 1000
     packet = {'v': 5, 'id': f'QA{farm.hex[:7]}{index:04d}', 's': session, 'q': seq,
-              # The wire field describes the firmware, independent of this schedule.
+              # El campo wire describe el firmware, independiente de esta planificación.
               'u': seq * period, 'p': 45000, 'g': [-33.45, -70.66, 500, 8, 1.2],
               't': 18.25, 'a': [0.1, -0.2, 0.95], 'm': [1, 0.086],
               'b': [millivolts, 30, 1, 0, 0], 'f': 0, 'e': 2, 'd': [6200, 40, 0]}

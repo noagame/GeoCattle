@@ -1,4 +1,4 @@
-"""Lifecycle contract tests: mocked Docker, no database or daemon required."""
+"""Pruebas del contrato de ciclo de vida: Docker simulado, sin base de datos ni daemon."""
 import contextlib
 import io
 import os

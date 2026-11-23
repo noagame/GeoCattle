@@ -1,8 +1,8 @@
-"""MQTT QoS1 -> durable spool -> PostgreSQL transaction -> application receipt.
+"""Cola MQTT QoS1 → spool durable → transacción PostgreSQL → recibo de aplicación.
 
-SQLite holds only a delivery queue. It is never an application-data backend.
-ChirpStack must provide the versioned decoded object, including observation
-clock, session_id and sequence; these are not invented from MQTT arrival.
+SQLite solo guarda la cola de entrega. No es un backend de datos de aplicación.
+ChirpStack debe proveer el objeto decodificado versionado, incluyendo el reloj de
+observación, session_id y secuencia; no se inventan a partir de la llegada MQTT.
 """
 import hashlib
 import json
@@ -89,7 +89,7 @@ class Ingestor:
         try:
             key=self.spool.put(msg.topic,msg.payload,msg.mid,msg.qos,self.generation)
             if self.spool.is_rejected(key) and msg.qos:
-                # Quarantine is already durable; no application committed receipt.
+                # La cuarentena ya es durable; no se emitió recibo de aplicación comprometido.
                 client.ack(msg.mid,msg.qos)
         except Exception:
             log.exception("No se pudo guardar cola; mensaje sin acuse para redelivery")
@@ -99,10 +99,10 @@ class Ingestor:
             try:
                 with SessionLocal.begin() as db:
                     body=decode(db,topic,payload)
-                    # Preserve queue arrival, so an outage does not rejuvenate communication.
+                    # Se preserva la hora de llegada a la cola; una interrupción no rejuvenece la comunicación.
                     from datetime import datetime,timezone
                     result=ingest(db,body,datetime.fromtimestamp(received,timezone.utc))
-                # Database transaction has committed before any successful receipt.
+                # La transacción de base de datos se confirmó antes de cualquier recibo exitoso.
                 receipt={**result,"hardware_id":body.hardware_id,"session_id":body.session_id,"seq":body.seq,"status":"committed"}
                 publish=self.client.publish(self.cfg.mqtt_ack_topic,json.dumps(receipt),qos=1)
                 if publish.rc!=mqtt.MQTT_ERR_SUCCESS:continue
@@ -113,7 +113,7 @@ class Ingestor:
             except (ValidationError,ValueError,HTTPException) as exc:
                 message=exc.detail if isinstance(exc,HTTPException) else str(exc)
                 self.spool.reject(key,str(message))
-                # Rejected data retained in durable quarantine, never reported committed.
+                # Datos rechazados retenidos en cuarentena durable; nunca se reportan como confirmados.
                 if generation==self.generation and self.client.is_connected() and qos:self.client.ack(mid,qos)
                 log.warning("Payload en cuarentena: %s",str(message)[:200])
             except Exception:

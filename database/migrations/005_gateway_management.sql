@@ -1,4 +1,4 @@
--- Archival is independent of installed/maintenance/retired and preserves radio history.
+-- El archivado es independiente de installed/maintenance/retired y preserva el historial de radio.
 ALTER TABLE gateways ADD COLUMN archived_at timestamptz;
 ALTER TABLE gateways ADD COLUMN archived_by uuid REFERENCES users(id);
 ALTER TABLE gateways ADD COLUMN version bigint NOT NULL DEFAULT 1 CHECK (version>=1);

@@ -1,4 +1,4 @@
-"""Receiver metadata selection and OS leases. No real USB or application DB."""
+"""Selección de metadatos del receptor y arrendamiento del SO. Sin USB real ni BD de aplicación."""
 import json
 import os
 from pathlib import Path

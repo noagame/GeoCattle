@@ -212,7 +212,7 @@ class Smoke:
         path = '/v3/invitations'
         body = {'role_code': 'worker', 'email': f'invited-{uuid4().hex[:8]}@example.test'}
         self.request(owner, 'POST', path, 403, json=body)
-        # The verifier accepts the following TOTP time step within its clock skew window.
+        # El verificador acepta el siguiente paso de tiempo TOTP dentro de su ventana de sesgo de reloj.
         code = totp(setup['secret'], int(time.time() // 30) + 1)
         authorization = self.request(owner, 'POST', '/auth/operation', 200, json={
             'method': 'POST', 'path': API + path, 'payload': body, 'password': PASSWORD, 'code': code,

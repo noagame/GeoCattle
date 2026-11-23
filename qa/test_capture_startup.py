@@ -1,4 +1,4 @@
-"""One-click startup checks without services, USB, or process termination."""
+"""Verificaciones de inicio con un clic sin servicios, USB ni terminación de procesos."""
 from contextlib import ExitStack
 import unittest
 from unittest.mock import patch

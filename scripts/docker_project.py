@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""
-El ciclo de vida de Docker Compose para Windows y Linux, sin shell del anfitrion.
+"""Ciclo de vida de Docker Compose en Windows y Linux, sin shell del anfitrión.
 
 Ejemplos:
   python scripts/docker_project.py start
   python scripts/docker_project.py start --environment development
   python scripts/docker_project.py start --environment development --owner-email owner@example.local --farm "Mi predio"
-El USB se ejecuta aparte en el anfitrion; no se cargan datos sinteticos. La creacion de propietario requiere start --environment development.
+En simulación se cargan datos sintéticos. En desarrollo no se cargan y la
+captura USB se ejecuta aparte en el anfitrión. La creación de propietario
+requiere start --environment development. Los volúmenes se conservan.
 """
 import argparse
 from datetime import datetime, timezone

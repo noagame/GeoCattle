@@ -1,6 +1,23 @@
+x-field-usb-env: &field-usb-env
+  USB_STATUS_PATH: /capture/status.json
+  MIRROR_MODE: ${MIRROR_MODE:-off}
+  MIRROR_SYNC_KEY: ${MIRROR_SYNC_KEY:-}
+  MIRROR_SERVER_URL: ${MIRROR_SERVER_URL:-}
+  MIRROR_ACCESS_ID: ${MIRROR_ACCESS_ID:-}
+  MIRROR_ACCESS_SECRET: ${MIRROR_ACCESS_SECRET:-}
+  MIRROR_REMOTE_ADMIN: ${MIRROR_REMOTE_ADMIN:-true}
+  MIRROR_REMOTE_CHANGES: ${MIRROR_REMOTE_CHANGES:-true}
+  MIRROR_SOURCE: ${MIRROR_SOURCE:-campo}
+
+x-usb-volumes: &usb-volumes
+  - ${USB_CAPTURE_DIR:-./.runtime/capture}:/capture:ro
+
 services:
   api:
+    environment: *field-usb-env
+    volumes: *usb-volumes
+  worker:
     environment:
-      USB_STATUS_PATH: /capture/status.json
-    volumes:
-      - ${USB_CAPTURE_DIR:-./.runtime/capture}:/capture:ro
+      <<: *field-usb-env
+      INGEST_FARM_ID: ${INGEST_FARM_ID:-}
+    volumes: *usb-volumes

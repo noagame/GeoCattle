@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
-from prototype_windows import ROOT, environment, listening
+from prototype_windows import ROOT, ensure_frontend, environment, listening
 
 
 PORT = 8445
@@ -166,8 +166,7 @@ def main():
     env = environment()
     if env.get('APP_ENV') != 'development' or not listening(int(env['DB_PORT'])):
         parser.error('Inicia primero el prototipo de desarrollo con Abrir-GeoCattle.cmd.')
-    if not (ROOT / 'frontend' / 'dist' / 'index.html').is_file():
-        parser.error('Falta compilar la interfaz. Ejecuta npm run build desde frontend.')
+    ensure_frontend()  # recompila si frontend/src cambió después de la última compilación
     try:
         ca_file, cert_file, key_file = tls_files(tls_directory, address)
     except (ValueError, OSError) as error:

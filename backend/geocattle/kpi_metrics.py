@@ -1,10 +1,12 @@
-"""Evalúa los KPI del informe a partir de evidencias agregadas."""
+"""Evalúa los KPI del informe que el sistema calcula con sus propios registros.
+
+K04, K07, K10, K11 y K12 requieren ensayos o registros manuales y no se exportan.
+"""
 from dataclasses import dataclass
 from typing import Literal
 
 
 Status = Literal['Sí', 'No', 'Sin datos']
-NOT_MEASURED = 'Requiere ensayo / no medido por el sistema'
 
 
 @dataclass(frozen=True)
@@ -81,9 +83,6 @@ def calculate_metrics(evidence: Evidence, window: str) -> list[Metric]:
                'Excluye aperturas sin lectura desencadenante y diferencias negativas; no mide el envío del aviso.',
                value=evidence.processing_p95, passed=evidence.processing_p95 <= 2 if evidence.processing_p95 is not None else None,
                denominator=evidence.event_samples, secondary=evidence.processing_p50, secondary_label='p50 (s)'),
-        metric('K04', 'Detección', 's', '≤2T + 5 s',
-               'Comparar el cruce real registrado con la hora del aviso local.',
-               f'{NOT_MEASURED}: no se registra el instante real del cruce.'),
         metric('K05', 'Integridad', '%', '100 % de lecturas recuperadas, sin duplicados',
                'Únicos por collar, sesión y secuencia / lecturas persistidas.',
                f'No certifica recuperación ni contabiliza reintentos descartados. Recepciones adicionales '
@@ -96,9 +95,6 @@ def calculate_metrics(evidence: Evidence, window: str) -> list[Metric]:
                'Solo solicitudes registradas con predio; no incluye fallos sin respuesta registrada.',
                value=request_p95, passed=request_p95 <= 1 and errors < 1 if request_p95 is not None and errors is not None else None,
                numerator=evidence.errors, denominator=evidence.requests, secondary=errors, secondary_label='Errores (%)'),
-        metric('K07', 'Disponibilidad', '%', '≥99 % del tiempo bruto',
-               'Sondeos de servicio registrados periódicamente: tiempo disponible / tiempo total.',
-               f'{NOT_MEASURED}: las peticiones no constituyen un registro de disponibilidad.'),
         metric('K08', 'Autonomía comercial', 'mV', '≥7 días con T = 300 s',
                'Promedio por collar del último voltaje menos el primero (dos o más lecturas).',
                'Solo variación de batería; no mide días ni controla recargas o reemplazos.',
@@ -107,10 +103,4 @@ def calculate_metrics(evidence: Evidence, window: str) -> list[Metric]:
                'Todas las alertas de salida / horas de asignación bovino–collar en el predio × 100.',
                'Sin referencia de campo no se clasifican falsos avisos. El valor incluye todas las salidas observadas por el sistema.',
                value=exit_rate, numerator=evidence.exits, denominator=display(evidence.animal_hours)),
-        metric('K10', 'Usabilidad', 'tareas y s', '≥4 de 5 tareas sin ayuda y mediana ≤30 s',
-               'Ensayo con productor, cronómetro y bitácora de ayuda.', NOT_MEASURED),
-        metric('K11', 'Recuperación', 'h', 'RTO ≤2 h y RPO ≤24 h',
-               'Restauración en un equipo limpio: demora y pérdida de datos.', NOT_MEASURED),
-        metric('K12', 'Carga de trabajo', '%', 'Reducción ≥25 %',
-               'Comparar siete días base con siete días piloto en tareas equivalentes.', NOT_MEASURED),
     ]

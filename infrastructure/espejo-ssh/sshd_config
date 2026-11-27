@@ -1,0 +1,27 @@
+# sshd del túnel del modo espejo: sin shell ni contraseñas. Reenvío remoto a la base del PC y local solo hacia web:80.
+Port 22
+HostKey /etc/ssh/keys/ssh_host_ed25519_key
+AuthorizedKeysFile /etc/ssh/authorized/%u
+AllowUsers espejo
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+AllowTcpForwarding yes
+GatewayPorts clientspecified
+PermitListen 0.0.0.0:15432 0.0.0.0:18084
+PermitOpen web:80
+AllowAgentForwarding no
+AllowStreamLocalForwarding no
+X11Forwarding no
+PermitTTY no
+PermitTunnel no
+PermitUserRC no
+ForceCommand /sbin/nologin
+ClientAliveInterval 15
+ClientAliveCountMax 3
+MaxAuthTries 3
+MaxSessions 2
+LoginGraceTime 20
+LogLevel INFO

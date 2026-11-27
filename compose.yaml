@@ -24,6 +24,7 @@ x-backend: &backend
     DEMO_PASSWORD: ${DEMO_PASSWORD:-}
     COOKIE_SECURE: ${COOKIE_SECURE:-false}
     ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080}
+    ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
     SESSION_HOURS: ${SESSION_HOURS:-12}
     MQTT_HOST: broker
     MQTT_PORT: 1883
@@ -149,6 +150,11 @@ services:
     logging: *logging
     ports:
       - 127.0.0.1:${WEB_PORT:-8080}:80
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1/api/v1/health']
+      interval: 20s
+      timeout: 5s
+      retries: 6
     volumes:
       - ./.runtime/mapa-satelital:/var/lib/geocattle/mapa-satelital:ro
       - ./.runtime/mapa-osm:/var/lib/geocattle/mapa-osm:ro

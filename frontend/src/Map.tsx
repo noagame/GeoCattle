@@ -7,6 +7,7 @@ import { age, date } from './api';
 import { Badge } from './ui';
 import type { Gateway } from './v3types';
 import { gatewayStatus, hasGatewayPosition } from './gatewayCoordinates';
+import { useMirror } from './MirrorMode';
 
 export type CollarLocation = { hardware_id: string; latitude: number; longitude: number; observed_at: string; stale: boolean };
 export type Point = [number, number]; // Leaflet [latitud, longitud]; GeoJSON usa el orden inverso.
@@ -23,6 +24,7 @@ const locationLabels = {
 const locationOrder = new Intl.Collator('es', { numeric: true, sensitivity: 'base' });
 type MapFence = { fence: Geofence; rings: Point[][]; bounds: L.LatLngBounds };
 const basePreference = 'geocattle.map.base';
+const replicaBasePreference = 'geocattle.map.base.replica';
 type SatelliteBounds = [number, number, number, number];
 type SatelliteBasemap = {
   name: string; attribution: string; bounds: SatelliteBounds; minZoom: number; maxZoom: number;
@@ -30,18 +32,34 @@ type SatelliteBasemap = {
 };
 type LocalZoomArea = { bounds: SatelliteBounds; minZoom: number; maxZoom: number };
 type LocalOsm = SatelliteBasemap & { regional: LocalZoomArea; detail: LocalZoomArea & { minZoom: number } };
-type MapBase = 'satellite' | 'osm-local' | 'osm';
+const onlineBases = {
+  osm: {
+    name: 'OpenStreetMap',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    maxNativeZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+  imagery: {
+    name: 'Esri World Imagery',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    maxNativeZoom: 19,
+    attribution: 'Fuente: <a href="https://goto.arcgisonline.com/maps/World_Imagery">Esri</a>, Vantor, Earthstar Geographics y GIS User Community',
+  },
+};
+type MapBase = 'satellite' | 'osm-local' | keyof typeof onlineBases;
 const sameNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 function validPosition(t: Telemetry | null): t is Telemetry & { latitude: number; longitude: number } {
   return !!t?.gnss_valid && t.latitude != null && t.longitude != null && Number.isFinite(t.latitude) && Number.isFinite(t.longitude);
 }
-function savedBase(fallback: MapBase): MapBase {
+function savedBase(replica: boolean, externalTiles: boolean): MapBase {
+  const fallback = externalTiles ? 'osm' : 'satellite';
   try {
+    if (replica) return localStorage.getItem(replicaBasePreference) === 'imagery' ? 'imagery' : 'osm';
     const saved = localStorage.getItem(basePreference);
     if (saved === 'roads') return 'satellite';
     return saved === 'osm' || saved === 'osm-local' || saved === 'satellite' ? saved : fallback;
   }
-  catch { return fallback; }
+  catch { return replica ? 'osm' : fallback; }
 }
 function validSatelliteBounds(bounds: SatelliteBounds) {
   if (!Array.isArray(bounds) || bounds.length !== 4 || !bounds.every(sameNumber)) return false;
@@ -325,9 +343,12 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
   watchedFenceId?: string;
   interactiveLegend?: boolean;
 }) {
+  const { replica } = useMirror();
   const [map, setMap] = useState<L.Map | null>(null);
-  const [base, setBase] = useState(() => savedBase(externalTiles ? 'osm' : 'satellite'));
-  const external = base === 'osm';
+  const [preferredBase, setBase] = useState(() => savedBase(replica, externalTiles));
+  const base = replica && (preferredBase === 'satellite' || preferredBase === 'osm-local') ? 'osm'
+    : !replica && preferredBase === 'imagery' ? 'satellite' : preferredBase;
+  const onlineBase = base === 'osm' || base === 'imagery' ? onlineBases[base] : null;
   const [tileError, setTileError] = useState(false); const [tileBusy, setTileBusy] = useState(false); const [tileAttempt, setTileAttempt] = useState(0);
   const [visibleLayers, setVisibleLayers] = useState(allLayers);
   const [selection, setSelection] = useState<MapSelection | null>(null);
@@ -341,9 +362,10 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
   const [satelliteAttempt, setSatelliteAttempt] = useState(0);
   const [outsideCoverage, setOutsideCoverage] = useState(false);
   useEffect(() => {
+    if (replica) return;
     try { if (localStorage.getItem(basePreference) === 'roads') localStorage.setItem(basePreference, 'satellite'); }
     catch { /* Storage can be unavailable in private mode. */ }
-  }, []);
+  }, [replica]);
   useEffect(() => {
     if (selectedGatewayId) {
       setSelection({ layer: 'gateways', id: selectedGatewayId });
@@ -354,6 +376,7 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
   }, [selectedGatewayId, fitRequest]);
   const satellite = useSatellite(base === 'satellite', satelliteAttempt);
   const showSatellite = base === 'satellite' && !!satellite;
+  const satelliteStyle = showSatellite || base === 'imagery';
   const localOsm = useLocalOsm(base === 'osm-local', localOsmAttempt);
   const showLocalOsm = base === 'osm-local' && !!localOsm;
   function retryLocalOsm() {
@@ -368,7 +391,8 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
     setBase(value); setTileError(false); setTileBusy(false); setSatelliteError(false); setLocalOsmError(false);
     if (base === value && value === 'osm-local' && (localOsm === null || localOsmError)) retryLocalOsm();
     if (base === value && value === 'satellite' && (satellite === null || satelliteError)) retrySatellite();
-    try { localStorage.setItem(basePreference, value); } catch { /* El almacenamiento puede no estar disponible en modo privado. */ }
+    try { localStorage.setItem(replica ? replicaBasePreference : basePreference, value); }
+    catch { /* El almacenamiento puede no estar disponible en modo privado. */ }
   }
   const mappedFences = useMemo(() => geofences.map(fence => {
     const rings = fence.geometry.coordinates.map(ring => ring.map(c => [c[1], c[0]] as Point));
@@ -409,11 +433,11 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
   const requestedPoints = focusPoints.length ? focusPoints : drawPoints.length ? drawPoints : bounds;
   const recenterPoints = drawPoints.length ? drawPoints : initialPoints.length ? initialPoints : basemapPoints;
   const allPoints = bounds.length ? bounds : basemapPoints;
-  const status = external ? (tileBusy ? 'Cargando mapa…' : tileError ? 'Carga parcial' : 'Cartografía en línea')
+  const status = onlineBase ? (tileBusy ? 'Cargando mapa…' : tileError ? 'Algunas teselas no cargaron' : 'Cartografía en línea')
     : showLocalOsm ? (localOsmError ? 'Algunas teselas no cargaron' : 'Mapa guardado en el servidor')
     : showSatellite ? (outsideCoverage ? 'Centro fuera de la cobertura satelital' : satelliteError ? 'Algunas teselas no cargaron' : 'Imagen guardada en el servidor')
       : satellite === null ? 'Cuadrícula WGS84' : 'Cargando imagen satelital…';
-  const drawColor = showSatellite ? '#ffe18d' : '#236b52';
+  const drawColor = satelliteStyle ? '#ffe18d' : '#236b52';
   function selectFence(area: MapFence) {
     if (!map) return;
     map.closePopup();
@@ -461,25 +485,33 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
       focus: () => selectGateway(gateway),
     })) },
   ] : [];
-  return <div className={`map-wrapper map-${height}${showSatellite ? ' map-on-satellite' : ''}${showLegend ? ' map-with-legend' : ''}`}>
-    <div className="map-base-toolbar" role="group" aria-label="Base del mapa"><Layers size={16} /><button type="button" aria-pressed={base === 'satellite'} onClick={() => selectBase('satellite')}>Satélite local</button><button type="button" aria-pressed={base === 'osm-local'} onClick={() => selectBase('osm-local')}>OpenStreetMap local</button><button type="button" aria-pressed={external} onClick={() => selectBase('osm')}>OpenStreetMap</button><span role="status">{status}</span></div>
+  return <div className={`map-wrapper map-${height}${satelliteStyle ? ' map-on-satellite' : ''}${showLegend ? ' map-with-legend' : ''}`}>
+    <div className="map-base-toolbar" role="group" aria-label="Base del mapa">
+      <Layers size={16} />
+      {replica ? <button type="button" aria-pressed={base === 'imagery'} onClick={() => selectBase('imagery')}>Satélite en línea</button> : <>
+        <button type="button" aria-pressed={base === 'satellite'} onClick={() => selectBase('satellite')}>Satélite local</button>
+        <button type="button" aria-pressed={base === 'osm-local'} onClick={() => selectBase('osm-local')}>OpenStreetMap local</button>
+      </>}
+      <button type="button" aria-pressed={base === 'osm'} onClick={() => selectBase('osm')}>OpenStreetMap</button>
+      <span role="status">{status}</span>
+    </div>
     <div className={showLegend ? 'map-legend-layout' : undefined}>
       <div className="map-viewport">
         <MapContainer ref={setMap} center={[-39, -72.5]} zoom={7} maxZoom={20} scrollWheelZoom className={`cattle-map ${onPoint ? 'map-drawing' : ''}`} aria-label={height === 'editor' ? 'Editor de geocerca' : 'Mapa de animales y geocercas'}>
           <OfflineGrid />
           {showSatellite && <SatelliteTiles data={satellite} onOutside={setOutsideCoverage} onError={setSatelliteError} />}
           {showLocalOsm && <LocalOsmTiles data={localOsm} onError={setLocalOsmError} />}
-          {external && <TileLayer key={tileAttempt} url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" zIndex={1} maxNativeZoom={19} maxZoom={20} referrerPolicy="strict-origin-when-cross-origin" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' eventHandlers={{ loading: () => setTileBusy(true), load: () => setTileBusy(false), tileerror: () => setTileError(true) }} />}
+          {onlineBase && <TileLayer key={`${base}-${tileAttempt}`} url={onlineBase.url} zIndex={1} maxNativeZoom={onlineBase.maxNativeZoom} maxZoom={20} referrerPolicy="strict-origin-when-cross-origin" attribution={onlineBase.attribution} eventHandlers={{ loading: () => setTileBusy(true), load: () => setTileBusy(false), tileerror: () => setTileError(true) }} />}
           <MapSize /><Fit points={initialPoints} requestedPoints={requestedPoints} request={fitRequest} drawing={!!onPoint} /><Drawing onPoint={onPoint} /><ScaleControl position="bottomleft" imperial={false} />
           {drawVertices.map(v => <VertexMarker key={v.id} vertex={v} selected={selectedVertex===v.id} onSelect={onVertexSelect} onMove={onVertexMove} onDragStart={onVertexDragStart} />)}
-          <FenceLayers fences={visible.fences ? mappedFences : []} satellite={showSatellite} drawing={!!onPoint}
+          <FenceLayers fences={visible.fences ? mappedFences : []} satellite={satelliteStyle} drawing={!!onPoint}
             selectedId={selection?.layer === 'fences' ? selection.id : undefined} watchedId={watchedFenceId}
             onSelect={browsing ? selectFence : undefined} />
           {visible.gateways && locatedGateways.map(g => <GatewayMarker key={g.id} gateway={g} onDetail={onGateway}
             selected={selection?.layer === 'gateways' && selection.id === g.id}
             onSelect={showLegend ? () => setSelection({ layer: 'gateways', id: g.id }) : undefined} />)}
           {gatewayDraft && hasGatewayPosition(gatewayDraft) && <GatewayMarker gateway={gatewayDraft} onMove={onGatewayMove} draft />}
-          {tracks.map((track, i) => <Polyline key={i} positions={track} pathOptions={{ color: showSatellite ? '#86f3e2' : '#276e68', weight: 3, opacity: .85 }} />)}
+          {tracks.map((track, i) => <Polyline key={i} positions={track} pathOptions={{ color: satelliteStyle ? '#86f3e2' : '#276e68', weight: 3, opacity: .85 }} />)}
           {fixes.length > 0 && <><CircleMarker center={[fixes[0].latitude, fixes[0].longitude]} radius={5} pathOptions={{ color: '#fff', fillColor: '#276e68', fillOpacity: 1 }}><Tooltip>Inicio · {date(fixes[0].observed_at)}</Tooltip></CircleMarker><CircleMarker center={[fixes[fixes.length - 1].latitude, fixes[fixes.length - 1].longitude]} radius={5} pathOptions={{ color: '#fff', fillColor: '#c68a3c', fillOpacity: 1 }}><Tooltip>Fin · {date(fixes[fixes.length - 1].observed_at)}</Tooltip></CircleMarker></>}
           {collars.map(c => {
             const id = `collar-${c.hardware_id}`;
@@ -513,11 +545,14 @@ export function CattleMap({ animals = [], geofences = [], gateways = [], history
       {showLegend && <MapLegend groups={legendGroups} visible={visible} selection={selection} onVisibility={changeLayerVisibility}
         onFitAll={showAll} canFitAll={!!map && !!allPoints.length} hasPositions={!!(animals.length || collars.length)} />}
     </div>
-    <div className="map-caption"><span><span className={`connection-dot ${external && !tileError ? 'green' : ''}`} />{external ? 'OpenStreetMap · requiere Internet' : showLocalOsm ? `${localOsm.name} · © OpenStreetMap contributors` : showSatellite ? `${satellite.name} · ${satellite.attribution}` : 'Cuadrícula WGS84 · disponible sin Internet'}</span>
+    <div className="map-caption"><span><span className={`connection-dot ${onlineBase && !tileError ? 'green' : ''}`} />{onlineBase ? `${onlineBase.name} · requiere Internet` : showLocalOsm ? `${localOsm.name} · © OpenStreetMap contributors` : showSatellite ? `${satellite.name} · ${satellite.attribution}` : 'Cuadrícula WGS84 · disponible sin Internet'}</span>
       {!showLegend && <button type="button" aria-expanded={compactLegendOpen} onClick={() => setCompactLegendOpen(value => !value)} className="text-button">{compactLegendOpen ? 'Ocultar leyenda' : 'Leyenda'}</button>}
     </div>
     {!showLegend && compactLegendOpen && <div className="map-legend"><Badge status="normal" /><Badge status="warning" /><Badge status="critical" /><Badge status="unknown">Posición vencida</Badge><span className="legend-line">Geocerca activa</span></div>}
-    {external && tileError && <div className="map-note" role="status">Algunas teselas no cargaron. Puedes elegir Satélite local y seguir trabajando con el mismo dibujo.<button className="text-button" type="button" onClick={() => { setTileError(false); setTileAttempt(v => v + 1); }}><RotateCw size={13} />Reintentar mapa</button></div>}
+    {onlineBase && tileError && <div className="map-note" role="status">{replica
+      ? 'La cuadrícula WGS84 cubre las zonas donde no cargó el mapa.'
+      : 'Algunas teselas no cargaron. Puedes elegir Satélite local y seguir trabajando con el mismo dibujo.'}
+      <button className="text-button" type="button" onClick={() => { setTileError(false); setTileAttempt(v => v + 1); }}><RotateCw size={13} />Reintentar mapa</button></div>}
     {base === 'osm-local' && localOsm === null && <div className="map-note" role="status"><span>Para instalar el mapa OpenStreetMap local, ejecuta <code>python scripts/preparar_mapa_osm.py</code> (descargar, importar y renderizar; requiere Docker).</span><button type="button" className="text-button" onClick={retryLocalOsm}><RotateCw size={13} />Reintentar mapa</button></div>}
     {base === 'satellite' && satellite === null && <div className="map-note" role="status"><span>Para instalar la imagen satelital, ejecuta <code>python scripts/preparar_mapa_satelital.py --araucania</code> desde la raíz con rasterio y Pillow.</span><button type="button" className="text-button" onClick={retrySatellite}><RotateCw size={13} />Reintentar mapa</button></div>}
   </div>;

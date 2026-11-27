@@ -12,6 +12,22 @@ export type Invitation = {
   email_status?: InvitationMailStatus; acceptance_email_status?: InvitationMailStatus | null;
 };
 export type Change = { id: string; action: string; animal_id?: string | null; device_id?: string | null; status?: string; created_at?: string; requested_at?: string; requester_name?: string; full_name?: string; requested_by?: string; payload: Record<string, unknown>; diio?: string; decision?: string; reason?: string; applied_at?: string | null };
+export type MirrorInfo = { mode: 'off' } | {
+  mode: 'replica' | 'field'; source_environment: string; heartbeat_at: string | null; field_online: boolean;
+};
+export type QueuedWrite = { queued: true; outbox_id: string; status: 'queued' };
+export type SubmissionStatus = 'queued' | 'delivered' | 'applied' | 'pending_owner' | 'rejected' | 'conflict' | 'failed';
+export type MirrorSubmission = {
+  outbox_id: string; kind: 'admin_order' | 'remote_change' | 'draft_revision' | 'support_request'; created_at: string;
+  farm_id: string | null; status: SubmissionStatus; result?: { reason?: string; detail?: unknown } | null;
+};
+export type DraftAction = 'animal_profile' | 'health_record' | 'health_schedule';
+export type ChangeDraft = {
+  id: string; action: DraftAction; animal_id: string | null; payload: Record<string, unknown>;
+  version: number; status: 'draft' | 'submitted' | 'discarded' | 'pending_sync'; updated_at: string;
+  expected_version?: number;
+  conflict_of?: string | null; pending_operation?: 'save' | 'submit' | 'discard';
+};
 export type Gateway = { id: string; name: string; gateway_eui: string | null; node_id?: 1 | 2 | null; status: 'installed' | 'maintenance' | 'retired'; version: number; longitude?: number | null; latitude?: number | null; last_seen_at?: string | null; installed_at?: string | null; archived_at?: string | null; archived_by?: string | null; reception_count?: number };
 export type GatewayReception = { telemetry_id: string; gateway_id: string; hardware_id: string; observed_at: string; reception_at: string; server_received_at: string; rssi_dbm: number | string | null; snr_db: number | string | null; device_id: string; animal_id: string | null; source: string };
 export type ClinicalEvent = { id: string; effective?: boolean; recorded_by?: string; author_name?: string; treatments?: Treatment[]; event_type: string; description?: string; diagnosis?: string | null; operation?: string; target_event_id?: string | null; occurred_at?: string; created_at?: string; created_by?: string };
@@ -53,6 +69,15 @@ export type OwnerCollar = ExportAsset & {
 export type OwnerGateway = ExportAsset & {
   gateway_eui: string | null; longitude: number | null; latitude: number | null;
   last_seen_at: string | null; node_id: number | null; period_receptions: number;
+};
+export type OwnerTelemetryDay = {
+  day: string; hardware_id: string; name: string; samples: number; positions: number; temperatures: number;
+  temperature_min: number | null; temperature_max: number | null; rest_samples: number; moving_samples: number;
+  battery_min_mv: number | null; battery_max_mv: number | null; first_at: string; last_at: string;
+};
+export type OwnerTelemetryExport = OwnerExportContext & {
+  summary: { readings: number; collars: number; days: number; first_at: string | null; last_at: string | null };
+  daily: OwnerTelemetryDay[];
 };
 export type OwnerDevicesExport = OwnerExportContext & {
   summary: { collars: number; gateways: number; withdrawn_collars: number; withdrawn_gateways: number };

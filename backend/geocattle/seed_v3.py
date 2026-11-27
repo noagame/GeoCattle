@@ -1,10 +1,12 @@
 """Conciliar datos V1 y, de forma explícita, provisionar el primer administrador V3.
 
 No cambia contraseñas existentes, no crea colaboradores ficticios ni envía correo.
-Uso: python -m geocattle.seed_v3 [--admin-email correo --admin-name nombre]
-La contraseña nueva se toma únicamente de V3_ADMIN_PASSWORD.
+Uso: python -m geocattle.seed_v3 [--admin-email correo --admin-name nombre [--promote]]
+La contraseña nueva se toma únicamente de V3_ADMIN_PASSWORD. --promote eleva una cuenta existente
+sin predios ni membresías vigentes y conserva su contraseña, su TOTP y su historial.
 """
 import argparse
+import json
 import os
 from uuid import uuid4
 from sqlalchemy import text
@@ -57,10 +59,33 @@ def reconcile_legacy(db):
       (SELECT count(*) FROM farms WHERE account_id IS NULL) AS farms_pending_owner""")).mappings().one())
 
 
+def promote(db, user, parser):
+    # Un administrador ve todos los predios: no debe arrastrar predios propios ni membresías vigentes.
+    if not user["active"]:
+        parser.error("La cuenta está suspendida; reactívala antes de elevarla")
+    owned = db.scalar(text("""SELECT count(*) FROM farms f JOIN owner_accounts a ON a.id=f.account_id
+      WHERE a.owner_user_id=:u AND f.active AND NOT is_demonstration_farm(f.id,f.environment)"""), {"u": user["id"]})
+    members = db.scalar(text("""SELECT count(*) FROM farm_memberships WHERE user_id=:u
+      AND now()>=valid_from AND (valid_to IS NULL OR now()<valid_to)"""), {"u": user["id"]})
+    if owned or members:
+        parser.error(f"La cuenta tiene {owned} predio(s) propio(s) y {members} membresía(s) vigente(s); "
+                     "usa otro correo para el administrador o traspasa y retira esos accesos primero")
+    db.execute(text("UPDATE owner_accounts SET active=false WHERE owner_user_id=:u"), {"u": user["id"]})
+    db.execute(text("UPDATE users SET role='admin',farm_id=NULL WHERE id=:u"), {"u": user["id"]})
+    db.execute(text("INSERT INTO platform_admins(user_id) VALUES(:u) ON CONFLICT DO NOTHING"), {"u": user["id"]})
+    db.execute(text("UPDATE login_sessions SET revoked_at=now() WHERE user_id=:u AND revoked_at IS NULL"), {"u": user["id"]})
+    db.execute(text("""INSERT INTO audit_log(id,actor_id,actor_kind,object_type,object_id,action,at,before,after)
+      VALUES(:id,:actor,'user','user',:object_id,'admin_promotion',now(),CAST(:before AS jsonb),CAST(:after AS jsonb))"""),
+      {"id": uuid4(), "actor": user["id"], "object_id": str(user["id"]),
+       "before": json.dumps({"role": user["role"]}), "after": json.dumps({"role": "admin"})})
+    print("Cuenta elevada a administrador; conserva su contraseña. Si no tiene TOTP, actívalo en Mi perfil")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--admin-email")
     parser.add_argument("--admin-name", default="Administrador de plataforma")
+    parser.add_argument("--promote", action="store_true", help="Eleva una cuenta existente a administrador")
     args = parser.parse_args()
     with SessionLocal.begin() as db:
         counts = reconcile_legacy(db)
@@ -68,11 +93,15 @@ def main():
             email = args.admin_email.strip().lower()
             if "@" not in email or len(email) > 254:
                 parser.error("El administrador requiere correo válido")
-            existing = db.execute(text("SELECT id,role FROM users WHERE username=:email OR email=:email"), {"email": email}).mappings().first()
-            if existing:
+            existing = db.execute(text("SELECT id,role,active FROM users WHERE username=:email OR email=:email FOR UPDATE"), {"email": email}).mappings().first()
+            if existing and existing["role"] != "admin" and args.promote:
+                promote(db, existing, parser)
+            elif existing:
                 if existing["role"] != "admin":
-                    parser.error("La cuenta existe con otro rol; no se elevó su acceso")
+                    parser.error("La cuenta existe con otro rol; no se elevó su acceso (usa --promote para elevarla)")
                 print("El administrador ya existe; no se alteró contraseña ni MFA")
+            elif args.promote:
+                parser.error("--promote requiere una cuenta existente; sin --promote se crea una nueva")
             else:
                 password = os.environ.get("V3_ADMIN_PASSWORD", "")
                 if len(password) < 12:

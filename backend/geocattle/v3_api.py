@@ -15,11 +15,14 @@ from sqlalchemy import select,text
 from .db import get_db
 from .gateway_detection import check_gateway_eui, ensure_node_available, lock_gateway_farm
 from .invitation_mail import invitation_url,queue_acceptance,queue_invitation
+from .mirror_api import queue_write
+from .mirror_policy import WRITE_DENIED
+from .mirror_replay import replay_for
 from .models import User,Farm,Animal,RuleSettings,utcnow
 from .report_exports import CsvDelimiter,EXPORT_LIMIT,ExportFormat,export_response
 from .security import current_user,owner,hash_password,token_hash
 from .settings import settings
-from .v3_security import rows,one,execute,audit,require_step_up
+from .v3_security import VISIBLE_FARM_ENVIRONMENT,rows,one,execute,audit,require_step_up
 from .v3_operation_auth import require_operation
 router=APIRouter(prefix='/api/v1/v3',tags=['Role workspaces V3'])
 class Strict(BaseModel):model_config=ConfigDict(extra='forbid')
@@ -44,6 +47,9 @@ class OwnerPatch(Strict):
     active:bool|None=None
     full_name:str|None=Field(default=None,min_length=1,max_length=150)
     max_farms:int|None=Field(default=None,ge=1,le=1000)
+
+class OwnerConversion(Strict):
+    max_farms:int=Field(default=1,ge=1,le=1000)
 class InviteIn(Strict):
     email:str=Field(min_length=5,max_length=254,pattern=r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
     role_code:Literal['worker','veterinarian']
@@ -151,8 +157,10 @@ class GatewayArchiveIn(Strict):
 
 
 def listing(data):return {'items':data,'total':len(data)}
-def admin(user=Depends(current_user)):
-    if user.base_role!='admin':raise HTTPException(403,'Se requiere administrador de plataforma')
+def admin(request:Request,user=Depends(current_user)):
+    if user.base_role!='admin':
+        detail = WRITE_DENIED if settings().mirror_mode == 'replica' and request.method != 'GET' else 'Se requiere administrador de plataforma'
+        raise HTTPException(403,detail)
     return user
 
 def farm_scope(user):
@@ -201,9 +209,9 @@ def update_profile(body:ProfileIn,user=Depends(current_user),db=Depends(get_db,s
 @router.get('/farms')
 def farms(user=Depends(current_user),db=Depends(get_db,scope='function')):
     if user.base_role=='admin':
-        return listing(rows(db,'SELECT id,account_id,name,rup,address,active,timezone FROM farms WHERE environment=:e ORDER BY name',e=settings_env()))
+        return listing(rows(db,f'SELECT id,account_id,name,rup,address,active,timezone FROM farms f WHERE {VISIBLE_FARM_ENVIRONMENT} ORDER BY name',env=settings_env()))
     if user.base_role=='owner':
-        return listing(rows(db,'SELECT f.id,f.account_id,f.name,f.rup,f.address,f.active,f.timezone FROM farms f JOIN owner_accounts a ON a.id=f.account_id WHERE a.owner_user_id=:u AND a.active AND f.environment=:e ORDER BY f.name',u=user.id,e=settings_env()))
+        return listing(rows(db,f'SELECT f.id,f.account_id,f.name,f.rup,f.address,f.active,f.timezone FROM farms f JOIN owner_accounts a ON a.id=f.account_id WHERE a.owner_user_id=:u AND a.active AND {VISIBLE_FARM_ENVIRONMENT} ORDER BY f.name',u=user.id,env=settings_env()))
     ids=[f['id'] for f in user.farms]
     if not ids:return listing([])
     return listing(rows(db,'SELECT id,account_id,name,rup,address,active,timezone FROM farms WHERE id=ANY(:ids) ORDER BY name',ids=ids))
@@ -211,7 +219,7 @@ def farms(user=Depends(current_user),db=Depends(get_db,scope='function')):
 def create_farm(body:FarmIn,user=Depends(owner),db=Depends(get_db,scope='function')):
     if user.base_role=='admin':raise HTTPException(422,'Crea predios desde el contexto de una cuenta dueña')
     account=owned_account(db,user)
-    count=one(db,'SELECT count(*) AS n FROM farms WHERE account_id=:a AND active',a=account['id'])['n']
+    count=one(db,'SELECT count(*) AS n FROM farms WHERE account_id=:a AND active AND NOT is_demonstration_farm(id,environment)',a=account['id'])['n']
     if count>=account['max_farms']:raise HTTPException(409,'Se alcanzó el cupo de predios autorizado')
     farm=Farm(id=uuid4(),name=body.name,environment=settings_env(),account_id=account['id'],rup=body.rup,address=body.address,active=True)
     db.add(farm);db.flush();db.add(RuleSettings(farm_id=farm.id));execute(db,"INSERT INTO farm_features(farm_id,feature_code) SELECT :f,code FROM features WHERE code<>'fma'",f=farm.id);audit(db,user,'create','farm',farm.id,after=body.model_dump())
@@ -219,7 +227,7 @@ def create_farm(body:FarmIn,user=Depends(owner),db=Depends(get_db,scope='functio
 @router.patch('/farms/{ident}')
 def update_farm(ident:UUID,body:FarmPatch,user=Depends(owner),db=Depends(get_db,scope='function')):
     farm=db.get(Farm,ident)
-    permitted=farm and farm.environment==settings_env() and (user.base_role=='admin' or one(db,'SELECT id FROM owner_accounts WHERE id=:a AND owner_user_id=:u AND active',a=farm.account_id,u=user.id))
+    permitted=farm and one(db,f'SELECT id FROM farms f WHERE id=:f AND {VISIBLE_FARM_ENVIRONMENT}',f=ident,env=settings_env()) and (user.base_role=='admin' or one(db,'SELECT id FROM owner_accounts WHERE id=:a AND owner_user_id=:u AND active',a=farm.account_id,u=user.id))
     if not permitted:raise HTTPException(403,'Predio no autorizado')
     changes=body.model_dump(exclude_unset=True)
     if changes.get('active') is False and one(db,'SELECT id FROM assignments WHERE farm_id=:f AND valid_to IS NULL LIMIT 1',f=ident):raise HTTPException(409,'Cierra las asignaciones antes de desactivar el predio')
@@ -230,14 +238,16 @@ def update_farm(ident:UUID,body:FarmPatch,user=Depends(owner),db=Depends(get_db,
     return {'id':farm.id,'name':farm.name,'rup':farm.rup,'address':farm.address,'active':farm.active}
 
 def settings_env():
-    from .settings import settings
-    return settings().app_env
+    return settings().visible_farm_environment
 
 @router.get('/admin/owners')
 def owners(user=Depends(admin),db=Depends(get_db,scope='function')):
     return listing(rows(db,'SELECT a.*,u.email,u.username,u.full_name,u.active AS user_active FROM owner_accounts a JOIN users u ON u.id=a.owner_user_id ORDER BY a.created_at DESC'))
 @router.post('/admin/owners',status_code=201)
-def create_owner(body:OwnerIn,user=Depends(admin),db=Depends(get_db,scope='function')):
+def create_owner(body:OwnerIn,request:Request,user=Depends(admin),db=Depends(get_db,scope='function')):
+    queued = queue_write(request, db, user, body)
+    if queued is not None:
+        return queued
     email=body.email.strip().lower()
     identity=User(id=uuid4(),username=email,email=email,full_name=body.full_name,password_hash=hash_password(body.password),role='owner',active=True,farm_id=None)
     db.add(identity);db.flush();ident=uuid4()
@@ -245,11 +255,14 @@ def create_owner(body:OwnerIn,user=Depends(admin),db=Depends(get_db,scope='funct
     global_audit(db,user,'create_owner','owner_account',ident,after={'email':email,'max_farms':body.max_farms})
     return {'id':ident,'owner_user_id':identity.id,'email':email,'full_name':body.full_name,'max_farms':body.max_farms,'active':True}
 @router.patch('/admin/owners/{ident}')
-def change_owner(ident:UUID,body:OwnerPatch,user=Depends(admin),db=Depends(get_db,scope='function')):
+def change_owner(ident:UUID,body:OwnerPatch,request:Request,user=Depends(admin),db=Depends(get_db,scope='function')):
+    queued = queue_write(request, db, user, body)
+    if queued is not None:
+        return queued
     account=one(db,'SELECT * FROM owner_accounts WHERE id=:i FOR UPDATE',i=ident)
     if not account:raise HTTPException(404,'Cuenta no encontrada')
     if body.max_farms is not None:
-        count=one(db,'SELECT count(*) n FROM farms WHERE account_id=:i AND active',i=ident)['n']
+        count=one(db,'SELECT count(*) n FROM farms WHERE account_id=:i AND active AND NOT is_demonstration_farm(id,environment)',i=ident)['n']
         if body.max_farms<count:raise HTTPException(409,'El cupo no puede ser menor que los predios activos')
         execute(db,'UPDATE owner_accounts SET max_farms=:m WHERE id=:i',m=body.max_farms,i=ident)
     if body.active is not None:
@@ -265,7 +278,10 @@ def change_owner(ident:UUID,body:OwnerPatch,user=Depends(admin),db=Depends(get_d
 def admin_users(user=Depends(admin),db=Depends(get_db,scope='function')):
     return listing(rows(db,'SELECT id,username,email,full_name,phone,role,active FROM users ORDER BY username LIMIT 500'))
 @router.patch('/admin/users/{ident}')
-def change_user(ident:UUID,body:OwnerPatch,user=Depends(admin),db=Depends(get_db,scope='function')):
+def change_user(ident:UUID,body:OwnerPatch,request:Request,user=Depends(admin),db=Depends(get_db,scope='function')):
+    queued = queue_write(request, db, user, body)
+    if queued is not None:
+        return queued
     target=db.get(User,ident)
     if not target:raise HTTPException(404,'Usuario no encontrado')
     if target.role=='admin' or target.id==user.id:raise HTTPException(403,'Este formulario no modifica administradores')
@@ -275,6 +291,29 @@ def change_user(ident:UUID,body:OwnerPatch,user=Depends(admin),db=Depends(get_db
         if not body.active:execute(db,'UPDATE login_sessions SET revoked_at=now() WHERE user_id=:u',u=ident)
     global_audit(db,user,'update_user','user',ident,after=body.model_dump(exclude_unset=True))
     return {'id':ident,'active':target.active,'full_name':target.full_name}
+@router.post('/admin/users/{ident}/owner')
+def convert_to_owner(ident:UUID,body:OwnerConversion,request:Request,user=Depends(admin),db=Depends(get_db,scope='function')):
+    # Same identity, new base role: farm memberships and authored history stay untouched.
+    queued = queue_write(request, db, user, body)
+    if queued is not None:
+        return queued
+    target=one(db,'SELECT id,role,active,full_name,username FROM users WHERE id=:i FOR UPDATE',i=ident)
+    if not target:raise HTTPException(404,'Usuario no encontrado')
+    if target['role'] in ('admin','owner'):raise HTTPException(409,'La cuenta ya es dueño o administrador')
+    if not target['active']:raise HTTPException(409,'Reactiva la cuenta antes de convertirla en dueño')
+    account=one(db,'SELECT id FROM owner_accounts WHERE owner_user_id=:u FOR UPDATE',u=ident)
+    account_id=account['id'] if account else uuid4()
+    if account:
+        execute(db,'UPDATE owner_accounts SET active=true,max_farms=:m WHERE id=:i',m=body.max_farms,i=account_id)
+    else:
+        execute(db,'INSERT INTO owner_accounts(id,owner_user_id,display_name,max_farms) VALUES(:i,:u,:n,:m)',
+                i=account_id,u=ident,n=target['full_name'] or target['username'],m=body.max_farms)
+    # farm_id NULL: a legacy home farm must never be linked to the new owner account.
+    execute(db,"UPDATE users SET role='owner',farm_id=NULL WHERE id=:u",u=ident)
+    execute(db,'UPDATE login_sessions SET revoked_at=now() WHERE user_id=:u AND revoked_at IS NULL',u=ident)
+    global_audit(db,user,'convert_to_owner','user',ident,before={'role':target['role']},
+                 after={'role':'owner','owner_account_id':str(account_id),'max_farms':body.max_farms})
+    return {'id':ident,'role':'owner','owner_account_id':account_id,'max_farms':body.max_farms}
 def query_period(start,end,days,now):
     if start and (start.tzinfo is None or start.utcoffset() is None):raise HTTPException(422,'Inicio requiere zona horaria')
     if end and (end.tzinfo is None or end.utcoffset() is None):raise HTTPException(422,'Fin requiere zona horaria')
@@ -288,7 +327,7 @@ def kpis(account_id:UUID|None=None,farm_id:UUID|None=None,start:datetime|None=No
     now=utcnow()
     alert_start,alert_end=query_period(start,end,30,now)
     usage_start,usage_end=query_period(start,end,1,now)
-    filt=(' AND f.account_id=:a' if account_id else '')+(' AND f.id=:f' if farm_id else '')
+    filt=(' AND f.account_id=:a' if account_id else '')+(' AND f.id=:f' if farm_id else ' AND NOT is_demonstration_farm(f.id,f.environment)')
     p={**({'a':account_id} if account_id else {}),**({'f':farm_id} if farm_id else {})}
     if farm_id and not one(db,'SELECT id FROM farms WHERE id=:f'+(' AND account_id=:a' if account_id else ''),**p):raise HTTPException(422,'El predio no pertenece a la cuenta seleccionada')
     count=lambda q:db.execute(text(q),p).scalar_one()
@@ -310,7 +349,7 @@ def kpis(account_id:UUID|None=None,farm_id:UUID|None=None,start:datetime|None=No
       'inventoried_devices':count('SELECT count(*) FROM devices d JOIN farms f ON f.id=d.farm_id WHERE true'+filt),
       'software_modules':count('SELECT count(DISTINCT x.feature_code) FROM farm_features x JOIN farms f ON f.id=x.farm_id WHERE x.enabled'+filt),
       'alerts_by_day':alerts,'requests':usage['requests'],'error_requests':usage['error_requests'],
-      'farm_options':rows(db,'SELECT id,name,account_id FROM farms WHERE environment=:e ORDER BY name,id',e=settings_env()),
+      'farm_options':rows(db,f'SELECT id,name,account_id FROM farms f WHERE {VISIBLE_FARM_ENVIRONMENT} ORDER BY name,id',env=settings_env()),
       'accounts':rows(db,'SELECT id,display_name FROM owner_accounts ORDER BY display_name,id')}
 AUDIT_EXPORT_COLUMNS=('Fecha','Actor','Usuario','Entidad','Identificador','Acción','Predio','Estado anterior','Estado posterior')
 def audit_filters(user,q,actor_id,action,entity,farm_id,start,end):
@@ -646,8 +685,21 @@ def apply_change(db,r,actor,decision,reason=None,trust_id=None):
     if recipient!=r['requested_by']:notify(db,r['farm_id'],r['requested_by'],'Tu solicitud fue aplicada',r['id'])
     return {'id':r['id'],'status':'applied','decision':decision,'entity_id':entity_id,'entity_type':entity_type}
 
-@router.post('/changes',status_code=201)
-def submit(body:ChangeIn,user=Depends(current_user),db=Depends(get_db,scope='function')):
+@router.post('/changes',status_code=201,name='submit')
+def submit_change(body:ChangeIn,request:Request,user=Depends(current_user),db=Depends(get_db,scope='function')):
+    if settings().mirror_mode == 'replica' and user.base_role == 'admin':
+        farm_scope(user)
+    queued = queue_write(request, db, user, body)
+    if queued is not None:
+        return queued
+    replay = replay_for(request)
+    remote = replay is not None and replay.kind == 'remote_change'
+    if remote:
+        body = body.model_copy(update={'idempotency_key': replay.outbox_id})
+    return submit(body, user, db, remote=remote)
+
+
+def submit(body: ChangeIn, user, db, *, remote=False):
     farm_id=farm_scope(user)
     if user.role not in ('admin','owner','worker','veterinarian'):raise HTTPException(403,'Sin permiso para proponer cambios')
     allowed={'worker':{'animal_status','animal_report','health_record','battery_replacement'},'veterinarian':{'animal_profile','health_record','health_schedule'}}
@@ -685,14 +737,23 @@ def submit(body:ChangeIn,user=Depends(current_user),db=Depends(get_db,scope='fun
     r=one(db,'SELECT * FROM change_requests WHERE id=:i',i=ident)
     trust=None
     if user.role=='worker':trust=one(db,'SELECT * FROM trust_grants WHERE membership_id=:m AND action=:a AND valid_from<=now() AND (valid_to IS NULL OR valid_to>now()) FOR UPDATE',m=m['id'],a=body.action)
-    if user.role in ('admin','owner','veterinarian') or trust:return apply_change(db,r,user,'direct',trust_id=trust['id'] if trust else None)
+    if not remote and (user.role in ('admin','owner','veterinarian') or trust):return apply_change(db,r,user,'direct',trust_id=trust['id'] if trust else None)
     recipient=owner_id(db,farm_id)
     if recipient:notify(db,farm_id,recipient,'Solicitud pendiente: '+body.action,ident)
     audit(db,user,'change_submitted','change_request',ident,after={'action':body.action})
     return {'id':ident,'status':'pending'}
 @router.post('/changes/{ident}/decision')
-def decide(ident:UUID,body:DecisionIn,user=Depends(owner),db=Depends(get_db,scope='function')):
+def decide(ident:UUID,body:DecisionIn,request:Request,user=Depends(current_user),db=Depends(get_db,scope='function')):
+    if settings().mirror_mode == 'replica' and user.base_role != 'admin':
+        raise HTTPException(403, WRITE_DENIED)
+    owner(user)
     r=scoped(db,'change_requests',ident,user)
+    if ((settings().mirror_mode == 'replica' or replay_for(request) is not None)
+            and r['action'] == 'battery_replacement'):
+        raise HTTPException(403, WRITE_DENIED)
+    queued = queue_write(request, db, user, body)
+    if queued is not None:
+        return queued
     lock_change(db,f'geocattle:change-decision:{ident}')
     existing=one(db,'SELECT * FROM change_decisions WHERE request_id=:r',r=ident)
     if existing:
@@ -822,19 +883,35 @@ def archive_gateway(ident:UUID,body:GatewayArchiveIn,user=Depends(owner),db=Depe
     audit(db,user,'archive','gateway',ident,before=before,after=result)
     return result
 
+def notification_scope():
+    if settings().mirror_mode == 'replica':
+        return (" FROM notifications n LEFT JOIN mirror_notification_reads r ON r.notification_id=n.id"
+                " AND r.user_id=:u WHERE n.recipient_id=:u AND n.farm_id=:f", 'coalesce(n.read_at,r.read_at)')
+    return ' FROM notifications n WHERE n.recipient_id=:u AND n.farm_id=:f', 'n.read_at'
+
+
 @router.get('/notifications')
 def notifications(unread:bool=False,limit:int=Query(100,ge=1,le=100),offset:int=Query(0,ge=0),
         user=Depends(current_user),db=Depends(get_db,scope='function')):
-    source = ' FROM notifications WHERE recipient_id=:u AND farm_id=:f'
+    source, read_at = notification_scope()
     if unread:
-        source += ' AND read_at IS NULL'
+        source += f' AND {read_at} IS NULL'
     params = {'u': user.id, 'f': farm_scope(user)}
-    items = rows(db,'SELECT id,message,channel,status,read_at,created_at,request_id,schedule_id' + source +
-        ' ORDER BY created_at DESC,id DESC LIMIT :limit OFFSET :offset',limit=limit,offset=offset,**params)
+    status = "CASE WHEN r.read_at IS NULL THEN n.status ELSE 'read' END" if settings().mirror_mode == 'replica' else 'n.status'
+    items = rows(db, f"""SELECT n.id,n.message,n.channel,{status} AS status,
+        {read_at} AS read_at,n.created_at,n.request_id,n.schedule_id""" + source +
+        ' ORDER BY n.created_at DESC,n.id DESC LIMIT :limit OFFSET :offset',limit=limit,offset=offset,**params)
     total = one(db,'SELECT count(*) AS n' + source,**params)['n']
     return {'items': items, 'total': total}
 @router.post('/notifications/{ident}/read')
 def read_notification(ident:UUID,user=Depends(current_user),db=Depends(get_db,scope='function')):
+    if settings().mirror_mode == 'replica':
+        if not one(db, 'SELECT id FROM notifications WHERE id=:i AND recipient_id=:u AND farm_id=:f',
+                   i=ident, u=user.id, f=farm_scope(user)):
+            raise HTTPException(403, 'Notificación no autorizada')
+        execute(db, """INSERT INTO mirror_notification_reads(notification_id,user_id) VALUES(:i,:u)
+            ON CONFLICT DO NOTHING""", i=ident, u=user.id)
+        return {'read': True}
     result=execute(db,"UPDATE notifications SET status='read',read_at=now() WHERE id=:i AND recipient_id=:u AND farm_id=:f",i=ident,u=user.id,f=farm_scope(user))
     if result.rowcount!=1:raise HTTPException(403,'Notificación no autorizada')
     return {'read':True}
@@ -844,8 +921,9 @@ def read_notification(ident:UUID,user=Depends(current_user),db=Depends(get_db,sc
 def activity_counts(user=Depends(current_user),db=Depends(get_db,scope='function')):
     counts = {'unread_notices': 0, 'pending_changes': 0, 'unread_support': 0, 'pending_support': 0}
     if user.farm_id:
-        counts['unread_notices'] = one(db, """SELECT count(*) AS n FROM notifications
-            WHERE recipient_id=:u AND farm_id=:f AND read_at IS NULL""", u=user.id, f=user.farm_id)['n']
+        source, read_at = notification_scope()
+        counts['unread_notices'] = one(db, 'SELECT count(*) AS n' + source + f' AND {read_at} IS NULL',
+                                      u=user.id, f=user.farm_id)['n']
         if user.role in ('owner', 'admin', 'worker'):
             owner_scope = '' if user.role in ('owner', 'admin') else ' AND r.requested_by=:u'
             counts['pending_changes'] = one(db, """SELECT count(*) AS n FROM change_requests r

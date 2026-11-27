@@ -12,7 +12,8 @@ from .db import get_db
 from .hardware_api import period
 from .kpi_metrics import Evidence, Metric, calculate_metrics
 from .models import Farm, utcnow
-from .owner_export_queries import COLLARS, GATEWAYS, METRIC_EVIDENCE
+from .owner_export_queries import (COLLARS, GATEWAYS, METRIC_EVIDENCE, TELEMETRY_DAILY, TELEMETRY_READINGS,
+                                   TELEMETRY_SUMMARY)
 from .report_exports import CsvDelimiter, EXPORT_LIMIT, export_response
 from .security import owner
 from .v3_api import farm_scope
@@ -20,7 +21,7 @@ from .v3_security import one, rows
 
 
 router = APIRouter(prefix='/api/v1/v3/owner-exports', tags=['Exportación del dueño'])
-ReportKind = Literal['metricas', 'dispositivos', 'general']
+ReportKind = Literal['metricas', 'dispositivos', 'telemetria', 'diario', 'general']
 PREVIEW_LIMIT = 5
 NO_CACHE = {'Cache-Control': 'no-store'}
 METRIC_COLUMNS = ('Código', 'Nombre', 'Valor', 'Unidad', 'Meta', 'Cumple', 'Numerador', 'Denominador',
@@ -38,6 +39,19 @@ GATEWAY_FIELDS = {
     'latitude': 'Latitud', 'installed_at': 'Instalación', 'last_seen_at': 'Última comunicación',
     'node_id': 'Nodo local', 'period_receptions': 'Recepciones en el período',
     'withdrawn_at': 'Fecha de baja', 'withdrawal_reason': 'Motivo registrado',
+}
+DAILY_FIELDS = {
+    'day': 'Día', 'hardware_id': 'ID de hardware', 'name': 'Collar', 'samples': 'Lecturas',
+    'positions': 'Con posición', 'temperatures': 'Con temperatura', 'temperature_min': 'Temp. mínima (°C)',
+    'temperature_max': 'Temp. máxima (°C)', 'rest_samples': 'Muestras en reposo',
+    'moving_samples': 'Muestras en movimiento', 'battery_min_mv': 'Batería mínima (mV)',
+    'battery_max_mv': 'Batería máxima (mV)', 'first_at': 'Primera lectura', 'last_at': 'Última lectura',
+}
+READING_FIELDS = {
+    'hardware_id': 'ID de hardware', 'diio': 'DIIO', 'animal_name': 'Bovino', 'seq': 'Secuencia',
+    'observed_at': 'Observación', 'received_at': 'Recepción', 'gnss_valid': 'GPS válido', 'latitude': 'Latitud',
+    'longitude': 'Longitud', 'surface_temperature_c': 'Temperatura superficial (°C)',
+    'activity_index': 'Actividad RMS (g)', 'movement_state': 'Movimiento', 'battery_mv': 'Batería (mV)',
 }
 INVENTORY_SUMMARY = """
     SELECT (SELECT count(*) FROM devices WHERE farm_id=:farm) AS collars,
@@ -99,6 +113,9 @@ def owner_report(kind: ReportKind, response: Response, start: date | None = None
                 ('Generado', as_of), ('Corte de datos del período (exclusivo)', max(start_at, stop_at))]
     slug = re.sub(r'[^a-z0-9]+', '-', normalize('NFKD', farm.name).lower()).strip('-')[:60] or str(farm.id)
     filename = f'geocattle-{kind}-{slug}-{start}-{end}'
+    if kind in ('telemetria', 'diario'):
+        return telemetry_report(db, kind, params, farm, preview, format, filename, zone, metadata, origin,
+                                delimiter, context)
     if kind != 'dispositivos':
         evidence = evidence_for(db, params)
         metrics = calculate_metrics(evidence, f'{start} a {end} ({farm.timezone})')
@@ -138,9 +155,35 @@ def owner_report(kind: ReportKind, response: Response, start: date | None = None
         sheets = ()
     elif kind == 'general':
         title, columns, values = 'Métricas', METRIC_COLUMNS, metric_rows
-        sheets = (collar_table, gateway_table)
+        daily = rows(db, TELEMETRY_DAILY, **{**params, 'tz': farm.timezone, 'limit': EXPORT_LIMIT})
+        sheets = (collar_table, gateway_table,
+                  ('Registro diario', tuple(DAILY_FIELDS.values()), asset_values(daily, DAILY_FIELDS)))
     else:
         title, columns, values = collar_table
         sheets = (gateway_table,)
     return export_response(columns, values, format=format, filename=filename, title=title, zone=zone,
                            metadata=metadata, delimiter=delimiter, headers=NO_CACHE, sheets=sheets)
+
+
+def telemetry_report(db, kind, params, farm, preview, format, filename, zone, metadata, origin, delimiter, context):
+    """Historial completo del período (lecturas) o su acumulado por día y collar."""
+    params = {**params, 'tz': farm.timezone}
+    if preview:
+        summary = one(db, TELEMETRY_SUMMARY, **params)
+        daily = rows(db, TELEMETRY_DAILY, **{**params, 'limit': 60})
+        return {**context, 'summary': summary, 'daily': daily}
+    fields_map = READING_FIELDS if kind == 'telemetria' else DAILY_FIELDS
+    records = rows(db, TELEMETRY_READINGS if kind == 'telemetria' else TELEMETRY_DAILY,
+                   **{**params, 'limit': EXPORT_LIMIT + 1})
+    if len(records) > EXPORT_LIMIT:
+        raise HTTPException(422, f'El período supera {EXPORT_LIMIT} filas; acota las fechas')
+    title = 'Lecturas' if kind == 'telemetria' else 'Registro diario'
+    columns = tuple(fields_map.values())
+    values = asset_values(records, fields_map)
+    if format == 'csv':
+        columns = (*columns, 'Origen')
+        values = ((*line, origin) for line in values)
+    metadata = [*metadata, ('Contenido', 'Todas las lecturas del período' if kind == 'telemetria'
+                            else 'Acumulado por día local y collar')]
+    return export_response(columns, values, format=format, filename=filename, title=title, zone=zone,
+                           metadata=metadata, delimiter=delimiter, headers=NO_CACHE)

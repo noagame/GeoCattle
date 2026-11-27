@@ -379,10 +379,13 @@ def test_reset_links_expire_and_new_issue_invalidates_earlier_link(v3):
 
 def test_admin_password_reset_still_requires_mfa_at_next_login(v3):
     admin, secret = admin_session(v3)
-    token = issue_reset(v3, admin, secret, key='admin')
     visitor = v3.client('admin', login=False)
+    previous = password_login(v3, visitor)
+    token = issue_reset(v3, admin, secret, key='admin')
     reset = visitor.post('/api/v1/auth/password/reset', json={'token': token, 'new_password': NEW_PASSWORD})
     assert reset.status_code == 200, reset.text
+    assert v3.db.execute(text('SELECT consumed_at FROM auth_challenges WHERE token_hash=:t'),
+        {'t': token_hash(previous['challenge_token'])}).scalar_one() is not None
     assert admin.get('/api/v1/v3/admin/kpis').status_code == 401
     assert visitor.get('/api/v1/v3/admin/kpis').status_code == 401
     challenge = visitor.post('/api/v1/auth/login', json={'username': v3.users['admin'].username, 'password': NEW_PASSWORD})
@@ -398,6 +401,18 @@ def test_password_change_invalidates_outstanding_assisted_reset(v3):
     changed = owner.post('/api/v1/auth/password/change', json={'current_password': PASSWORD, 'new_password': NEW_PASSWORD})
     assert changed.status_code == 200, changed.text
     assert owner.post('/api/v1/auth/password/reset', json={'token': token, 'new_password': PASSWORD}).status_code == 401
+
+
+def test_admin_password_change_retires_pending_login_challenge(v3):
+    admin, secret = admin_session(v3)
+    previous = password_login(v3, v3.client('admin', login=False))
+    v3.clock['value'] += 30
+    changed = admin.post('/api/v1/auth/password/change', json={
+        'current_password': PASSWORD, 'new_password': NEW_PASSWORD, 'code': totp(secret),
+    })
+    assert changed.status_code == 200, changed.text
+    assert v3.db.execute(text('SELECT consumed_at FROM auth_challenges WHERE token_hash=:t'),
+        {'t': token_hash(previous['challenge_token'])}).scalar_one() is not None
 
 
 def test_account_actions_enforce_csrf_origin_and_password_strength(v3):

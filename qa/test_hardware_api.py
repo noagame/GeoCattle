@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -144,9 +145,70 @@ class HardwareTests(unittest.TestCase):
             path = Path(folder)/'status.json'
             with patch.dict(os.environ, USB_STATUS_PATH=str(path)):
                 path.write_text(json.dumps({'connected':True,'updated_at':(self.now-timedelta(minutes=1)).isoformat()}), encoding='utf-8-sig')
-                data=receiver(self.user)
+                data=receiver(self.user,self.db)
                 self.assertFalse(data['available']);self.assertFalse(data['connected'])
                 path.write_text(json.dumps({'connected':True,'updated_at':self.now.isoformat()}),encoding='utf-8')
-                self.assertTrue(receiver(self.user)['connected'])
+                self.assertTrue(receiver(self.user,self.db)['connected'])
+
+    def test_receiver_heartbeat_is_persisted_scoped_and_expires(self):
+        from fastapi import HTTPException
+        from sqlalchemy import text
+        from geocattle.hardware_api import ReceiverStatus, receiver, save_receiver_status
+        from geocattle.models import Farm
+
+        for user in (self.user, self.other_user):
+            self.db.get(Farm, user.farm_id).environment = 'production'
+        self.db.flush()
+        status = ReceiverStatus(connected=True, wifi_ssid='qa', firmware='qa', buffer_capacity=256,
+                                dropped=0, captured=1, pending=1, delivered=0, updated_at=self.now)
+        save_receiver_status(self.db, self.user.farm_id, status)
+        self.db.execute(text('UPDATE receiver_status SET received_at = :now WHERE farm_id = :farm'),
+                        {'now': self.now, 'farm': self.user.farm_id})
+        with patch.dict(os.environ, USB_STATUS_PATH=''), patch(
+            'geocattle.hardware_api.settings', return_value=SimpleNamespace(app_env='production')
+        ):
+            self.assertEqual(receiver(self.user, self.db)['wifi_ssid'], 'qa')
+            self.assertFalse(receiver(self.other_user, self.db)['available'])
+            with self.assertRaises(HTTPException) as error:
+                receiver(SimpleNamespace(farm_id=self.user.farm_id, role='worker'), self.db)
+            self.assertEqual(error.exception.status_code, 403)
+            self.db.execute(text('UPDATE receiver_status SET received_at = :then WHERE farm_id = :farm'),
+                            {'then': self.now - timedelta(seconds=90), 'farm': self.user.farm_id})
+            self.assertFalse(receiver(self.user, self.db)['connected'])
+
+    def test_receiver_batch_persists_one_row_and_enforces_farm_and_clock(self):
+        from sqlalchemy import select
+        from geocattle.hardware_api import ReceiverBatch, report_receiver_batch
+        from geocattle.models import Farm, Telemetry
+        from qa.test_lora_bus import SAMPLE, bus, reading, wire
+
+        def record(ref, device, received_at):
+            packet = {**SAMPLE, 'id': device.hardware_id, 'q': 99}
+            return {'ref': ref, 'line': wire(bus(reading(packet))),
+                    'received_at': received_at, 'clock': 'synced'}
+
+        for user in (self.user, self.other_user):
+            self.db.get(Farm, user.farm_id).environment = 'production'
+        self.db.flush()
+        body = ReceiverBatch.model_validate({
+            'version': 1,
+            'status': {'connected': True, 'firmware': 'qa', 'buffer_capacity': 256,
+                       'dropped': 0, 'captured': 3, 'pending': 3, 'delivered': 0, 'updated_at': self.now},
+            'records': [record(1, self.devices[0], self.now), record(2, self.devices[2], self.now),
+                        record(3, self.devices[1], self.now + timedelta(minutes=6))],
+        })
+        from geocattle.settings import settings
+        prod = settings().model_copy(update={'app_env': 'production'})
+        with patch('geocattle.hardware_api.settings', return_value=prod), patch(
+            'geocattle.device_candidates.settings', return_value=prod
+        ), patch('geocattle.domain.settings', return_value=prod):
+            first = report_receiver_batch(body, self.user.farm_id, self.db)['records']
+            retry = report_receiver_batch(body, self.user.farm_id, self.db)['records']
+        self.assertEqual(first, retry)
+        self.assertEqual(first[1:], [{'ref': 2, 'error': 403}, {'ref': 3, 'error': 422}])
+        row = self.db.scalars(select(Telemetry).where(Telemetry.device_id == self.devices[0].id,
+                                                     Telemetry.seq == 99)).one()
+        self.assertEqual(first[0], {'ref': 1, 'ids': [str(row.id)]})
+        self.assertEqual(row.received_at, self.now)
 
 if __name__ == '__main__': unittest.main()

@@ -17,6 +17,7 @@ from .models import LoginSession, utcnow
 from .settings import settings
 
 MFA_CHALLENGE_PURPOSES = ('login', 'mfa_setup', 'mfa_replace')
+VISIBLE_FARM_ENVIRONMENT = "(f.environment=:env OR (:env='development' AND is_demonstration_farm(f.id,f.environment)))"
 
 
 def rows(db, sql, **params):
@@ -37,10 +38,11 @@ def role(code):
 
 
 def farms_for(db, user):
+    config = settings()
     if user.role == 'admin':
-        return rows(db, "SELECT id,name,'admin' AS role FROM farms WHERE active AND environment=:env ORDER BY name", env=settings().app_env)
+        return rows(db, f"SELECT id,name,'admin' AS role FROM farms f WHERE active AND {VISIBLE_FARM_ENVIRONMENT} ORDER BY name", env=config.visible_farm_environment)
     # Bootstrap compatibility: a legacy owner's home farm has not yet been linked.
-    if user.role == 'owner' and user.farm_id:
+    if config.mirror_mode != 'replica' and user.role == 'owner' and user.farm_id:
         home = one(db, 'SELECT account_id FROM farms WHERE id=:id', id=user.farm_id)
         if home and home['account_id'] is None:
             account = one(db, 'SELECT id FROM owner_accounts WHERE owner_user_id=:u', u=user.id)
@@ -48,13 +50,13 @@ def farms_for(db, user):
             if not account:
                 execute(db, 'INSERT INTO owner_accounts(id,owner_user_id,display_name,max_farms) VALUES(:i,:u,:n,1)', i=account_id,u=user.id,n=user.full_name or user.username)
             execute(db, 'UPDATE farms SET account_id=:a WHERE id=:f AND account_id IS NULL',a=account_id,f=user.farm_id)
-    return rows(db, """SELECT DISTINCT f.id,f.name,
+    return rows(db, f"""SELECT DISTINCT f.id,f.name,
       CASE WHEN a.owner_user_id=:u THEN 'owner' ELSE CASE m.role_code WHEN 'operator' THEN 'worker' ELSE m.role_code END END AS role
       FROM farms f LEFT JOIN owner_accounts a ON a.id=f.account_id
       LEFT JOIN farm_memberships m ON m.farm_id=f.id AND m.user_id=:u
         AND now() >= m.valid_from AND (m.valid_to IS NULL OR now()<m.valid_to)
-      WHERE f.active AND f.environment=:env AND (a.id IS NULL OR a.active) AND (a.active AND a.owner_user_id=:u OR m.id IS NOT NULL)
-      ORDER BY f.name""",u=user.id,env=settings().app_env)
+      WHERE f.active AND {VISIBLE_FARM_ENVIRONMENT} AND (a.id IS NULL OR a.active) AND (a.active AND a.owner_user_id=:u OR m.id IS NOT NULL)
+      ORDER BY f.name""",u=user.id,env=config.visible_farm_environment)
 
 
 def actor_for(db, user, session):
@@ -92,10 +94,18 @@ def check_code(db, factor, code):
         raise HTTPException(401,'Código de verificación inválido')
     secret=cipher().decrypt(bytes(factor['protected_data'])).decode()
     now_counter=int(time.time()//30)
-    used=int(factor['credential_id'] or '-1')
+    replica = settings().mirror_mode == 'replica'
+    used = -1 if replica else int(factor['credential_id'] or '-1')
     for counter in (now_counter-1,now_counter,now_counter+1):
         if counter>used and hmac.compare_digest(totp(secret,counter),code):
-            execute(db,'UPDATE mfa_factors SET credential_id=:c,verified_at=coalesce(verified_at,now()) WHERE id=:i',c=str(counter),i=factor['id'])
+            if replica:
+                stored = execute(db, """INSERT INTO mirror_totp_use(factor_id,last_counter) VALUES(:i,:c)
+                    ON CONFLICT (factor_id) DO UPDATE SET last_counter=excluded.last_counter,used_at=now()
+                    WHERE mirror_totp_use.last_counter<excluded.last_counter""", i=factor['id'], c=counter)
+                if stored.rowcount != 1:
+                    continue
+            else:
+                execute(db,'UPDATE mfa_factors SET credential_id=:c,verified_at=coalesce(verified_at,now()) WHERE id=:i',c=str(counter),i=factor['id'])
             return
     raise HTTPException(401,'Código inválido, vencido o ya utilizado; espera el siguiente código')
 
@@ -132,10 +142,21 @@ def retire_mfa_access(db, user_id, keep_factor=None, keep_session=None):
     revoke_sessions(db, user_id, keep_session)
 
 
+def lock_identity(db, user_id):
+    if settings().mirror_mode == 'replica':
+        execute(db, 'SELECT pg_advisory_xact_lock(hashtextextended(:key,0))', key=f'geocattle:mirror-auth:{user_id}')
+    else:
+        one(db, 'SELECT id FROM users WHERE id=:u FOR UPDATE', u=user_id)
+
+
+def lock_factor_clause():
+    return '' if settings().mirror_mode == 'replica' else ' FOR UPDATE'
+
+
 def create_challenge(db,user,purpose,session_hash=None,setup=False,factor_id=None):
     from .security import token_hash
     if purpose in MFA_CHALLENGE_PURPOSES:
-        one(db,'SELECT id FROM users WHERE id=:u FOR UPDATE',u=user.id)
+        lock_identity(db, user.id)
         budget = mfa_challenge_budget(db, user.id)
         if budget['failed'] >= 5 or budget['issued'] >= 10:
             raise HTTPException(429,'Demasiados intentos MFA; espera cinco minutos')
@@ -163,6 +184,11 @@ def require_step_up(request):
 
 def audit(db,user,action,kind,ident=None,before=None,after=None):
     farm_id=getattr(user,'farm_id',None)
+    if settings().mirror_mode == 'replica':
+        execute(db,"""INSERT INTO mirror_audit_log(id,actor_id,farm_id,action,object_type,object_id,after)
+            VALUES(:i,:u,:f,:c,:k,:o,CAST(:v AS jsonb))""", i=uuid4(), u=user.id, f=farm_id, c=action,
+            k=kind, o=str(ident or user.id), v=json.dumps(after, default=str) if after is not None else None)
+        return
     account=one(db,'SELECT account_id FROM farms WHERE id=:f',f=farm_id) if farm_id else None
     execute(db,"""INSERT INTO audit_log(id,farm_id,account_id,actor_id,actor_kind,object_type,object_id,action,at,before,after)
        VALUES(:i,:f,:a,:u,'user',:k,:o,:c,now(),CAST(:b AS jsonb),CAST(:v AS jsonb))""",

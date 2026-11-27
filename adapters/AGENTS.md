@@ -10,6 +10,8 @@
 - JSON V5 admite voltaje y porcentaje estimado cuando la presencia de batería es desconocida (`-1`), como ocurre con el ADC del perfil T3. La API conserva los estados desconocidos como `null`. CSV V4 exige presencia confirmada para transmitir voltaje y porcentaje.
 - Distingue recepción, persistencia local y entrega confirmada. Conserva el bloqueo del capturador, la identidad de mensajes y las lecturas pendientes al reintentar o reiniciar.
 - La API de captura confirma detecciones con `status:"candidate"` y un ID persistido. Completa la entrega durable con ese recibo. Envía `X-Farm-ID` cuando la configuración privada fija `INGEST_FARM_ID`.
+- El capturador USB entrega al entorno local. Su cola se vincula a la URL y predio configurados y aplica espera de lote ante 429 y 5xx. El backend de producción reutiliza `decode_many` para los sobres bus_v1 que la T3 entrega por WiFi. Conserva el mismo identificador collar/sesión/secuencia.
+- `lora_usb.py` escribe `status.json` con `updated_at` en UTC, el modo de recepción y los contadores de captura y entrega. El worker del campo consume ese archivo para el espejo. [Contrato de API](../docs/CONTRATO_API.md#estado-usb-en-modo-espejo)
 
 ## Verificación
 

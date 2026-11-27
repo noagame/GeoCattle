@@ -19,6 +19,10 @@ Este ámbito contiene operación, contratos, arquitectura, diseño V3, planifica
 - Mantén la instalación, atribución y alcance geográfico del mosaico local en [Mapa satelital](MAPA_SATELITAL.md).
 - Mantén la instalación, atribución y cobertura del mapa OpenStreetMap local en [Mapa OpenStreetMap local](MAPA_OSM_LOCAL.md).
 - Mantén los límites operativos del stack Docker y el ajuste opcional de WSL2 en [Desarrollo local](DESARROLLO_LOCAL.md#recursos-de-docker-desktop-y-wsl2). Documenta la liberación del volumen auxiliar del renderizador en [Mapa OpenStreetMap local](MAPA_OSM_LOCAL.md#liberar-espacio-y-actualizar).
+- Mantén alineados el [plan del modo espejo](planificacion/PLAN_MODO_ESPEJO.md), la sección [Modo espejo](CONTRATO_API.md#modo-espejo) del contrato y la guía del espejo en [Despliegue en Debian](DESPLIEGUE_DEBIAN_CLOUDFLARE.md#modo-espejo-el-pc-del-campo-como-sistema-principal).
+- [Despliegue del servidor espejo](DESPLIEGUE_SERVIDOR_ESPEJO.md) es el procedimiento autocontenido para el administrador del servidor o su agente de IA. El `AGENTS.md` raíz lo enlaza. Mantén su orden (`server-init --skip-secrets` → `pc-setup` → `server-init` → `start` → `authorize --host-account` → túnel → `subscribe`) y sus reglas alineados con `scripts/mirror.py` y con la sección de espejo de [Despliegue en Debian](DESPLIEGUE_DEBIAN_CLOUDFLARE.md).
+- Documenta las bases en línea del espejo en [Despliegue en Debian](DESPLIEGUE_DEBIAN_CLOUDFLARE.md#mapas) y la instalación de paquetes locales en las guías de cada mapa.
+- Mantén el despliegue Debian con túnel, el traslado de bases, los respaldos y el enlace HTTPS de la estación en [Despliegue en Debian](DESPLIEGUE_DEBIAN_CLOUDFLARE.md). Alinea las rutas y permisos de captura con [USB](USB_COM5.md) y el [contrato de API](CONTRATO_API.md).
 
 ## Child DOX Index
 

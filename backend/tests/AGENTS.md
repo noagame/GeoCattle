@@ -15,7 +15,12 @@ Pytest cubre reglas, configuración, autenticación y API. `test_rules.py` es la
 - Usa `development_v3` para casos que verifican una política exclusiva de desarrollo. En los casos que también se ejecutan en simulación, selecciona la fuente de telemetría por entorno y usa un entorno distinto del activo al probar el aislamiento.
 - `test_invitation_mail.py` verifica el comando SMTP por STARTTLS y el envío desde la cola por TLS implícito, con un servidor efímero en loopback. `test_v3_account.py` verifica reemplazo, retiro y restablecimiento TOTP con PostgreSQL de QA.
 - `test_seed_validation_data.py` comprueba conteos, autoría, idempotencia y acceso por API en dos predios ficticios. Verifica las restricciones diferidas y revierte los datos al terminar. La prueba externa de `pg_dump` y restauración se ejecuta por consola. [Verificación](../../docs/VERIFICACION.md#carga-de-un-rebaño-de-validación)
+- `test_v3_platform_metrics.py` comprueba la autorización del predio de demostración desde desarrollo, su exclusión de los KPI agregados y el cupo de predios, y el acceso explícito a sus métricas.
 - `test_gateway_candidates.py` verifica detecciones USB y por radio, reserva y confirmación de nodo, conflictos de EUI y nodo, permisos y la atribución de recepciones al gateway vinculado.
+- `test_mirror_policy.py` verifica configuración, lista de rutas y aislamiento de identidad sin PostgreSQL. `test_mirror_mode.py` usa el rol restringido y una transacción de QA para probar MFA, bandeja, reproducción, autoría y conflictos encadenados. Su migrador requiere permisos para gestionar `geocattle_app` en la instancia aislada.
+- `test_usb_receiver_mirror.py` comprueba la publicación USB por predio, la idempotencia del snapshot y su vigencia en la API del espejo con PostGIS de QA. Los casos de archivo ausente o ilegible y del worker en réplica se pueden ejecutar sin base.
+- Para soporte del espejo, `test_mirror_mode.py` verifica sesión, CSRF, MFA de administrador, privacidad, autoría y reentrega del mismo folio.
+- `test_production_security.py` verifica documentación, CORS y dependencias de autenticación sin base. Con PostgreSQL de QA verifica la cookie segura, CSRF al cerrar sesión, vencimiento y protección de la bandeja y la auditoría del espejo. `test_v3_account.py` verifica que cambiar o restablecer la contraseña consume los desafíos pendientes.
 
 ## Verificación
 

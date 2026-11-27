@@ -28,7 +28,8 @@ def test_kpi_calculations_do_not_certify_auxiliary_measurements():
                              fresh_positions=18, position_samples=20, event_samples=12, processing_p50=0.5,
                              processing_p95=2, requests=100, errors=1, request_p95_ms=1000,
                              battery_devices=2, battery_delta_mv=-24, exits=3, animal_hours=240))
-    assert len(items) == 12
+    # Solo los indicadores que el sistema mide con sus registros; los de ensayo o carga manual no se exportan.
+    assert list(items) == ['K01', 'K02', 'K03', 'K05', 'K06', 'K08', 'K09']
     assert (items['K01'].value, items['K01'].numerator, items['K01'].status) == (95, 95, 'Sí')
     assert (items['K02'].value, items['K02'].status) == (90, 'No')
     assert (items['K03'].value, items['K03'].secondary_value, items['K03'].status) == (2, 0.5, 'Sí')
@@ -38,9 +39,6 @@ def test_kpi_calculations_do_not_certify_auxiliary_measurements():
     assert (items['K06'].value, items['K06'].secondary_value, items['K06'].status) == (1, 1, 'No')
     assert (items['K08'].value, items['K08'].status) == (-24, 'Sin datos')
     assert (items['K09'].value, items['K09'].status) == (1.25, 'Sin datos')
-    for code in ('K04', 'K07', 'K10', 'K11', 'K12'):
-        assert items[code].value is None and items[code].status == 'Sin datos'
-        assert 'Requiere ensayo / no medido por el sistema' in items[code].observation
 
 
 def test_null_zero_and_compliance_before_rounding():
@@ -74,6 +72,11 @@ def api_client(monkeypatch):
         if sql == reports.COLLARS:
             return [{'id': uuid4(), 'hardware_id': '=collar', 'name': 'Collar 1', 'diio': '00123',
                      'status': 'Instalado', 'period_readings': 1}]
+        if sql == reports.TELEMETRY_DAILY:
+            assert params['tz'] == 'America/Santiago'
+            return [{'day': date(2026, 11, 21), 'hardware_id': 'C1', 'name': 'Collar 1', 'samples': 4, 'positions': 3}]
+        if sql == reports.TELEMETRY_READINGS:
+            return [{'hardware_id': 'C1', 'seq': 7, 'observed_at': NOW, 'gnss_valid': True, 'latitude': -38.7}]
         assert sql == reports.GATEWAYS
         return [{'id': uuid4(), 'name': 'Gateway 1', 'latitude': -38.75, 'status': 'Archivado'}]
 
@@ -81,7 +84,8 @@ def api_client(monkeypatch):
     monkeypatch.setattr(reports, 'evidence_for', evidence)
     monkeypatch.setattr(reports, 'rows', query_rows)
     monkeypatch.setattr(reports, 'one', lambda db, sql, **params:
-                        dict(collars=1, gateways=1, withdrawn_collars=0, withdrawn_gateways=1))
+                        dict(readings=4, collars=1, days=1, first_at=NOW, last_at=NOW) if sql == reports.TELEMETRY_SUMMARY
+                        else dict(collars=1, gateways=1, withdrawn_collars=0, withdrawn_gateways=1))
     with TestClient(app) as client:
         yield client, actor
 
@@ -133,10 +137,11 @@ def test_inventory_and_download_formats(api_client):
     assert (gateway['Tipo'], gateway['Latitud'], gateway['DIIO vigente']) == ('Gateway', '-38,75', '')
     response = client.get(f'{BASE}/metricas?days=7&format=csv')
     exported = list(csv.DictReader(StringIO(response.content.decode('utf-8-sig')), delimiter=';'))
-    assert len(exported) == 12 and exported[0]['Cumple'] == 'Sí' and exported[0]['Origen'] == 'Simulado'
+    assert len(exported) == 7 and exported[0]['Cumple'] == 'Sí' and exported[0]['Origen'] == 'Simulado'
     assert client.get(f'{BASE}/general?format=csv').status_code == 422
     for kind, names in (('metricas', ['Métricas']), ('dispositivos', ['Collares', 'Gateways']),
-                        ('general', ['Métricas', 'Collares', 'Gateways'])):
+                        ('telemetria', ['Lecturas']), ('diario', ['Registro diario']),
+                        ('general', ['Métricas', 'Collares', 'Gateways', 'Registro diario'])):
         response = client.get(f'{BASE}/{kind}?format=xlsx')
         assert response.status_code == 200
         book = load_workbook(BytesIO(response.content))
@@ -145,3 +150,14 @@ def test_inventory_and_download_formats(api_client):
         if 'Collares' in names:
             assert book['Collares']['A2'].data_type == 's' and book['Collares']['A2'].value == '=collar'
             assert book['Collares']['M2'].value == '00123'
+
+
+def test_telemetry_history_preview_and_csv(api_client):
+    client, _ = api_client
+    data = client.get(f'{BASE}/telemetria?days=7').json()
+    assert data['summary']['readings'] == 4 and data['daily'][0]['positions'] == 3
+    response = client.get(f'{BASE}/telemetria?days=7&format=csv')
+    reading, = csv.DictReader(StringIO(response.content.decode('utf-8-sig')), delimiter=';')
+    assert (reading['ID de hardware'], reading['Secuencia'], reading['GPS válido'], reading['Origen']) == ('C1', '7', 'Sí', 'Simulado')
+    day, = csv.DictReader(StringIO(client.get(f'{BASE}/diario?days=7&format=csv').content.decode('utf-8-sig')), delimiter=';')
+    assert (day['Día'], day['Lecturas'], day['Con posición']) == ('2026-11-21', '4', '3')

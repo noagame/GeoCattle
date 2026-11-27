@@ -17,6 +17,9 @@ Las cuentas son nuevas y están identificadas como prueba. El alta local solicit
 ## Quién registra a cada persona
 
 - El administrador de plataforma da de alta las cuentas de dueños/clientes. Su propio alta inicial es una operación explícita de administración local; no hay registro público de administradores.
+- Las cuentas no se borran: se suspenden (sin acceso y con sus sesiones cerradas) para conservar la autoría del historial.
+- El administrador puede convertir en dueño a un trabajador, veterinario u observador activo (`POST /api/v1/v3/admin/users/{id}/owner`, con `max_farms`). Es la misma identidad: conserva contraseña, historial y membresías vigentes en otros predios, y se cierran sus sesiones.
+- Elevar una cuenta existente a administrador de plataforma solo se hace en el PC con `scripts/mirror.py pc-admin --email CORREO --promote`. Exige confirmación y una cuenta activa sin predios propios ni membresías vigentes; conserva la contraseña y desactiva su cuenta de dueño.
 - **El dueño invita a trabajadores y veterinarios** al predio seleccionado. El destinatario activa su identidad y contraseña mediante la invitación. No puede elegir un rol o predio diferente durante la aceptación.
 - El administrador en soporte conserva la consulta y gestión autorizada de colaboradores ya incorporados; la creación de invitaciones nuevas corresponde al dueño.
 - Los trabajadores y veterinarios no pueden registrar colaboradores.

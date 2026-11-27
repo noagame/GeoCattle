@@ -1,5 +1,7 @@
 # Operación local y preparación del piloto
 
+Para el servidor Debian con Cloudflare, sigue la [guía de despliegue de producción](DESPLIEGUE_DEBIAN_CLOUDFLARE.md).
+
 ## Ambientes y credenciales
 
 `scripts/configure.py` genera `.env` para simulación. `scripts/configure.py --environment development` genera `.env.academic`, base y credenciales independientes para capturas académicas reales; no carga datos sintéticos. `scripts/configure.py --environment production` genera `.env.pilot` con proyecto Compose, base, volumen, puertos y secretos distintos. Conservar ambos archivos privados. La carga de demo y las rutas/source `sim` se bloquean fuera de simulación.

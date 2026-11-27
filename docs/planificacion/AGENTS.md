@@ -6,6 +6,8 @@
 
 [Plan de evolución](PLAN_EVOLUCION_TRAZABILIDAD.md) reúne las entregas de trazabilidad, sus dependencias y los criterios de aceptación para preparar el piloto.
 
+[Plan del modo espejo](PLAN_MODO_ESPEJO.md) describe el diseño implementado: el PC del campo queda como sistema principal y el servidor web como espejo en vivo con órdenes y solicitudes remotas.
+
 ## Guía de trabajo
 
 Al actualizar el cronograma, conserva consistentes las fechas, actividades y dependencias entre el JSON y los entregables afectados. Revisa los informes relacionados cuando cambie el alcance.

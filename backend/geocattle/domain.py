@@ -3,6 +3,7 @@ from datetime import timedelta
 from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy import and_, func, or_, select, text
+from .demo_farm import DEMO_FARM_ID
 from .device_candidates import capture_farm, candidate_receipt, detect_radio_candidate, lock_device_identity
 from .gateway_detection import observe_bus_gateway
 from .models import *
@@ -108,7 +109,8 @@ def condition(db,device,animal_id,event_type,active,severity="warning",telemetry
                     Telemetry.observed_at>=assignment.valid_from,Telemetry.observed_at<=current.opened_at,
                     Telemetry.received_at<=current.opened_at).order_by(Telemetry.observed_at.desc(),Telemetry.received_at.desc(),Telemetry.id.desc()).limit(1))
         db.add(current); db.flush()
-        db.add(Notification(event_id=current.id,status="pending",channel="webhook"))
+        status = "disabled" if device.farm_id == DEMO_FARM_ID else "pending"
+        db.add(Notification(event_id=current.id,status=status,channel="webhook"))
         append_audit(db,device.farm_id,None,"event",current.id,"opened",after={"type":event_type,"condition":"active"})
     elif not active and current:
         current.condition="resolved"; current.resolved_at=at or utcnow()
@@ -238,12 +240,12 @@ def ingest(db,payload:TelemetryIn,received_at=None,*,detect_candidates=False,cap
     if fence:
         count,status,evidence=rule_position(state.outside_count,row.gnss_valid,inside)
         state.outside_count=count;state.geofence_status=status
-        condition(db,device,animal.id,"escape",evidence,severity="critical",telemetry=row,geofence=fence,detail={"rule":"two_consecutive_valid_outside","geofence_version":fence.version})
+        condition(db,device,animal.id,"escape",evidence,severity="critical",telemetry=row,geofence=fence,detail={"rule":"two_consecutive_valid_outside","geofence_version":fence.version},at=now)
     elif zone is None: state.outside_count=0;state.geofence_status="unknown"
     # Evita que un cambio concurrente de regla deje una alerta abierta bajo una regla deshabilitada.
     rules=db.get(RuleSettings,device.farm_id,with_for_update={"read":True})
     if rules:
-        if row.battery_mv is not None: condition(db,device,animal.id,"low_battery",row.battery_mv<rules.battery_low_mv,telemetry=row,detail={"battery_mv":row.battery_mv,"threshold_mv":rules.battery_low_mv,"rule_version":rules.version})
+        if row.battery_mv is not None: condition(db,device,animal.id,"low_battery",row.battery_mv<rules.battery_low_mv,telemetry=row,detail={"battery_mv":row.battery_mv,"threshold_mv":rules.battery_low_mv,"rule_version":rules.version},at=now)
         if rules.temperature_enabled and row.surface_temperature_c is not None:
             condition(db,device,animal.id,"high_surface_temperature",temperature_alert(row.surface_temperature_c,rules.temperature_high_c),telemetry=row,detail={"surface_temperature_c":row.surface_temperature_c,"threshold_c":rules.temperature_high_c,"preventive":True,"message":"Revisión presencial; lectura superficial no diagnóstica","rule_version":rules.version})
         if rules.activity_enabled and row.activity_index is not None:
@@ -263,7 +265,7 @@ def ingest(db,payload:TelemetryIn,received_at=None,*,detect_candidates=False,cap
 def check_timeouts(db,now=None):
     now=now or utcnow()
     # Orden de bloqueo igual al de ingesta; SKIP LOCKED permite varios workers simultáneos.
-    devices=db.scalars(select(Device).where(Device.enabled.is_(True)).order_by(Device.id).with_for_update(skip_locked=True)).all()
+    devices=db.scalars(select(Device).where(Device.enabled.is_(True),Device.farm_id!=DEMO_FARM_ID).order_by(Device.id).with_for_update(skip_locked=True)).all()
     for d in devices:
         assignment=db.scalar(select(Assignment).where(Assignment.device_id==d.id,at_time(Assignment,now)))
         animal=db.get(Animal,assignment.animal_id) if assignment else None

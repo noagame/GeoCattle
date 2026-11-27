@@ -1,0 +1,56 @@
+services:
+  database:
+    ports: !reset []
+
+  api:
+    command: [uvicorn, geocattle.main:app, --host, 0.0.0.0, --port, '8000', --workers, '1',
+              --proxy-headers, --forwarded-allow-ips, 172.30.248.2]
+    networks: [default, web-api]
+
+  web:
+    ports: !reset []
+    networks:
+      web-api:
+        ipv4_address: 172.30.248.2
+      tunnel-web:
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.11.0
+    profiles: [cloudflare]
+    command: [tunnel, --no-autoupdate, --metrics, '127.0.0.1:2000', run]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    networks:
+      tunnel-web:
+        ipv4_address: 172.30.248.18
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, cloudflared, tunnel, --metrics, '127.0.0.1:2000', ready]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  web-api:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.248.0/28
+          ip_range: 172.30.248.8/29
+  tunnel-web:
+    ipam:
+      config:
+        - subnet: 172.30.248.16/28
+          ip_range: 172.30.248.24/29

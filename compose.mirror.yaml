@@ -1,0 +1,49 @@
+# Servidor espejo: se usa junto a compose.yaml y compose.cloudflare.yaml con --profile mirror.
+# Las tablas espejo llegan del PC del campo por replicación lógica a través de espejo-ssh.
+x-mirror-env: &mirror-env
+  MIRROR_MODE: replica
+  MIRROR_SYNC_KEY: ${MIRROR_SYNC_KEY:?Ejecuta scripts/mirror.py server-init}
+  MIRROR_SOURCE_ENVIRONMENT: ${MIRROR_SOURCE_ENVIRONMENT:-development}
+  MIRROR_REMOTE_ADMIN: ${MIRROR_REMOTE_ADMIN:-true}
+  MIRROR_REMOTE_CHANGES: ${MIRROR_REMOTE_CHANGES:-true}
+
+services:
+  migrate:
+    environment: *mirror-env
+
+  api:
+    environment: *mirror-env
+
+  worker:
+    environment: *mirror-env
+
+  espejo-ssh:
+    build:
+      context: .
+      dockerfile: infrastructure/espejo-ssh/Dockerfile
+    image: ${COMPOSE_PROJECT_NAME:-geocattle-simulation}-espejo-ssh:0.1.0
+    profiles: [mirror]
+    volumes:
+      - ./.runtime/espejo/authorized_keys:/etc/geocattle/authorized_keys:ro
+      - espejo-ssh-keys:/etc/ssh/keys
+    networks:
+      default:
+      tunnel-web:
+        # IP fija fuera del rango dinámico: el PC llega aquí saltando desde la cuenta SSH del servidor.
+        ipv4_address: 172.30.248.19
+    healthcheck:
+      test: [CMD-SHELL, 'nc -z 127.0.0.1 22']
+      interval: 20s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+volumes:
+  espejo-ssh-keys:

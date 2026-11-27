@@ -10,6 +10,8 @@ import { DevicesPage, GeofencesPage, SettingsPage } from './PagesManagement';
 import { EventsPage, OperationsPage } from './PagesEvents';
 import { FarmSelector } from './FarmSelector';
 import { PasswordInput } from './PasswordInput';
+import { FieldOnlyNotice, MirrorBanner, MirrorContext, MirrorSubmissions, useMirrorInfo } from './MirrorMode';
+import { canWrite, supportReplicaMessage } from './mirror';
 
 
 
@@ -31,7 +33,8 @@ const AnimalReportsPage = lazy(() => import('./V3Reports').then(module => ({ def
 const OwnerExports = lazy(() => import('./OwnerExports'));
 const SupportPage = lazy(() => import('./V3Support').then(module => ({ default: module.SupportPage })));
 
-type Page = 'hardware' | 'overview' | 'animals' | 'devices' | 'geofences' | 'events' | 'operations' | 'settings' | 'admin' | 'owners' | 'users' | 'farms' | 'team' | 'changes' | 'health' | 'reports' | 'export' | 'gateways' | 'profile' | 'notices' | 'audit' | 'support' | 'support-admin';
+type Page = 'hardware' | 'overview' | 'animals' | 'devices' | 'geofences' | 'events' | 'operations' | 'settings' | 'admin' | 'owners' | 'users' | 'farms' | 'team' | 'changes' | 'health' | 'reports' | 'export' | 'gateways' | 'profile' | 'notices' | 'audit' | 'support' | 'support-admin' | 'submissions';
+type Destination = Page | 'health?drafts';
 export type Notify = (message: string) => void;
 const allNavigation = [
   { id: 'hardware' as Page, title: 'Recepción de collares', icon: Radio },
@@ -57,6 +60,7 @@ const allNavigation = [
   { id: 'audit' as Page, title: 'Auditoría', icon: ShieldCheck },
   { id: 'notices' as Page, title: 'Mis avisos', icon: Inbox },
   { id: 'profile' as Page, title: 'Mi perfil', icon: Settings },
+  { id: 'submissions' as Page, title: 'Mis envíos', icon: Inbox },
 ];
 
 type NavigationItem = (typeof allNavigation)[number] & { count?: number; countLabel?: string };
@@ -71,6 +75,7 @@ const sidebarLayout: (Page | NavigationGroup)[] = [
   'export',
   { id: 'platform', title: 'Administración', icon: ShieldCheck, pages: ['owners', 'users', 'support-admin'] },
   'support',
+  'submissions',
 ];
 
 function SidebarNavigation({ navigation, activePage, navigate }: {
@@ -140,7 +145,7 @@ function Login({ onLogin, initialError, initialNotice = '' }: { onLogin: (sessio
     } catch (err) { setError(message(err)); } finally { setBusy(false); }
   }
   function chooseRecovery() { setUsingRecovery(value => !value); setChallenge(null); setCode(''); setRecoveryCode(''); setError(''); }
-  return <div className="login-layout"><div className="login-visual"><Brand light /><div className="login-copy"><span className="eyebrow">CERCA DE TU REBAÑO</span><h1>Cada animal.<br />Un lugar seguro.</h1><p>Ubicación, salud y trabajo en equipo. Una vista para cada responsabilidad dentro de GeoCattle.</p><div className="login-features"><span><MapPin size={17} />Localización y geocercas</span><span><FileHeart size={17} />Fichas y agenda sanitaria</span><span><ShieldCheck size={17} />Identidades y cambios trazables</span></div></div><div className="login-landscape" aria-hidden="true"><svg viewBox="0 0 580 260"><path d="M-20 240 200 80 350 120 540 20 640 80V290H-20Z" fill="#35614b" /><path d="m-20 270 200-140 140 80L540 50l90 40v210H-20Z" fill="#416c51" /><path d="m120 245 80-60 120 50 230-100" stroke="#bad6a2" strokeWidth="2" strokeDasharray="6 8" fill="none" /><circle cx="204" cy="190" r="10" fill="#c7e2b0" /><circle cx="376" cy="195" r="7" fill="#c7e2b0" /></svg></div><span className="login-footer">Tecnología al servicio de la ganadería.</span></div>
+  return <div className="login-layout"><div className="login-visual"><Brand light /><div className="login-copy"><span className="eyebrow">CERCA DE TU REBAÑO</span><h1>Cada animal.<br /> Un lugar seguro.</h1><p>Ubicación, salud y trabajo en equipo. Una vista para cada responsabilidad dentro de GeoCattle.</p><div className="login-features"><span><MapPin size={17} />Localización y geocercas</span><span><FileHeart size={17} />Fichas y agenda sanitaria</span><span><ShieldCheck size={17} />Identidades y cambios trazables</span></div></div><div className="login-landscape" aria-hidden="true"><svg viewBox="0 0 580 260"><path d="M-20 240 200 80 350 120 540 20 640 80V290H-20Z" fill="#35614b" /><path d="m-20 270 200-140 140 80L540 50l90 40v210H-20Z" fill="#416c51" /><path d="m120 245 80-60 120 50 230-100" stroke="#bad6a2" strokeWidth="2" strokeDasharray="6 8" fill="none" /><circle cx="204" cy="190" r="10" fill="#c7e2b0" /><circle cx="376" cy="195" r="7" fill="#c7e2b0" /></svg></div><span className="login-footer">Tecnología al servicio de la ganadería.</span></div>
     <main className="login-form-panel"><div className="login-form-content"><span className="eyebrow">ACCESO PERSONAL</span><h2>{usingRecovery ? 'Recupera tu acceso.' : challenge ? 'Verifica tu identidad.' : 'Tu equipo, conectado.'}</h2><p>{usingRecovery ? 'Usa tu contraseña y uno de tus códigos de recuperación guardados.' : challenge ? 'Completa el segundo factor para abrir tu panel.' : 'Ingresa con tus credenciales para acceder a tu panel.'}</p>
       {initialNotice && <div className="notice" role="status"><Check size={18} /><span>{initialNotice}</span></div>}
       <form onSubmit={submit}>{challenge ? <>{challenge.setup_required && <AuthenticatorEnrollment secret={challenge.secret ?? ''} otpauth_uri={challenge.otpauth_uri} />}<label>Código de verificación<input autoFocus inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} /></label></> : <><label>Correo de acceso<input type="email" autoComplete="username" required value={username} onChange={event => setUsername(event.target.value)} autoFocus /></label><PasswordInput label="Contraseña" autoComplete="current-password" required maxLength={256} value={password} onChange={event => setPassword(event.target.value)} />{usingRecovery && <label>Código de recuperación<input autoComplete="off" spellCheck={false} required maxLength={100} value={recoveryCode} onChange={event => setRecoveryCode(event.target.value)} /><small>Cada código se utiliza una sola vez. Tu segundo factor continúa activo.</small></label>}</>}
@@ -175,14 +180,21 @@ export default function App() {
   const [mobileMenu, setMobileMenu] = useState(false); const [connected, setConnected] = useState(true); const [contextBusy, setContextBusy] = useState(false); const [contextError, setContextError] = useState(''); const [search, setSearch] = useState(''); const [toast, setToast] = useState('');
   const admin = session?.user.role === 'admin'; const hasFarm = !!session?.user.farm_id;
   const role = session?.user.role; const owner = role === 'owner' || admin; const worker = role === 'worker' || role === 'operator';
+  const mirror = useMirrorInfo(session?.user.id);
+  const mode = mirror.data?.mode;
+  const replica = mode === 'replica';
+  const farmWrite = canWrite(mode, role, 'farm');
+  const hardwareWrite = canWrite(mode, role, 'hardware');
+  const canReview = owner && canWrite(mode, role, 'decision');
   const overview = useData<Overview>(session && hasFarm ? '/dashboard' : null, session && hasFarm ? 30000 : 0, session?.user.farm_id ?? '');
   const activity = useData<ActivityCounts>(session ? '/v3/activity-counts' : null, 30000,
     `${session?.user.id ?? ''}:${session?.user.farm_id ?? ''}`);
   const unreadNotices = activity.data?.unread_notices ?? 0;
-  const candidates = useData<{ items: DeviceCandidate[] }>(session && hasFarm && owner ? '/v3/device-candidates?status=pending' : null, 30000,
+  const candidates = useData<{ items: DeviceCandidate[] }>(session && hasFarm && owner && hardwareWrite ? '/v3/device-candidates?status=pending' : null, 30000,
     session?.user.farm_id ?? '');
   const pendingCandidatesCount = candidates.data?.items?.length ?? 0;
   const allowed = new Set<Page>(['profile', 'support']);
+  if (replica && canWrite(mode, role, 'support_request')) allowed.add('submissions');
   if (hasFarm) allowed.add('notices');
   if (admin) ['admin', 'owners', 'users', 'audit', 'farms'].forEach(p => allowed.add(p as Page));
   if (admin && !hasFarm) allowed.add('support-admin');
@@ -212,22 +224,25 @@ export default function App() {
   useEffect(() => {
     let alive = true;
     api<Session>('/auth/me').then(result => { if (alive) { setSession(result); updateSession(result); } }).catch(err => { if (alive && (!(err instanceof ApiError) || err.status !== 401)) setAuthError(message(err)); }).finally(() => { if (alive) setChecking(false); });
-    const expired = () => { setSession(null); updateSession(null); setAuthError('La sesión ha caducado. Ingresa nuevamente.'); setAuthNotice(''); };
+    const expired = () => { setSession(null); updateSession(null); setAuthError('La sesión ha caducado. Ingresa nuevamente.'); setAuthNotice(''); setToast(''); };
     const connectivity = (event: Event) => setConnected((event as CustomEvent<boolean>).detail);
     const readRoute = () => { setRoute(location.hash.slice(1)); setEnrolToken(readPublicToken('enrol')); setResetToken(readPublicToken('reset')); };
-    window.addEventListener('session-expired', expired); window.addEventListener('api-connectivity', connectivity); window.addEventListener('hashchange', readRoute);
-    return () => { alive = false; window.removeEventListener('session-expired', expired); window.removeEventListener('api-connectivity', connectivity); window.removeEventListener('hashchange', readRoute); };
+    const queued = (event: Event) => setToast((event as CustomEvent<string>).detail);
+    window.addEventListener('session-expired', expired); window.addEventListener('api-connectivity', connectivity); window.addEventListener('hashchange', readRoute); window.addEventListener('mirror-queued', queued);
+    return () => { alive = false; window.removeEventListener('session-expired', expired); window.removeEventListener('api-connectivity', connectivity); window.removeEventListener('hashchange', readRoute); window.removeEventListener('mirror-queued', queued); };
   }, []);
   useEffect(() => { if (!toast) return; const timeout = setTimeout(() => setToast(''), 6000); return () => clearTimeout(timeout); }, [toast]);
-  function navigate(next: Page) { location.hash = next; setRoute(next); setMobileMenu(false); }
-  async function switchFarm(farmId: string) { if ((!farmId && !admin) || farmId === (session?.user.farm_id ?? '')) return; setContextBusy(true); setContextError(''); try { const result = await write<Session>('/auth/context', { farm_id: farmId || null }); setSession(result); updateSession(result); setSearch(''); navigate('overview'); } catch (err) { setContextError(message(err)); } finally { setContextBusy(false); } }
-  async function logout() { try { await api('/auth/logout', { method: 'POST' }); setSession(null); updateSession(null); setMobileMenu(false); setAuthError(''); } catch (err) { setToast(message(err)); } }
+  function navigate(next: Destination) { location.hash = next; setRoute(next); setMobileMenu(false); }
+  async function switchFarm(farmId: string, next: Destination = 'overview') { if ((!farmId && !admin) || farmId === (session?.user.farm_id ?? '')) return; setContextBusy(true); setContextError(''); try { const result = await write<Session>('/auth/context', { farm_id: farmId || null }); setSession(result); updateSession(result); setSearch(''); navigate(next); } catch (err) { setContextError(message(err)); } finally { setContextBusy(false); } }
+  async function logout() { try { await api('/auth/logout', { method: 'POST' }); setSession(null); updateSession(null); setMobileMenu(false); setAuthError(''); setToast(''); } catch (err) { setToast(message(err)); } }
   if (checking) return <div className="app-start"><Brand /><Loading label="Conectando con GeoCattle…" /></div>;
   if (resetToken) return <ResetPasswordPage token={resetToken} onBack={() => { setSession(null); updateSession(null); setAuthError(''); setAuthNotice(''); location.hash = ''; setResetToken(''); }} />;
   if (enrolToken) return <EnrolPage token={enrolToken} onBack={() => { location.hash = ''; setEnrolToken(''); }} />;
   if (!session) return <Login onLogin={result => { updateSession(result); setAuthNotice(''); setAuthError(''); if (!pageName) navigate(result.user.role === 'admin' ? 'admin' : 'overview'); }} initialError={authError} initialNotice={authNotice} />;
   const farmName = session.user.farms?.find(f => f.id === session.user.farm_id)?.name ?? overview.data?.farm.name ?? 'Selecciona un predio';
-  return <div className="app-shell v3-shell"><a className="v3-skip-link" href="#main-content" onClick={e => { e.preventDefault(); document.getElementById('main-content')?.focus(); }}>Saltar al contenido</a>{mobileMenu && <button className="sidebar-overlay" aria-label="Cerrar navegación" onClick={() => setMobileMenu(false)} />}
+  const connectionText = !connected ? 'Conexión interrumpida'
+    : replica ? 'Conectado al servidor web' : mode ? 'Red local' : 'Servidor conectado';
+  return <MirrorContext.Provider value={{ info: mirror.data ?? undefined, role }}><div className="app-shell v3-shell"><a className="v3-skip-link" href="#main-content" onClick={e => { e.preventDefault(); document.getElementById('main-content')?.focus(); }}>Saltar al contenido</a>{mobileMenu && <button className="sidebar-overlay" aria-label="Cerrar navegación" onClick={() => setMobileMenu(false)} />}
     <aside className={`sidebar ${mobileMenu ? 'sidebar-open' : ''}`}>
       <div className="sidebar-top">
         <div className="sidebar-brand"><Brand light /><button className="icon-button mobile-close" aria-label="Cerrar menú" onClick={() => setMobileMenu(false)}><X size={20} /></button></div>
@@ -267,35 +282,42 @@ export default function App() {
           </button>}
         </div>
       </header>
+      {mirror.data && <MirrorBanner info={mirror.data} />}
       {!connected && <div className="connectivity-banner" role="alert"><WifiOff size={17} /><span>Conexión interrumpida. La información visible puede estar desactualizada.</span><button onClick={overview.reload}>Reintentar</button></div>}
       {overview.data?.farm.environment === 'simulation' && <div className="simulation-banner"><span className="simulation-tag">SIMULACIÓN</span><span>Predio de demostración. Las lecturas con origen <strong>sim</strong> son simuladas.</span></div>}
-      <main className="main-content" id="main-content" tabIndex={-1}><ErrorNotice error={contextError} />{contextBusy ? <Loading label="Cambiando al predio autorizado…" /> : <Suspense fallback={<Loading label="Abriendo panel…" />}><div key={`${session.user.id}-${session.user.farm_id}-${role}`}>
-        {!hasFarm && !admin && activePage !== 'farms' && <div className="notice"><Building2 size={18} /><span>{session.user.farms?.length ? 'Selecciona un predio para abrir tu panel.' : 'Tu cuenta aún no tiene un predio activo. Contacta al dueño o administrador.'}</span></div>}
+      <main className="main-content" id="main-content" tabIndex={-1}><ErrorNotice error={contextError} />{!mode ? mirror.error ? <ErrorNotice error={mirror.error} retry={mirror.reload} /> : <Loading label="Consultando el modo de la instalación…" /> : contextBusy ? <Loading label="Cambiando al predio autorizado…" /> : <Suspense fallback={<Loading label="Abriendo panel…" />}><div key={`${session.user.id}-${session.user.farm_id}-${role}-${mode}`}>
+        {!hasFarm && !admin && activePage !== 'farms' && activePage !== 'submissions' && <div className="notice"><Building2 size={18} /><span>{session.user.farms?.length ? 'Selecciona un predio para abrir tu panel.' : 'Tu cuenta aún no tiene un predio activo. Contacta al dueño o administrador.'}</span></div>}
+        {replica && (['hardware', 'devices', 'gateways', 'profile', 'farms', 'team', 'settings', 'geofences', 'animals', 'events', 'operations'].includes(activePage) || (activePage === 'changes' && !admin && role !== 'veterinarian')) && <FieldOnlyNotice />}
+        {replica && activePage === 'support' && <FieldOnlyNotice message={supportReplicaMessage} />}
+        {activePage === 'submissions' && <MirrorSubmissions user={session.user} onOpenDrafts={farmId => {
+          if (farmId === session.user.farm_id) navigate('health?drafts');
+          else void switchFarm(farmId, 'health?drafts');
+        }} />}
         {activePage === 'admin' && <AdminDashboard />}{activePage === 'owners' && <AdminOwners notify={setToast} />}{activePage === 'users' && <AdminUsers notify={setToast} />}
-        {activePage === 'overview' && <><div className="v3-role-heading"><div><span className="eyebrow">{roleLabels[role ?? '']}</span><p>{role === 'veterinarian' ? 'Las fichas técnicas y sanitarias se aplican directamente y conservan tu autoría.' : worker ? 'Reporta cambios del predio y consulta la decisión del dueño.' : role === 'viewer' ? 'Consulta el mapa y el monitoreo del predio con tu acceso de lectura.' : 'Gestiona el predio, el equipo y las decisiones de tu rebaño.'}</p></div><div className="v3-inline-actions">{role !== 'viewer' && <button className="button secondary small" onClick={() => navigate('health')}><FileHeart size={16} />{worker ? 'Consultar fichas' : 'Fichas y agenda'}</button>}{worker && <button className="button primary small" onClick={() => navigate('changes')}>Registrar reporte</button>}{owner && <button className="button primary small" onClick={() => navigate('changes')}>Revisar aprobaciones</button>}</div></div><OverviewPage overview={overview} canWrite={owner} notify={setToast} navigate={navigate} /></>}
+        {activePage === 'overview' && <><div className="v3-role-heading"><div><span className="eyebrow">{roleLabels[role ?? '']}</span><p>{replica ? role === 'veterinarian' ? 'Los cambios de ficha y salud se envían al PC del campo para revisión del dueño.' : 'Consulta los datos recibidos del PC del campo.' : role === 'veterinarian' ? 'Las fichas técnicas y sanitarias se aplican directamente y conservan tu autoría.' : worker ? 'Reporta cambios del predio y consulta la decisión del dueño.' : role === 'viewer' ? 'Consulta el mapa y el monitoreo del predio con tu acceso de lectura.' : 'Gestiona el predio, el equipo y las decisiones de tu rebaño.'}</p></div><div className="v3-inline-actions">{role !== 'viewer' && <button className="button secondary small" onClick={() => navigate('health')}><FileHeart size={16} />{worker ? 'Consultar fichas' : 'Fichas y agenda'}</button>}{worker && farmWrite && <button className="button primary small" onClick={() => navigate('changes')}>Registrar reporte</button>}{canReview && <button className="button primary small" onClick={() => navigate('changes')}>Revisar aprobaciones</button>}</div></div><OverviewPage overview={overview} canWrite={owner && farmWrite} notify={setToast} navigate={navigate} /></>}
         {activePage === 'farms' && <FarmsPage admin={admin} notify={setToast} onUpdated={refreshSession} />}
-        {activePage === 'animals' && <AnimalsPage search={search} setSearch={setSearch} canWrite={owner} notify={setToast} onChanged={overview.reload} />}
-        {activePage === 'health' && <HealthPage worker={worker} actorId={session.user.id} notify={setToast} />}
+        {activePage === 'animals' && <AnimalsPage search={search} setSearch={setSearch} canWrite={owner && farmWrite} notify={setToast} onChanged={overview.reload} />}
+        {activePage === 'health' && <HealthPage worker={worker} showDrafts={new URLSearchParams(routeParams).has('drafts')} actorId={session.user.id} notify={setToast} />}
         {activePage === 'reports' && <AnimalReportsPage key={`${session.user.farm_id}:${reportAnimal}`} initialAnimal={reportAnimal} canSeeIndicators={owner} />}
         {activePage === 'export' && <OwnerExports key={session.user.farm_id} />}
         {activePage === 'changes' && <ChangesPage key={requestId ?? 'list'} worker={worker} canReview={owner} requestId={requestId} notify={setToast} onChange={activity.reload} />}
         {activePage === 'team' && <TeamPage key={session.user.farm_id ?? ''} admin={admin} notify={setToast} />}
-        {activePage === 'gateways' && <GatewaysPage key={session.user.farm_id} notify={setToast} canDetect={owner && !!overview.data && overview.data.farm.environment !== 'simulation'} />}
+        {activePage === 'gateways' && <GatewaysPage key={session.user.farm_id} notify={setToast} canManage={owner && hardwareWrite} canDetect={owner && hardwareWrite && !!overview.data && overview.data.farm.environment !== 'simulation'} />}
         {activePage === 'hardware' && <HardwarePage farmId={session.user.farm_id ?? ''} />}
-        {activePage === 'devices' && <DevicesPage key={session.user.farm_id} canWrite={owner} notify={setToast}
+        {activePage === 'devices' && <DevicesPage key={session.user.farm_id} canWrite={owner && hardwareWrite} notify={setToast}
           usbCollar={usbCollar} clearUsbCollar={() => navigate('devices')}
           onCandidatesChange={candidates.reload} onInventoryChange={overview.reload} />}
-        {activePage === 'geofences' && <GeofencesPage canWrite={owner} notify={setToast} />}
-        {activePage === 'events' && <EventsPage canWrite={role !== 'viewer'} canConfigure={owner} simulation={overview.data?.farm.environment === 'simulation'} farmName={farmName} notify={setToast} />}
-        {activePage === 'operations' && <OperationsPage canWrite={owner} canAudit={owner} notify={setToast} simulation={overview.data?.farm.environment === 'simulation'} onChange={overview.reload} />}
-        {activePage === 'settings' && <SettingsPage canWrite={owner} notify={setToast} simulation={overview.data?.farm.environment === 'simulation'} farmName={farmName} />}
+        {activePage === 'geofences' && <GeofencesPage canWrite={owner && farmWrite} notify={setToast} />}
+        {activePage === 'events' && <EventsPage canWrite={role !== 'viewer' && farmWrite} canConfigure={owner && farmWrite} simulation={overview.data?.farm.environment === 'simulation'} farmName={farmName} notify={setToast} />}
+        {activePage === 'operations' && <OperationsPage canWrite={owner && farmWrite} canAudit={owner} notify={setToast} simulation={overview.data?.farm.environment === 'simulation'} onChange={overview.reload} />}
+        {activePage === 'settings' && <SettingsPage canWrite={owner && farmWrite} notify={setToast} simulation={overview.data?.farm.environment === 'simulation'} farmName={farmName} />}
         {activePage === 'audit' && <AuditPage global={admin} />}
         {activePage === 'notices' && <UserNotifications notify={setToast} onChange={activity.reload} />}
         {(activePage === 'support' || activePage === 'support-admin') && <SupportPage key={route} admin={activePage === 'support-admin'} notify={setToast} onChange={activity.reload} />}
         {activePage === 'profile' && <ProfilePage notify={setToast} mfaEnabled={session.user.mfa_enabled} onUpdated={refreshSession} onSignedOut={(notice = 'Contraseña actualizada. Inicia sesión con tu nueva clave.') => { setSession(null); updateSession(null); setAuthError(''); setAuthNotice(notice); location.hash = ''; }} />}
-      </div></Suspense>}</main><footer className="app-footer"><span>GeoCattle <span>·</span> {roleLabels[role ?? '']}</span><span><span className={`connection-dot ${connected ? 'green' : 'red'}`} />{connected ? 'Red local' : 'Conexión interrumpida'}<span className="footer-separator">|</span>Hora de Chile</span></footer>
+      </div></Suspense>}</main><footer className="app-footer"><span>GeoCattle <span>·</span> {roleLabels[role ?? '']}</span><span><span className={`connection-dot ${connected ? 'green' : 'red'}`} />{connectionText}<span className="footer-separator">|</span>Hora de Chile</span></footer>
     </div>{toast && <div className="toast" role="status"><Check size={18} /><span>{toast}</span><button className="icon-button" aria-label="Cerrar aviso" onClick={() => setToast('')}><X size={16} /></button></div>}
-  </div>;
+  </div></MirrorContext.Provider>;
 }
 function OverviewPage({ overview, canWrite, notify, navigate }: { overview: ReturnType<typeof useData<Overview>>; canWrite: boolean; notify: Notify; navigate: (page: Page) => void }) {
   const geofences = useData<List<Geofence>>('/geofences');

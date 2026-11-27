@@ -6,6 +6,8 @@ import { Pagination } from './PagesAnimals';
 import type { List } from './types';
 import { Badge, Empty, ErrorNotice, Loading, Modal, PageTitle, Panel, Submit } from './ui';
 import type { SupportKind, SupportRequest, SupportStatus } from './v3types';
+import { useMirror } from './MirrorMode';
+import { isQueuedWrite, mirrorPollInterval, supportRequestsPath as path } from './mirror';
 
 const kindLabels: Record<SupportKind, string> = {
   close_account: 'Cierre de cuenta',
@@ -17,10 +19,13 @@ const statusLabels: Record<SupportStatus, string> = {
   resolved: 'Resuelta',
   rejected: 'Rechazada',
 };
-const path = '/auth/support-requests';
 const pageSize = 25;
 
 export function SupportPage({ admin, notify, onChange }: { admin: boolean; notify: Notify; onChange: () => void }) {
+  const { replica, canWrite } = useMirror();
+  const canCreate = !admin && canWrite('support_request');
+  const canReview = admin && canWrite('admin');
+  const canMarkRead = !admin && canWrite('account');
   const [status, setStatus] = useState<SupportStatus | ''>(admin ? 'pending' : '');
   const [offset, setOffset] = useState(0);
   const [creating, setCreating] = useState(!admin && location.hash === '#support?kind=change_email');
@@ -29,7 +34,7 @@ export function SupportPage({ admin, notify, onChange }: { admin: boolean; notif
   const [error, setError] = useState('');
   const requests = useData<List<SupportRequest>>(path + query({
     admin: admin ? 'true' : '', status, limit: String(pageSize), offset: String(offset),
-  }));
+  }), replica && !admin ? mirrorPollInterval : 0);
   function reload() { requests.reload(); onChange(); }
   async function markRead(id: string) {
     setReading(id);
@@ -44,7 +49,7 @@ export function SupportPage({ admin, notify, onChange }: { admin: boolean; notif
       description={admin ? 'Revisa los casos y responde a la persona que solicitó ayuda.' : 'Envía una solicitud privada a administración y consulta su respuesta.'}
       actions={<>
         <button className="button secondary" onClick={reload}><RefreshCw size={16} />Actualizar</button>
-        {!admin && <button className="button primary" onClick={() => setCreating(true)}><Plus size={16} />Nueva solicitud</button>}
+        {canCreate && <button className="button primary" onClick={() => setCreating(true)}><Plus size={16} />Nueva solicitud</button>}
       </>} />
     <Panel>
       <div className="list-toolbar">
@@ -55,7 +60,7 @@ export function SupportPage({ admin, notify, onChange }: { admin: boolean; notif
         <span className="list-count">{total} solicitudes</span>
       </div>
       <ErrorNotice error={error || requests.error} retry={reload} />
-      {requests.loading ? <Loading /> : requests.data?.items.length ? <div className="v3-changes">
+      {requests.loading && !requests.data ? <Loading /> : requests.data?.items.length ? <div className="v3-changes">
         {requests.data.items.map(item => <article key={item.id}>
           <div className="v3-change-header">
             <div><strong>{kindLabels[item.kind]}</strong>
@@ -69,18 +74,19 @@ export function SupportPage({ admin, notify, onChange }: { admin: boolean; notif
           <p>{item.description}</p>
           {item.response && <div className="v3-treatment"><strong>Respuesta de administración · {date(item.resolved_at)}</strong><p className="support-response">{item.response}</p></div>}
           <div className="v3-inline-actions">
-            {admin && item.status === 'pending' && <button className="button secondary small" onClick={() => setReview(item)}>Responder solicitud</button>}
-            {!admin && item.response && !item.read_at && <button className="button secondary small" disabled={reading === item.id} onClick={() => markRead(item.id)}>Marcar respuesta como leída</button>}
+            {canReview && item.status === 'pending' && <button className="button secondary small" onClick={() => setReview(item)}>Responder solicitud</button>}
+            {canMarkRead && item.response && !item.read_at && <button className="button secondary small" disabled={reading === item.id} onClick={() => markRead(item.id)}>Marcar respuesta como leída</button>}
           </div>
         </article>)}
       </div> : <Empty title="Sin solicitudes en esta vista" description="Las solicitudes que coincidan con el filtro aparecerán aquí." />}
       {requests.data && (offset > 0 || total > pageSize) &&
         <Pagination offset={offset} count={requests.data.items.length} total={total} limit={pageSize} onChange={setOffset} />}
     </Panel>
-    {creating && <SupportForm onClose={() => setCreating(false)} onSaved={() => {
-      setCreating(false); setStatus(''); setOffset(0); reload(); notify('Solicitud enviada a administración.');
+    {canCreate && creating && <SupportForm onClose={() => setCreating(false)} onSaved={queued => {
+      setCreating(false); setStatus(''); setOffset(0); reload();
+      if (!queued) notify('Solicitud enviada a administración.');
     }} />}
-    {review && <SupportDecisionForm item={review} onClose={() => setReview(null)} onSaved={() => {
+    {canReview && review && <SupportDecisionForm item={review} onClose={() => setReview(null)} onSaved={() => {
       setReview(null);
       if (status === 'pending' && offset && requests.data?.items.length === 1) setOffset(Math.max(0, offset - pageSize));
       reload(); notify('Respuesta guardada y disponible para el solicitante.');
@@ -88,14 +94,14 @@ export function SupportPage({ admin, notify, onChange }: { admin: boolean; notif
   </>;
 }
 
-function SupportForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function SupportForm({ onClose, onSaved }: { onClose: () => void; onSaved: (queued: boolean) => void }) {
   const [kind, setKind] = useState<'change_email' | 'access_issue'>(location.hash === '#support?kind=change_email' ? 'change_email' : 'access_issue');
   const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
-    try { await write(path, { kind, description }); onSaved(); }
+    try { const result = await write(path, { kind, description }); onSaved(isQueuedWrite(result)); }
     catch (err) { setError(message(err)); }
     finally { setBusy(false); }
   }
@@ -121,7 +127,8 @@ function SupportDecisionForm({ item, onClose, onSaved }: { item: SupportRequest;
   const [error, setError] = useState('');
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
-    try { await write(`${path}/${item.id}/decision`, { status, response }); onSaved(); }
+    try { const result = await write(`${path}/${item.id}/decision`, { status, response });
+      if (isQueuedWrite(result)) onClose(); else onSaved(); }
     catch (err) { setError(message(err)); }
     finally { setBusy(false); }
   }

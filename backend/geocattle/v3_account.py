@@ -13,6 +13,9 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 from sqlalchemy import select
 
 from .db import get_db
+from .mirror_api import queue_write
+from .mirror_policy import WRITE_DENIED
+from .mirror_replay import replay_for
 from .models import Farm, User, utcnow
 from .security import admin_login_requires_mfa, current_user, hash_password, token_hash, verify_password
 from .settings import settings
@@ -135,6 +138,12 @@ def _clear_cookie(response):
         secure=settings().cookie_secure, samesite='lax')
 
 
+def _revoke_password_access(db, user_id):
+    revoke_sessions(db, user_id)
+    execute(db, 'UPDATE auth_challenges SET consumed_at=now() WHERE user_id=:u AND consumed_at IS NULL', u=user_id)
+    execute(db, "UPDATE account_tokens SET consumed_at=now() WHERE user_id=:u AND purpose='reset_password' AND consumed_at IS NULL", u=user_id)
+
+
 @router.post('/mfa/replace')
 def replace_mfa(body: MfaChange, request: Request,
         user=Depends(current_user), db=Depends(get_db, scope='function')):
@@ -165,8 +174,7 @@ def change_password(body: PasswordChange, request: Request, response: Response,
     identity.password_hash = hash_password(body.new_password)
     identity.version += 1
     identity.updated_at = utcnow()
-    revoke_sessions(db, identity.id)
-    execute(db, "UPDATE account_tokens SET consumed_at=now() WHERE user_id=:u AND purpose='reset_password' AND consumed_at IS NULL", u=identity.id)
+    _revoke_password_access(db, identity.id)
     audit(db, user, 'password_changed', 'user', identity.id, after={'all_sessions_revoked': True})
     _clear_cookie(response)
     return {'changed': True, 'reauthentication_required': True}
@@ -181,8 +189,8 @@ def request_closure(body: CloseRequest, request: Request, user=Depends(current_u
     return {'requested': True, 'request_id': ident, 'status': 'pending_review'}
 
 
-def create_support_request(db, user, kind, description):
-    ident = uuid4()
+def create_support_request(db, user, kind, description, *, ident: UUID | None = None):
+    ident = ident or uuid4()
     execute(db, """INSERT INTO support_requests(id,requester_id,kind,description)
         VALUES(:i,:u,:k,:d)""", i=ident, u=user.id, k=kind, d=description)
     action = 'account_closure_requested' if kind == 'close_account' else 'support_request_created'
@@ -215,15 +223,25 @@ def support_requests(admin: bool = False, status: Literal['pending', 'resolved',
 
 
 @router.post('/support-requests', status_code=201)
-def submit_support_request(body: SupportRequest, user=Depends(current_user), db=Depends(get_db, scope='function')):
-    ident = create_support_request(db, user, body.kind, body.description)
+def submit_support_request(body: SupportRequest, request: Request,
+        user=Depends(current_user), db=Depends(get_db, scope='function')):
+    queued = queue_write(request, db, user, body)
+    if queued is not None:
+        return queued
+    replay = replay_for(request)
+    ident = create_support_request(db, user, body.kind, body.description, ident=replay.outbox_id if replay else None)
     return {'request_id': ident, 'status': 'pending'}
 
 
 @router.post('/support-requests/{ident}/decision')
-def decide_support_request(ident: UUID, body: SupportDecision,
+def decide_support_request(ident: UUID, body: SupportDecision, request: Request,
         user=Depends(current_user), db=Depends(get_db, scope='function')):
+    if settings().mirror_mode == 'replica' and user.base_role != 'admin':
+        raise HTTPException(403, WRITE_DENIED)
     global_support_admin(user)
+    queued = queue_write(request, db, user, body)
+    if queued is not None:
+        return queued
     item = one(db, 'SELECT kind,status,response FROM support_requests WHERE id=:i FOR UPDATE', i=ident)
     if not item:
         raise HTTPException(404, 'Solicitud de soporte no encontrada')
@@ -363,8 +381,7 @@ def reset_password(body: ResetConsume, request: Request, response: Response, db=
     identity.password_hash = hash_password(body.new_password)
     identity.version += 1
     identity.updated_at = utcnow()
-    revoke_sessions(db, identity.id)
-    execute(db, "UPDATE account_tokens SET consumed_at=now() WHERE user_id=:u AND purpose='reset_password' AND consumed_at IS NULL", u=identity.id)
+    _revoke_password_access(db, identity.id)
     audit(db, identity, 'password_reset_completed', 'user', identity.id,
         after={'all_sessions_revoked': True, 'mfa_preserved': True})
     _clear_cookie(response)

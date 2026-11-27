@@ -106,6 +106,50 @@ class DockerProjectTests(unittest.TestCase):
         self.assertEqual(call.count('lorawan'), 1)
         self.assertLess(call.index('iot'), call.index('lorawan'))
 
+    def test_production_domain_fills_public_origin_once_and_keeps_tunnel_pending(self):
+        args = ['--environment', 'production', '--domain', 'GeoCattle.Example.Invalid']
+        self.assertEqual(self.invoke('prepare', *args), 0)
+        path = self.root / '.env.pilot'
+        values = project.read_config(path, 'production')
+        self.assertEqual(values['ALLOWED_HOSTS'], 'geocattle.example.invalid,localhost,127.0.0.1')
+        self.assertEqual(values['ALLOWED_ORIGINS'], 'https://geocattle.example.invalid')
+        self.assertEqual(values['INVITATION_BASE_URL'], 'https://geocattle.example.invalid')
+        self.assertGreaterEqual(len(values['V3_ADMIN_PASSWORD']), 12)
+        self.assertNotIn(values['V3_ADMIN_PASSWORD'], self.output.getvalue())
+        before = path.read_bytes()
+        self.assertEqual(self.invoke('prepare', '--environment', 'production', '--domain', 'otro.example.invalid'), 0)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(self.invoke('start', '--environment', 'production', '--profile', 'cloudflare'), 1)
+        self.runner.assert_not_called()
+        with self.assertRaises(SystemExit):
+            self.invoke('prepare', '--domain', 'geocattle.example.invalid')
+        with self.assertRaises(SystemExit):
+            self.invoke('prepare', '--environment', 'production', '--domain', 'https://x.example.invalid/')
+
+    def test_production_requires_private_settings_and_provisions_owner_and_admin(self):
+        args = ['--environment', 'production', '--profile', 'cloudflare']
+        self.assertEqual(self.invoke('prepare', *args), 0)
+        self.assertEqual(self.invoke('start', *args), 1)
+        self.runner.assert_not_called()
+        path = self.root / '.env.pilot'
+        with path.open('a', encoding='utf-8') as private:
+            private.write(
+                'TUNNEL_TOKEN=qa-tunnel\nALLOWED_HOSTS=geocattle.example.invalid,localhost,127.0.0.1\n'
+                'ALLOWED_ORIGINS=https://geocattle.example.invalid\nINVITATION_BASE_URL=https://geocattle.example.invalid\n'
+                'V3_ADMIN_PASSWORD=qa-generated-admin-password\n'
+            )
+        self.assertEqual(self.invoke('start', *args, '--owner-email', 'owner@example.invalid',
+                                     '--farm', 'Predio QA', '--admin-email', 'admin@example.invalid'), 0)
+        _, start, bootstrap, admin = self.calls()
+        self.assertIn(str(self.root / 'compose.cloudflare.yaml'), start)
+        self.assertNotIn(str(self.root / 'compose.usb.yaml'), start)
+        self.assertIn('cloudflare', start)
+        self.assertNotIn('iot', start)
+        self.assertNotIn('lorawan', start)
+        self.assertIn('bootstrap', bootstrap)
+        self.assertEqual(admin[-4:], ['-m', 'geocattle.seed_v3', '--admin-email', 'admin@example.invalid'])
+        self.assertNotIn('qa-tunnel', self.output.getvalue())
+
     def test_stop_preserves_volumes_and_does_not_seed(self):
         self.invoke('prepare')
         self.runner.reset_mock()

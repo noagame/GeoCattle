@@ -1,0 +1,18 @@
+[Unit]
+Description=Respaldo PostgreSQL de GeoCattle
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=geocattle
+Group=geocattle
+SupplementaryGroups=docker
+WorkingDirectory=/srv/GeoCattle
+UMask=0077
+Environment=COMPOSE_FILE=compose.yaml:compose.cloudflare.yaml
+Environment=COMPOSE_ENV_FILES=.env.pilot
+Environment=COMPOSE_PROFILES=cloudflare
+Environment=GEOCATTLE_BACKUP_DIR=.runtime/backups-timer
+ExecStart=/bin/bash scripts/backup.sh
+ExecStartPost=/usr/bin/find .runtime/backups-timer -maxdepth 1 -type f -name geocattle-*.dump -mtime +29 -delete

@@ -86,6 +86,29 @@ CROSS JOIN (
 ) req
 """
 
+TELEMETRY_SCOPE = """
+    FROM telemetry t JOIN devices d ON d.id=t.device_id AND d.farm_id=t.farm_id
+    WHERE t.farm_id=:farm AND (t.source='sim')=:simulation AND t.received_at<=:as_of
+      AND t.observed_at>=:start_at AND t.observed_at<:stop_at
+"""
+TELEMETRY_SUMMARY = """SELECT count(*) AS readings,count(DISTINCT t.device_id) AS collars,
+    count(DISTINCT date(timezone(:tz,t.observed_at))) AS days,min(t.observed_at) AS first_at,max(t.observed_at) AS last_at
+""" + TELEMETRY_SCOPE
+TELEMETRY_DAILY = """SELECT date(timezone(:tz,t.observed_at)) AS day,d.hardware_id,d.name,count(*) AS samples,
+    count(*) FILTER (WHERE t.gnss_valid AND t.latitude IS NOT NULL AND t.longitude IS NOT NULL) AS positions,
+    count(t.surface_temperature_c) AS temperatures,
+    min(t.surface_temperature_c) AS temperature_min,max(t.surface_temperature_c) AS temperature_max,
+    count(*) FILTER (WHERE t.quality->>'movement_state'='rest') AS rest_samples,
+    count(*) FILTER (WHERE t.quality->>'movement_state'='moving') AS moving_samples,
+    min(t.battery_mv) AS battery_min_mv,max(t.battery_mv) AS battery_max_mv,
+    min(t.observed_at) AS first_at,max(t.observed_at) AS last_at
+""" + TELEMETRY_SCOPE + """    GROUP BY 1,d.hardware_id,d.name ORDER BY 1 DESC,d.hardware_id LIMIT :limit"""
+TELEMETRY_READINGS = """SELECT d.hardware_id,a.diio,a.name AS animal_name,t.seq,t.observed_at,t.received_at,
+    t.gnss_valid,t.latitude,t.longitude,t.surface_temperature_c,t.activity_index,
+    CASE t.quality->>'movement_state' WHEN 'rest' THEN 'Reposo' WHEN 'moving' THEN 'Movimiento' END AS movement_state,t.battery_mv
+""" + TELEMETRY_SCOPE.replace('    WHERE', '    LEFT JOIN animals a ON a.id=t.animal_id AND a.farm_id=t.farm_id\n    WHERE') + \
+    """    ORDER BY t.observed_at,d.hardware_id,t.id LIMIT :limit"""
+
 COLLARS = """
 WITH inventory AS (
     SELECT * FROM devices WHERE farm_id=:farm ORDER BY name,id LIMIT :limit

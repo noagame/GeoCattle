@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Session } from './types';
+import { isQueuedWrite, queuedMessage, supportQueuedMessage, supportRequestsPath } from './mirror';
 
 let csrf = '';
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) { super(message); this.status = status; }
+  body: unknown;
+  constructor(message: string, status: number, body?: unknown) { super(message); this.status = status; this.body = body; }
 }
 export function setSession(session: Session | null) { csrf = session?.csrf_token ?? ''; }
+export function formatApiDetail(detail: unknown) {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) return detail.map((error: { msg?: string; loc?: (string | number)[] } | null) =>
+    `${Array.isArray(error?.loc) ? error.loc.slice(1).join('.') : 'Campo'}: ${error?.msg ?? 'valor inválido'}`).join(' · ');
+  return '';
+}
 async function apiResponse(path: string, init: RequestInit = {}): Promise<Response> {
   const isWrite = init.method && !['GET', 'HEAD'].includes(init.method);
   let response: Response;
@@ -24,19 +32,26 @@ async function apiResponse(path: string, init: RequestInit = {}): Promise<Respon
   window.dispatchEvent(new CustomEvent('api-connectivity', { detail: response.status < 500 }));
   if (!response.ok) {
     let detail = `La solicitud no se pudo completar (${response.status}).`;
+    let errorBody: unknown;
     try {
       const body = await response.json();
-      if (typeof body.detail === 'string') detail = body.detail;
-      else if (Array.isArray(body.detail)) detail = body.detail.map((error: { msg?: string; loc?: string[] }) => `${error.loc?.slice(1).join('.') ?? 'Campo'}: ${error.msg ?? 'valor inválido'}`).join(' · ');
+      errorBody = body;
+      detail = formatApiDetail(body.detail) || detail;
     } catch { /* Error de infraestructura sin JSON: se conserva la descripción HTTP. */ }
     if (response.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('session-expired'));
-    throw new ApiError(detail, response.status);
+    throw new ApiError(detail, response.status, errorBody);
   }
   return response;
 }
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await apiResponse(path, init);
-  return response.status === 204 ? undefined as T : response.json() as Promise<T>;
+  if (response.status === 204) return undefined as T;
+  const result = await response.json();
+  if (response.status === 202 && isQueuedWrite(result)) {
+    const detail = path === supportRequestsPath ? supportQueuedMessage : queuedMessage;
+    window.dispatchEvent(new CustomEvent('mirror-queued', { detail }));
+  }
+  return result as T;
 }
 export async function downloadFile(path: string, fallbackFilename: string) {
   const response = await apiResponse(path);
@@ -95,7 +110,7 @@ export function query(values: Record<string, string>) {
 }
 
 export type OwnerExportPeriod = { days: '7' | '30' } | { start: string; end: string };
-export function ownerExportPath(kind: 'metricas' | 'dispositivos' | 'general', period: OwnerExportPeriod,
+export function ownerExportPath(kind: 'metricas' | 'dispositivos' | 'telemetria' | 'diario' | 'general', period: OwnerExportPeriod,
   format: 'json' | 'csv' | 'xlsx' = 'json') {
   return `/v3/owner-exports/${kind}${query({ ...period, format })}`;
 }

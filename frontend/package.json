@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc -b",
-    "test": "node tests/geofenceDraft.test.mjs && node tests/gatewayCoordinates.test.mjs && node tests/deviceCandidates.test.mjs && node tests/collarSerial.test.mjs && node tests/gatewaySerial.test.mjs"
+    "test": "node tests/geofenceDraft.test.mjs && node tests/gatewayCoordinates.test.mjs && node tests/deviceCandidates.test.mjs && node tests/collarSerial.test.mjs && node tests/gatewaySerial.test.mjs && node tests/mirror.test.mjs"
   },
   "dependencies": {
     "leaflet": "1.9.4",

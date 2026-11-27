@@ -7,7 +7,7 @@ GeoCattle puede mostrar OpenStreetMap sin Internet con el mismo estilo del mapa 
 - Datos: extracto completo de Chile de Geofabrik, importado sin recortar. © OpenStreetMap contributors, licencia ODbL.
 - Teselas PNG 256 px en `.runtime/mapa-osm/{z}/{x}/{y}.png`, con `manifest.json` y `FUENTE.md`. Quedan fuera de Git.
 - Cobertura por defecto: Chile completo z0–11, La Araucanía z12–15 y entorno de Temuco z16–17. Fuera de esas áreas el navegador amplía el último nivel disponible.
-- La interfaz lo ofrece como **OpenStreetMap local**, junto a **Satélite local** y **OpenStreetMap** en línea.
+- En el PC del campo aparece como **OpenStreetMap local**, junto a **Satélite local** y **OpenStreetMap** en línea. La web espejo usa OpenStreetMap estándar en línea como base inicial. [Mapas del despliegue](DESPLIEGUE_DEBIAN_CLOUDFLARE.md#mapas)
 
 ## Instalación
 

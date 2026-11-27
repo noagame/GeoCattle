@@ -8,6 +8,12 @@
 
 Implementacion local del 22 de octubre de 2026. No sustituye el firmware del collar.
 
+## Estación receptora con T3 y nube
+
+Los collares transmiten por LoRa a los repetidores XIAO bus_v1 (nodos 1 y 2), que retransmiten a la T3 base (nodo 0). La T3 publica por WiFi a la API de producción y mantiene el USB al PC. El PC guarda el registro en SQLite y en la API local por la captura Gateways habitual.
+
+Si falla WiFi, la T3 conserva las lecturas recientes en LittleFS y las reenvía cuando vuelve la conexión. Al llenarse reemplaza las más antiguas. Consulta el estado local en `.runtime/capture/status.json` y el WiFi y búfer de la T3 en Hardware de producción. [Provisión USB y prueba de campo](../firmware/README.md#base-t3-con-wifi-y-usb) · [Despliegue](DESPLIEGUE_DEBIAN_CLOUDFLARE.md#t3-base-almacenamiento-y-entrega)
+
 ## Inicio en este PC
 
 GeoCattle se sirve en http://localhost:8084/#hardware. La cuenta inicial es

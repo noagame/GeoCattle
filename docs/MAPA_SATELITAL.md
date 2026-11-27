@@ -13,6 +13,8 @@ El generador reproyecta el mosaico a Web Mercator y aplica los mismos percentile
 
 ## Instalación y verificación
 
+El PC del campo ofrece este mosaico como **Satélite local**. La web espejo sirve **Satélite en línea** desde Esri World Imagery y omite el manifiesto local. [Mapas del despliegue](DESPLIEGUE_DEBIAN_CLOUDFLARE.md#mapas)
+
 Instala `rasterio` y `Pillow` en un entorno Python aparte y ejecuta el siguiente comando desde la raíz. [Preparar el entorno](../README.md#mapa-local-y-traslado-de-collares)
 
 ```bash
@@ -29,7 +31,7 @@ Fuera de ese recorte, el mapa amplía la imagen de z11. Si ya cuentas con los CO
 
 El directorio de salida debe estar vacío. Para reemplazar una instalación existente, genera primero en una carpeta temporal con `--directorio-salida`. Guarda aparte el manifiesto anterior y copia el nuevo contenido a `.runtime/mapa-satelital/`. Publica el nuevo `manifest.json` al final. El directorio de destino es el que se monta en Docker. Vite, el inicio nativo de FastAPI y Nginx leen el mismo conjunto en `/mapa-local/satelite/`. El manifiesto mantiene `name`, `attribution`, `bounds` en orden sur, oeste, norte, este, `minZoom` y `maxZoom`. Si hay un recorte de detalle, incluye `detail.bounds` en el mismo orden y `detail.minZoom` con su primer nivel. La copia local de `FUENTE.md` registra los parámetros usados.
 
-Abre `/mapa-local/satelite/manifest.json` en el origen de GeoCattle y comprueba que una ruta `/mapa-local/satelite/{z}/{x}/{y}.webp` devuelva `image/webp`. Con el paquete ausente, la ruta del manifiesto devuelve 404 y el mapa ofrece la cuadrícula WGS84.
+En el origen que sirve el paquete local, abre `/mapa-local/satelite/manifest.json` y comprueba que una ruta `/mapa-local/satelite/{z}/{x}/{y}.webp` devuelva `image/webp`. Con el paquete ausente, el manifiesto devuelve 404 y el mapa muestra la cuadrícula WGS84.
 
 ## Ortofotos de un predio
 

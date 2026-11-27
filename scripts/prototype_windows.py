@@ -156,6 +156,106 @@ def spawn(name, arguments, env):
     print(f'{name}: iniciado PID {process.pid}')
 
 
+FRONTEND = ROOT / 'frontend'
+FRONTEND_SOURCES = ('src', 'public', 'index.html', 'package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json')
+NODE_IMAGE = 'node:22-alpine'
+
+
+def newest(paths, pattern='*'):
+    stamp = 0.0
+    for path in paths:
+        if path.is_file():
+            stamp = max(stamp, path.stat().st_mtime)
+        elif path.is_dir():
+            stamp = max([stamp, *(item.stat().st_mtime for item in path.rglob(pattern) if item.is_file())])
+    return stamp
+
+
+def frontend_stale():
+    built = FRONTEND / 'dist' / 'index.html'
+    return not built.exists() or newest(FRONTEND / name for name in FRONTEND_SOURCES) > built.stat().st_mtime
+
+
+def ensure_frontend():
+    """Recompila la interfaz si el código es más nuevo que frontend/dist (con npm o, sin Node, con Docker)."""
+    if not frontend_stale():
+        return
+    print('Interfaz: hay cambios sin compilar; compilando (puede tardar uno o dos minutos)...', flush=True)
+    import shutil
+    try:
+        npm = shutil.which('npm')
+        if npm:
+            if not (FRONTEND / 'node_modules').exists():
+                subprocess.run([npm, 'ci'], cwd=FRONTEND, check=True)
+            subprocess.run([npm, 'run', 'build'], cwd=FRONTEND, check=True)
+        elif shutil.which('docker'):
+            # Copia sin node_modules (binarios de Windows) y deja el resultado en una carpeta temporal.
+            output = ROOT / '.runtime' / 'tmp' / 'frontend-dist'
+            shutil.rmtree(output, ignore_errors=True)
+            output.mkdir(parents=True)
+            script = ('tar -C /src --exclude=node_modules --exclude=dist -cf - . | (mkdir /w && tar -C /w -xf -) '
+                      '&& cd /w && npm ci --no-audit --no-fund --loglevel=error && npm run build && cp -r dist/. /out/')
+            subprocess.run(['docker', 'run', '--rm', '-v', f'{FRONTEND}:/src:ro', '-v', f'{output}:/out',
+                            '-v', 'geocattle-npm-cache:/root/.npm', NODE_IMAGE, 'sh', '-c', script], check=True)
+            if not (output / 'index.html').exists():
+                raise OSError('la compilación no produjo index.html')
+            shutil.rmtree(FRONTEND / 'dist', ignore_errors=True)
+            shutil.copytree(output, FRONTEND / 'dist')
+            shutil.rmtree(output, ignore_errors=True)
+        else:
+            raise OSError('no hay npm ni Docker para compilar')
+        print('Interfaz: compilada.', flush=True)
+    except (OSError, subprocess.CalledProcessError) as error:
+        if not (FRONTEND / 'dist' / 'index.html').exists():
+            raise SystemExit(f'No se pudo compilar la interfaz ({error}). Instala Node.js 22 o Docker Desktop.')
+        print(f'Aviso: no se pudo recompilar la interfaz ({error}); se usa la versión anterior.', flush=True)
+
+
+def alive(pid):
+    if os.name != 'nt':
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    import ctypes
+    api = ctypes.WinDLL('kernel32', use_last_error=True)
+    api.OpenProcess.restype = ctypes.c_void_p
+    handle = api.OpenProcess(0x1000, False, pid)
+    if not handle:
+        return False
+    code = ctypes.c_ulong()
+    api.GetExitCodeProcess(ctypes.c_void_p(handle), ctypes.byref(code))
+    api.CloseHandle(ctypes.c_void_p(handle))
+    return code.value == 259
+
+
+def restart_if_outdated(names):
+    """Detiene la API y el worker si el código del backend cambió después de iniciarlos."""
+    code = newest([ROOT / 'backend' / 'geocattle', ROOT / 'adapters'], '*.py')
+    for name in names:
+        pidfile = ROOT / '.runtime' / f'{name}.pid'
+        try:
+            pid = int(pidfile.read_text())
+        except (OSError, ValueError):
+            continue
+        if alive(pid) and code > pidfile.stat().st_mtime:
+            print(f'{name}: hay cambios en el código; reiniciando', flush=True)
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/PID', str(pid), '/T', '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                os.kill(pid, 15)
+            for _ in range(40):
+                if not alive(pid):
+                    break
+                time.sleep(0.25)
+            pidfile.unlink(missing_ok=True)
+    for _ in range(40):
+        if not listening(8084):
+            break
+        time.sleep(0.25)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['init', 'start', 'prepare', 'capture', 'status'])
@@ -176,8 +276,8 @@ def main():
         start_database()
         provision()
     if args.action == 'start':
-        if not (ROOT / 'frontend/dist/index.html').exists():
-            raise SystemExit('Falta compilar la interfaz. Ejecuta en frontend: npm ci y npm run build')
+        ensure_frontend()
+        restart_if_outdated(('prototype-api', 'prototype-worker'))
         env = environment()
         if not listening(8084):
             spawn('prototype-api', [sys.executable, '-m', 'uvicorn', 'geocattle.local_app:app',

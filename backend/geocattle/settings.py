@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     ingest_key: str = Field(default="development-change-this-ingest-key", repr=False)
     cookie_secure: bool = False
     allowed_origins: str = "http://localhost:5173,http://localhost:8080"
+    allowed_hosts: str = ""
     session_hours: int = 12
     demo_password: str | None = Field(default=None, repr=False)
     mqtt_host: str = "localhost"
@@ -50,6 +51,15 @@ class Settings(BaseSettings):
     gmail_smtp_app_password: str | None = Field(default=None, repr=False)
     invitation_base_url: str | None = None
     worker_interval_seconds: int = 15
+    mirror_mode: Literal["off", "field", "replica"] = "off"
+    mirror_sync_key: str = Field(default="", repr=False)
+    mirror_server_url: str = ""
+    mirror_access_id: str = Field(default="", repr=False)
+    mirror_access_secret: str = Field(default="", repr=False)
+    mirror_remote_admin: bool = True
+    mirror_remote_changes: bool = True
+    mirror_source_environment: Literal["development", "production"] = "development"
+    mirror_source: str = Field(default="campo", pattern=r"^[a-z0-9-]{1,32}$")
     config_timeout_seconds: int = 3600
     config_downlink_enabled: bool = False
     config_codec_validated: bool = False
@@ -59,6 +69,10 @@ class Settings(BaseSettings):
     @property
     def admin_login_requires_mfa(self) -> bool:
         return self.app_env == "production" or self.admin_login_mfa
+
+    @property
+    def visible_farm_environment(self) -> str:
+        return self.mirror_source_environment if self.mirror_mode == "replica" else self.app_env
 
     def mail_connection(self):
         if self.smtp_host.strip():
@@ -94,6 +108,23 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def isolation(self):
+        if self.mirror_mode != "off" and len(self.mirror_sync_key.strip()) < 32:
+            raise ValueError("MIRROR_SYNC_KEY requiere al menos 32 caracteres en modo espejo")
+        if self.mirror_mode == "field":
+            self.mirror_server_url = self.mirror_server_url.strip().rstrip("/")
+            try:
+                mirror_url = urlsplit(self.mirror_server_url)
+                _ = mirror_url.port
+            except ValueError:
+                raise ValueError("MIRROR_SERVER_URL no es una URL válida") from None
+            local_mirror = (self.app_env != "production" and mirror_url.scheme == "http"
+                            and mirror_url.hostname in {"127.0.0.1", "localhost"})
+            if (not mirror_url.hostname or '@' in mirror_url.netloc
+                    or re.search(r'[\s\\?#]', self.mirror_server_url)
+                    or (mirror_url.scheme != "https" and not local_mirror)):
+                raise ValueError("MIRROR_SERVER_URL requiere HTTPS. HTTP local se admite en desarrollo y simulación.")
+            if bool(self.mirror_access_id) != bool(self.mirror_access_secret):
+                raise ValueError("MIRROR_ACCESS_ID y MIRROR_ACCESS_SECRET deben configurarse juntos")
         if self.local_admin_password_only and self.app_env != "development":
             raise ValueError("LOCAL_ADMIN_PASSWORD_ONLY requiere APP_ENV=development")
         if self.simulation_enabled and self.app_env != "simulation":
@@ -101,6 +132,8 @@ class Settings(BaseSettings):
         if self.app_env == "production":
             if not self.cookie_secure or len(self.session_secret) < 32 or self.session_secret.startswith("development") or len(self.ingest_key) < 32 or self.ingest_key.startswith("development"):
                 raise ValueError("Producción requiere COOKIE_SECURE y secretos únicos de al menos 32 caracteres")
+            if '*' in {origin.strip() for origin in self.allowed_origins.split(',')}:
+                raise ValueError('ALLOWED_ORIGINS no permite el comodín en producción')
             if self.demo_password:
                 raise ValueError("DEMO_PASSWORD no se permite en producción")
         if self.config_downlink_enabled:

@@ -6,12 +6,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import './mirror.test.mjs';
 
 const compiledDir = mkdtempSync(fileURLToPath(new URL('./.collar-render-', import.meta.url)));
 let validateCandidateApproval, DeviceCandidatesPanel, UsbCollarDetection, CollarInventoryTable, FarmSelector;
 
 try {
-  for (const fileName of ['api.ts', 'ui.tsx', 'collarSerial.ts', 'CollarLifecycle.tsx', 'DeviceCandidates.tsx', 'FarmSelector.tsx']) {
+  for (const fileName of ['api.ts', 'mirror.ts', 'ui.tsx', 'collarSerial.ts', 'CollarLifecycle.tsx', 'DeviceCandidates.tsx', 'FarmSelector.tsx']) {
     const source = readFileSync(new URL(`../src/${fileName}`, import.meta.url), 'utf8');
     const { outputText } = ts.transpileModule(source, {
       fileName, compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022, jsx: ts.JsxEmit.ReactJSX },

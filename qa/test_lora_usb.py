@@ -6,6 +6,7 @@ import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import unittest
+from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from adapters.lora_usb import Archive, decode
 
@@ -120,6 +121,63 @@ class DecoderTests(unittest.TestCase):
             finally:
                 server.shutdown()
                 worker.join()
+
+    def test_edge_errors_pause_entire_batch_until_retry_without_losing_rows(self):
+        class Handler(BaseHTTPRequestHandler):
+            code = 503
+            requests = 0
+
+            def do_POST(self):
+                self.rfile.read(int(self.headers['Content-Length']))
+                Handler.requests += 1
+                self.send_response(self.code)
+                if self.code == 429:
+                    self.send_header('Retry-After', '60')
+                self.end_headers()
+                self.wfile.write(b'{"id":"qa-receipt"}')
+
+            def log_message(self, *args): pass
+
+        with HTTPServer(('127.0.0.1', 0), Handler) as server:
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            try:
+                for code in (429, 500, 520, 524, 530, 599):
+                    with self.subTest(code=code), tempfile.TemporaryDirectory() as temp:
+                        Handler.code, Handler.requests = code, 0
+                        archive = Archive(temp)
+                        archive.enqueue(*decode(WIRE, NOW))
+                        archive.enqueue(*decode(WIRE.replace(',3,device,', ',4,device,'), NOW))
+                        url = f'http://127.0.0.1:{server.server_port}/api/v1/ingest/telemetry'
+                        with patch('adapters.lora_usb.time.time', return_value=100):
+                            archive.deliver(url, 'test-key')
+                            Archive(temp).deliver(url, 'test-key')
+                        self.assertEqual(Handler.requests, 1)
+                        self.assertEqual(archive.stats()['pending'], 2)
+                        with archive.connection() as db:
+                            rows = [tuple(row) for row in db.execute('SELECT attempts,next_attempt FROM captures ORDER BY id')]
+                        self.assertEqual(rows, [(1, 160 if code == 429 else 105), (0, 0)])
+                        Handler.code = 201
+                        with patch('adapters.lora_usb.time.time', return_value=161):
+                            archive.deliver(url, 'test-key')
+                        self.assertEqual(archive.stats()['delivered'], 2)
+            finally:
+                server.shutdown()
+                worker.join()
+
+    def test_bound_queue_rejects_changed_url_or_farm_before_sending(self):
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Archive(temp)
+            archive.enqueue(*decode(WIRE, NOW))
+            local = 'http://localhost/api/v1/ingest/telemetry'
+            remote = 'https://geocattle.example.invalid/api/v1/ingest/telemetry'
+            archive.bind_destination(local, 'local-farm')
+            with patch('adapters.lora_usb.urllib.request.urlopen') as send:
+                for url, farm in ((remote, 'local-farm'), (local, 'cloud-farm')):
+                    with self.assertRaisesRegex(ValueError, 'otra URL o predio'):
+                        Archive(temp).deliver(url, 'dummy', farm)
+                send.assert_not_called()
+            self.assertEqual(archive.stats()['pending'], 1)
 
 
 if __name__ == '__main__': unittest.main()

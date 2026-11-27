@@ -5,11 +5,12 @@ from fastapi import APIRouter,Depends,HTTPException,Request,Response
 from pydantic import BaseModel,ConfigDict,Field
 from .db import get_db
 from .models import User,LoginSession,utcnow
+from .mirror_policy import WRITE_DENIED
 from .security import admin_login_requires_mfa, check_session_csrf, current_user,create_session,token_hash,verify_password
 from .settings import settings
 from .v3_security import (
     MFA_CHALLENGE_PURPOSES, actor_for, audit, check_code, create_challenge, execute,
-    live_mfa_session, mfa_challenge_budget, one, retire_mfa_access, user_json,
+    live_mfa_session, lock_factor_clause, lock_identity, mfa_challenge_budget, one, retire_mfa_access, user_json,
 )
 router=APIRouter(prefix='/api/v1/auth',tags=['Identity V3'])
 class Strict(BaseModel):model_config=ConfigDict(extra='forbid')
@@ -46,7 +47,7 @@ def verify(body:VerifyIn,request:Request,response:Response,db=Depends(get_db,sco
     pending = one(db, 'SELECT user_id FROM auth_challenges WHERE token_hash=:t', t=hashed)
     if not pending:
         raise HTTPException(401,'Desafío inválido o vencido')
-    one(db, 'SELECT id FROM users WHERE id=:u FOR UPDATE', u=pending['user_id'])
+    lock_identity(db, pending['user_id'])
     challenge = one(db, 'SELECT * FROM auth_challenges WHERE token_hash=:t FOR UPDATE', t=hashed)
     if (not challenge or challenge['purpose'] not in MFA_CHALLENGE_PURPOSES or not challenge['factor_id']
             or challenge['consumed_at'] or challenge['expires_at']<=utcnow() or challenge['attempts']>=5):
@@ -56,6 +57,8 @@ def verify(body:VerifyIn,request:Request,response:Response,db=Depends(get_db,sco
     user=db.get(User,challenge['user_id'])
     if not user or not user.active:raise HTTPException(401,'Cuenta no disponible')
     purpose = challenge['purpose']
+    if settings().mirror_mode == 'replica' and (purpose != 'login' or user.mfa_enrollment_required):
+        raise HTTPException(403, WRITE_DENIED)
     session_hash = challenge['session_token_hash']
     session = None
     if session_hash:
@@ -70,7 +73,7 @@ def verify(body:VerifyIn,request:Request,response:Response,db=Depends(get_db,sco
         raise HTTPException(401,'El desafío pertenece a otra sesión')
     execute(db,'UPDATE auth_challenges SET attempts=attempts+1 WHERE id=:i',i=challenge['id'])
     factor=one(db, """SELECT * FROM mfa_factors WHERE id=:f AND user_id=:u AND kind='totp'
-        AND revoked_at IS NULL AND (verified_at IS NOT NULL)=:verified FOR UPDATE""",
+        AND revoked_at IS NULL AND (verified_at IS NOT NULL)=:verified""" + lock_factor_clause(),
         u=user.id,f=challenge['factor_id'],verified=purpose=='login')
     try:
         if not factor:
@@ -111,11 +114,11 @@ def setup(body:PasswordIn,request:Request,user=Depends(current_user),db=Depends(
 
 @router.post('/step-up')
 def stepup(body:StepIn,request:Request,user=Depends(current_user),db=Depends(get_db,scope='function')):
-    one(db,'SELECT id FROM users WHERE id=:u FOR UPDATE',u=user.id)
+    lock_identity(db, user.id)
     identity=db.get(User,user.id)
     if not live_mfa_session(db, user.id, request.state.session.token_hash):
         raise HTTPException(401, 'Sesión requerida')
-    factor=one(db,'SELECT * FROM mfa_factors WHERE user_id=:u AND verified_at IS NOT NULL AND revoked_at IS NULL FOR UPDATE',u=user.id)
+    factor=one(db,'SELECT * FROM mfa_factors WHERE user_id=:u AND verified_at IS NOT NULL AND revoked_at IS NULL' + lock_factor_clause(),u=user.id)
     if not factor:raise HTTPException(409,'Activa MFA en tu perfil antes de administrar colaboradores')
     # Persistent session-wide attempts, successful login alone never sets step-up.
     failures=one(db,"SELECT count(*) AS n FROM auth_challenges WHERE user_id=:u AND purpose='step_up' AND created_at>now()-interval '5 minutes' AND verified_at IS NULL",u=user.id)['n']

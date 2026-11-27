@@ -2,11 +2,13 @@ import hashlib
 import hmac
 import secrets
 from datetime import timedelta
+from types import SimpleNamespace
 from fastapi import Depends, HTTPException, Request
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHashError, VerificationError
 from sqlalchemy import select
 from .db import get_db
+from .mirror_replay import replay_for
 from .models import LoginSession, User, utcnow
 from .settings import settings
 hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
@@ -45,6 +47,28 @@ def check_session_csrf(request, session):
 
 
 def current_user(request: Request,db=Depends(get_db, scope="function")):
+    replay = replay_for(request)
+    if replay is not None:
+        from .mirror_policy import WRITE_DENIED, kind_enabled
+        from .v3_security import actor_for, one
+        if settings().mirror_mode != 'field' or not kind_enabled(replay.kind):
+            raise HTTPException(403, WRITE_DENIED)
+        user = db.get(User, replay.actor_id, with_for_update=True)
+        if not user or not user.active or user.mfa_enrollment_required:
+            raise HTTPException(403, 'Cuenta no disponible en el PC del campo')
+        actor = actor_for(db, user, SimpleNamespace(active_farm_id=replay.farm_id))
+        if replay.kind != 'support_request':
+            if (actor.farm_id != replay.farm_id
+                    or (replay.kind == 'admin_order' and actor.base_role != 'admin')
+                    or (replay.kind != 'admin_order' and (not actor.farm_id or actor.role != 'veterinarian'))):
+                raise HTTPException(403, 'El actor ya no tiene el rol o el predio requerido')
+            if replay.kind != 'admin_order' and not one(db, """SELECT id FROM farm_memberships
+                WHERE user_id=:u AND farm_id=:f AND role_code='veterinarian' AND valid_from<=now()
+                  AND (valid_to IS NULL OR valid_to>now()) FOR SHARE""", u=user.id, f=actor.farm_id):
+                raise HTTPException(403, 'Membresía no vigente')
+        request.state.identity = user
+        request.state.actor = actor
+        return actor
     token=request.cookies.get("geocattle_session")
     session=db.get(LoginSession,token_hash(token)) if token else None
     if not session or session.revoked_at is not None or session.expires_at<=utcnow() or (session.last_seen_at and utcnow()-session.last_seen_at>timedelta(minutes=30)): raise HTTPException(401,"Sesión requerida")
@@ -56,7 +80,7 @@ def current_user(request: Request,db=Depends(get_db, scope="function")):
         raise HTTPException(401, "Se requiere MFA para administrador")
     request.state.identity=user
     request.state.session=session
-    if request.url.path != '/api/v1/v3/activity-counts':
+    if request.url.path not in ('/api/v1/v3/activity-counts', '/api/v1/mirror/info'):
         session.last_seen_at=utcnow()
     if request.method not in ("GET","HEAD","OPTIONS"):
         check_session_csrf(request, session)

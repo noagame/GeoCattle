@@ -32,6 +32,9 @@ struct Record {
   uint8_t origin = 0, path = 0, hops = 0;
   int16_t rssi10 = 0, snr10 = 0;
 };
+#if GC_ROOT_T3
+#include "GCCloud.h"
+#endif
 struct Cached { Key key; uint32_t digest=0; uint16_t len=0; bool used=false; };
 struct Neighbor {
   bool valid=false; uint32_t root=0, sequence=0, heard=0;
@@ -55,7 +58,10 @@ struct Pending {
   uint8_t rounds=0;
 } pending;
 struct UsbPending { bool active=false; uint8_t records=0; uint32_t number=0,sent=0; } usbPending;
-char usbCommand[80]={}; size_t usbCommandSize=0; bool usbCommandOverflow=false;
+#if GC_ROOT_T3
+char usbCommand[gccloud::COMMAND_SIZE]={}; size_t usbCommandSize=0; bool usbCommandOverflow=false;
+Cached cloudSeen[CACHE_SIZE]; size_t nextCloudSeen=0;
+#endif
 
 
 uint8_t bits(uint8_t value) { uint8_t n=0; for(;value;value>>=1) n+=value&1; return n; }
@@ -235,6 +241,21 @@ uint8_t acceptBatch(const uint8_t* bytes,size_t len,uint32_t elapsed,uint32_t no
     if(fresh[i]) ++needed;
   }
   if(pos!=len) return 3;
+#if GC_ROOT_T3
+  // The cloud copy does not wait for USB capacity or a PC ACK. The existing
+  // LoRa ACK and USB queue still preserve the local custody contract.
+  for(uint8_t i=0;i<count;i++) {
+    if(!fresh[i] || !gccloud::enabled) continue;
+    const auto& record=records[i];
+    bool alreadyQueued=false;
+    for(const auto& entry : cloudSeen)
+      if(entry.used && sameKey(entry.key,record.key)) { alreadyQueued=true; break; }
+    if(!alreadyQueued && gccloud::offer(record)) {
+      cloudSeen[nextCloudSeen]={record.key,record.digest,record.len,true};
+      nextCloudSeen=(nextCloudSeen+1)%CACHE_SIZE;
+    }
+  }
+#endif
   if(needed>QUEUE_SIZE-queueCount) return 1;
   for(uint8_t i=0;i<count;i++) { if(fresh[i]) enqueue(records[i]); else ++duplicates; }
   return 0;
@@ -346,12 +367,13 @@ void readUsbAck() {
         snprintf(expected,sizeof(expected),"#GCACK,%08lX-%lu",(unsigned long)bootId,(unsigned long)usbPending.number);
         if(usbPending.active && strcmp(expected,usbCommand)==0) {
           popRecords(usbPending.records); usbPending.active=false;
-        }
+        } else gccloud::submit(usbCommand);
       }
       usbCommandSize=0; usbCommandOverflow=false;
     } else if(usbCommandSize+1<sizeof(usbCommand) && !usbCommandOverflow) usbCommand[usbCommandSize++]=c;
     else usbCommandOverflow=true;
   }
+  gccloud::printReply();
 #endif
 }
 void flushUsb(uint32_t now) {
@@ -401,6 +423,10 @@ void setup() {
 #endif
   critical(radio.explicitHeader(),"cabecera explicita"); critical(radio.invertIQ(false),"IQ");
   radio.setPacketReceivedAction(onReceive); receiveAgain();
+#if GC_ROOT_T3
+  gccloud::begin(bootId);
+  enableLoopWDT();
+#endif
   lastBeacon=millis()-5000+esp_random()%800;
   Serial.printf("# GEOCATTLE RED nodo=%u boot=%08lX cola=%u RAM; 915.5 MHz\n",NODE,(unsigned long)bootId,unsigned(QUEUE_SIZE));
 }

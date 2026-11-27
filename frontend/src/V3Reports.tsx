@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { query, useData } from './api';
 import { ReportDownloads } from './ReportDownloads';
 import type { Animal, List } from './types';
-import { Empty, ErrorNotice, eventLabels, Loading, PageTitle, Panel, PanelTitle } from './ui';
+import { defaultDatePeriod, Empty, ErrorNotice, eventLabels, Loading, PageTitle, Panel, PanelTitle, PeriodFields, ScrollRegion } from './ui';
 
 const records = {
   inventario: 'Inventario actual',
@@ -42,6 +42,7 @@ export function AnimalReportsPage({ initialAnimal, canSeeIndicators }: { initial
     animal_id: initialAnimal, start: '', end: '', grain: 'day', alert_type: 'all',
   });
   const [applied, setApplied] = useState(filters);
+  const [period, setPeriod] = useState(defaultDatePeriod);
   const [search, setSearch] = useState('');
   const chooseAnimal = !(filters.kind in indicators);
   const animals = useData<List<Animal>>(chooseAnimal ? `/animals${query({ limit: '100', q: search })}` : null);
@@ -51,7 +52,7 @@ export function AnimalReportsPage({ initialAnimal, canSeeIndicators }: { initial
 
   function generate(event: FormEvent) {
     event.preventDefault();
-    setApplied(filters);
+    setApplied({ ...filters, start: period.start, end: period.end });
     result.reload();
   }
 
@@ -82,12 +83,8 @@ export function AnimalReportsPage({ initialAnimal, canSeeIndicators }: { initial
               {animals.data?.items.map(animal => <option key={animal.id} value={animal.id}>{animal.diio} · {animal.name}</option>)}
             </select>
           </label></>}
-          {hasDates(filters.kind) && <>
-            <label>Desde<input type="date" value={filters.start} max={filters.end || undefined}
-              onChange={event => setFilters({ ...filters, start: event.target.value })} /></label>
-            <label>Hasta<input type="date" value={filters.end} min={filters.start || undefined}
-              onChange={event => setFilters({ ...filters, end: event.target.value })} /></label>
-          </>}
+          {hasDates(filters.kind) && <PeriodFields value={period} onChange={setPeriod}
+            timeZone={data?.timezone ?? 'America/Santiago'} defaultLabel="Día actual del predio" />}
           {filters.kind === 'serie-alertas' && <>
             <label>Agrupar por<select value={filters.grain} onChange={event => setFilters({ ...filters, grain: event.target.value })}>
               <option value="day">Día</option><option value="week">Semana</option><option value="month">Mes</option>
@@ -98,7 +95,6 @@ export function AnimalReportsPage({ initialAnimal, canSeeIndicators }: { initial
             </select></label>
           </>}
         </div>
-        {hasDates(filters.kind) && <p className="form-intro">Selecciona una fecha o un período. Sin fechas se consulta el día actual del predio.</p>}
         <ErrorNotice error={animals.error} retry={animals.reload} />
         <div className="form-actions"><button className="button primary" disabled={result.loading}>Generar reporte</button></div>
       </form>
@@ -116,7 +112,7 @@ export function AnimalReportsPage({ initialAnimal, canSeeIndicators }: { initial
         <div className="list-toolbar">
           <span className="list-count">{data.total} filas · Vista previa de {data.items.length}</span>
         </div>
-        <div className="table-scroll">
+        <ScrollRegion label={`Vista previa · ${reports[applied.kind]}`}>
           <table>
             <thead><tr>{data.columns.map(column => <th scope="col" key={column}>{column}</th>)}</tr></thead>
             <tbody>{data.items.map((row, index) => <tr key={index}>
@@ -127,7 +123,7 @@ export function AnimalReportsPage({ initialAnimal, canSeeIndicators }: { initial
               }</td>)}
             </tr>)}</tbody>
           </table>
-        </div>
+        </ScrollRegion>
       </> : !result.error && <Empty title="Sin registros para estos filtros" description="Selecciona otro día, período o bovino." />}
     </Panel>
   </>;

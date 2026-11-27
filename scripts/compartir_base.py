@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exporta el prototipo nativo e importa la copia en desarrollo nativo o Docker."""
+"""Traslada una copia privada del prototipo a desarrollo o producción."""
 import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -155,8 +155,9 @@ def native(*, start=False):
     return pg
 
 
-def docker(env_file):
-    args = argparse.Namespace(environment='development', env_file=env_file, profile=['lorawan'])
+def docker(env_file, environment='development', *, exporting=False):
+    profiles = ['cloudflare'] if environment == 'production' else ['lorawan']
+    args = argparse.Namespace(environment=environment, env_file=env_file, profile=profiles)
     path = docker_project.config_path(args)
     values = docker_project.read_config(path, args.environment)
     env = docker_project.command_environment(values)
@@ -164,6 +165,10 @@ def docker(env_file):
     pg = Postgres(values, command)
     active = docker_project.run(command + ['ps', '--services', '--status', 'running'], env,
                                 capture_output=True, text=True).stdout.splitlines()
+    if exporting:
+        if 'database' not in active or not values.get('DB_PORT', '').isdigit():
+            raise ShareError('La exportación Docker requiere la base de desarrollo activa y DB_PORT en loopback.')
+        return pg
     if {'api', 'worker', 'ingestor', 'migrate'}.intersection(active):
         raise ShareError('Detén el proyecto Docker de destino antes de importar.')
     docker_project.run(command + ['up', '-d', '--wait', 'database'], env)
@@ -193,9 +198,13 @@ def export(pg, include_metrics, verify):
                    "SELECT md5(string_agg(to_jsonb(u)::text, '' ORDER BY id)) FROM users u",
                    "SELECT md5(string_agg(to_jsonb(f)::text, '' ORDER BY id)) FROM mfa_factors f"]
     values = pg.values
+    identity_query = 'SELECT system_identifier::text FROM pg_control_system()'
+    source_identity = pg.sql(pg.database, identity_query)
     with psycopg.connect(host='127.0.0.1', port=values['DB_PORT'], dbname=pg.database,
                          user=values['POSTGRES_USER'], password=values['POSTGRES_PASSWORD'], connect_timeout=5) as db:
         db.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        if [db.execute(identity_query).fetchone()[0]] != source_identity:
+            raise ShareError('DB_PORT no corresponde al proyecto Docker o prototipo seleccionado.')
         if not db.execute(NO_SIMULATION).fetchone()[0]:
             raise ShareError('La base de origen contiene datos de otro entorno o telemetría simulada.')
         migrations = [row[0] for row in db.execute('SELECT version FROM schema_migrations ORDER BY version')]
@@ -259,6 +268,9 @@ def import_archive(pg, stream):
         if pg.sql(database, NO_SIMULATION) != ['t']:
             raise ShareError('La copia contiene datos de otro entorno o telemetría simulada.')
         pg.migrate(database)
+        if pg.values['APP_ENV'] == 'production':
+            pg.sql(database, "UPDATE farms SET environment = 'production' WHERE environment = 'development'",
+                   transaction=True)
         # Take the same lock for simultaneous imports and check that the backed-up database is still current.
         commands = ["SELECT pg_advisory_xact_lock(545108229)", f"""
             DO $$ BEGIN
@@ -286,22 +298,28 @@ def import_archive(pg, stream):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='action', required=True)
-    exporter = commands.add_parser('exportar', help='Lee la base del prototipo en ejecución')
+    exporter = commands.add_parser('exportar', help='Lee la base física de desarrollo en ejecución')
+    exporter.add_argument('--origen', choices=('nativo', 'docker'), default='nativo')
+    exporter.add_argument('--env-file', type=Path, help='Configuración Docker de origen')
     exporter.add_argument('--incluir-metricas', action='store_true', help='Conservar las métricas HTTP')
     exporter.add_argument('--verificar', action='store_true', help='Restaurar y comparar en una base temporal')
-    importer = commands.add_parser('importar', help='Reemplaza la base de desarrollo de destino con respaldo previo')
+    importer = commands.add_parser('importar', help='Reemplaza la base de destino con respaldo previo')
     importer.add_argument('archivo', type=Path)
-    importer.add_argument('--destino', required=True, choices=('nativo', 'docker'))
-    importer.add_argument('--env-file', type=Path, help='Configuración Docker alternativa (predeterminada: .env.docker)')
+    importer.add_argument('--destino', required=True, choices=('nativo', 'docker', 'produccion'))
+    importer.add_argument('--env-file', type=Path, help='Configuración Docker alternativa (.env.docker o .env.pilot)')
     args = parser.parse_args(argv)
     try:
         if args.action == 'exportar':
-            export(native(), args.incluir_metricas, args.verificar)
+            if args.env_file and args.origen != 'docker':
+                parser.error('--env-file solo se usa con --origen docker')
+            pg = native() if args.origen == 'nativo' else docker(args.env_file, exporting=True)
+            export(pg, args.incluir_metricas, args.verificar)
         else:
-            if args.env_file and args.destino != 'docker':
-                parser.error('--env-file solo se usa con --destino docker')
+            if args.env_file and args.destino == 'nativo':
+                parser.error('--env-file se usa con destinos Docker')
             with checked_archive(args.archivo) as stream:
-                pg = native(start=True) if args.destino == 'nativo' else docker(args.env_file)
+                environment = 'production' if args.destino == 'produccion' else 'development'
+                pg = native(start=True) if args.destino == 'nativo' else docker(args.env_file, environment)
                 import_archive(pg, stream)
         return 0
     except (ShareError, docker_project.ProjectError, OSError, ValueError) as error:

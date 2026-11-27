@@ -39,6 +39,19 @@ def process_outbox(db,event_id=None):
         else:n.status=status
 
 def run_once():
+    mode = settings().mirror_mode
+    if mode == 'replica':
+        return
+    if mode == 'field':
+        from .hardware_api import publish_usb_receiver_status
+        from .mirror_sync import run_mirror_cycle
+        try:
+            with SessionLocal.begin() as db:
+                publish_usb_receiver_status(db)
+        except Exception:
+            # El estado del receptor es informativo: nunca debe frenar la bandeja del espejo.
+            log.exception("No se publicó el estado USB del receptor; se reintentará")
+        run_mirror_cycle()
     with SessionLocal.begin() as db:
         # Prevent duplicate workers from competing for condition creation.
         if db.scalar(text("SELECT pg_try_advisory_xact_lock(804193812)")):check_timeouts(db)

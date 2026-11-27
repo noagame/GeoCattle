@@ -3,11 +3,12 @@ import { Check, KeyRound, LockKeyhole, ShieldCheck, UserRound } from 'lucide-rea
 import qrcode from 'qrcode-generator';
 import { PasswordInput } from './PasswordInput';
 import { date, message, setSession, useData, write } from './api';
-import { Empty, ErrorNotice, Loading, Modal, PageTitle, Panel, PanelTitle, Submit } from './ui';
+import { Detail, Empty, ErrorNotice, Loading, Modal, PageTitle, Panel, PanelTitle, Submit } from './ui';
 import type { Notify } from './App';
 import type { Session } from './types';
 import type { Profile } from './v3types';
 import { roleLabels } from './v3types';
+import { useMirror } from './MirrorMode';
 
 export function StepUpGate({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
   const [expires, setExpires] = useState(''); const [password, setPassword] = useState(''); const [code, setCode] = useState('');
@@ -18,16 +19,20 @@ export function StepUpGate({ children, admin = false }: { children: ReactNode; a
   return <>{expires ? <><div className="v3-verification"><ShieldCheck size={18} /><span>Identidad verificada hasta {date(expires)}.</span><button className="text-button" onClick={() => setExpires('')}>Bloquear gestión</button></div>{children}</> : <Panel><PanelTitle title="Verifica tu identidad" subtitle="El acceso a colaboradores y permisos requiere contraseña y segundo factor." /><form className="form-body v3-narrow" onSubmit={verify}><p className="form-intro">Usa el código de tu aplicación autenticadora. Las operaciones se validan también en el servidor.</p><PasswordInput label="Contraseña" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /><label>Código de verificación<input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} /></label><ErrorNotice error={error} /><div className="form-actions"><Submit busy={busy}>Verificar identidad</Submit></div></form></Panel>}</>;
 }
 export function ProfilePage({ notify, onUpdated, onSignedOut, mfaEnabled = false }: { notify: Notify; mfaEnabled?: boolean; onUpdated: () => void; onSignedOut: (notice?: string) => void }) {
+  const canWrite = useMirror().canWrite('account');
   const profile = useData<Profile>('/v3/profile'); const [setup, setSetup] = useState(false);
   const [securityAction, setSecurityAction] = useState<'password' | 'recovery' | 'closure' | 'replace' | 'remove' | null>(null);
   return <>
-    <PageTitle eyebrow="TU CUENTA" title="Mi perfil" description="Mantén actualizados tus datos de contacto." actions={!mfaEnabled && <button className="button secondary" onClick={() => setSetup(true)}><ShieldCheck size={17} />Activar doble verificación</button>} />
-    <ErrorNotice error={profile.error} retry={profile.reload} />{profile.loading ? <Loading /> : profile.data && <ProfileForm initial={profile.data} onSaved={() => { profile.reload(); onUpdated(); notify('Datos personales actualizados.'); }} />}
+    <PageTitle eyebrow="TU CUENTA" title="Mi perfil" description={canWrite ? 'Mantén actualizados tus datos de contacto.' : 'Consulta tus datos de contacto.'} actions={canWrite && !mfaEnabled && <button className="button secondary" onClick={() => setSetup(true)}><ShieldCheck size={17} />Activar doble verificación</button>} />
+    <ErrorNotice error={profile.error} retry={profile.reload} />{profile.loading ? <Loading /> : profile.data && (canWrite ? <ProfileForm initial={profile.data} onSaved={() => { profile.reload(); onUpdated(); notify('Datos personales actualizados.'); }} /> : <Panel>
+      <PanelTitle title="Datos personales" action={<UserRound size={21} />} />
+      <dl className="details-grid v3-record-details"><Detail label="Correo de acceso" value={profile.data.email ?? profile.data.username} /><Detail label="Nombre completo" value={profile.data.full_name} /><Detail label="Teléfono" value={profile.data.phone || 'Sin registrar'} /></dl>
+    </Panel>)}
     <Panel>
       <PanelTitle title="Seguridad y acceso" />
       <div className="form-body">
-        <p className="form-intro">{mfaEnabled ? 'Doble verificación activa. Cada código de recuperación se usa una vez junto con tu contraseña.' : 'Activa la doble verificación para disponer de códigos de recuperación.'}</p>
-        <div className="v3-inline-actions">
+        <p className="form-intro">{mfaEnabled ? 'Doble verificación activa. Cada código de recuperación se usa una vez junto con tu contraseña.' : canWrite ? 'Activa la doble verificación para disponer de códigos de recuperación.' : 'Doble verificación pendiente de activación.'}</p>
+        {canWrite && <div className="v3-inline-actions">
           <button className="button secondary" onClick={() => setSecurityAction('password')}><KeyRound size={17} />Cambiar contraseña</button>
           {mfaEnabled && <>
             <button className="button secondary" onClick={() => setSecurityAction('replace')}><ShieldCheck size={17} />Reemplazar autenticador</button>
@@ -35,7 +40,7 @@ export function ProfilePage({ notify, onUpdated, onSignedOut, mfaEnabled = false
             <button className="button secondary" onClick={() => setSecurityAction('recovery')}>Generar códigos de recuperación</button>
           </>}
           <button className="button secondary" onClick={() => setSecurityAction('closure')}>Solicitar cierre de cuenta</button>
-        </div>
+        </div>}
       </div>
     </Panel>
     {setup && <MfaSetup onClose={() => setSetup(false)} onSaved={() => { setSetup(false); onUpdated(); notify('Doble verificación activada.'); }} />}

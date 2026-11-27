@@ -139,6 +139,8 @@ class Archive:
                 backend_id TEXT, delivered_at TEXT,
                 UNIQUE(hardware_id,session_id,seq))''')
             db.execute('CREATE INDEX IF NOT EXISTS captures_day ON captures(local_day,hardware_id)')
+            db.execute('CREATE TABLE IF NOT EXISTS delivery_config ('
+                       'id INTEGER PRIMARY KEY CHECK(id = 1), destination TEXT NOT NULL, paused_capture_id INTEGER)')
 
     @contextmanager
     def connection(self):
@@ -181,9 +183,25 @@ class Archive:
                 coalesce(sum(status='delivered'),0) AS delivered,
                 max(received_at) AS last_capture FROM captures''').fetchone())
 
-    def deliver(self, url, key, farm_id=None):
+    def bind_destination(self, url, farm_id=None):
+        destination = json.dumps([url, farm_id or None])
         with self.connection() as db:
-            rows = db.execute("SELECT * FROM captures WHERE status='pending' AND next_attempt<=? ORDER BY id LIMIT 25", (time.time(),)).fetchall()
+            db.execute('BEGIN IMMEDIATE')
+            bound = db.execute('SELECT destination FROM delivery_config WHERE id=1').fetchone()
+            if bound:
+                if bound['destination'] != destination:
+                    raise ValueError('La cola pertenece a otra URL o predio. Usa otro directorio de captura.')
+                return
+            db.execute('INSERT INTO delivery_config(id,destination) VALUES (1,?)', (destination,))
+
+    def deliver(self, url, key, farm_id=None):
+        self.bind_destination(url, farm_id)
+        now = time.time()
+        with self.connection() as db:
+            if db.execute('SELECT 1 FROM delivery_config d JOIN captures c ON c.id=d.paused_capture_id '
+                          "WHERE d.id=1 AND c.status='pending' AND c.next_attempt>?", (now,)).fetchone():
+                return
+            rows = db.execute("SELECT * FROM captures WHERE status='pending' AND next_attempt<=? ORDER BY id LIMIT 25", (now,)).fetchall()
         headers = {'Content-Type': 'application/json', 'X-Ingest-Key': key}
         if farm_id:
             headers['X-Farm-ID'] = farm_id
@@ -196,13 +214,22 @@ class Archive:
                     raise ValueError('API sin confirmacion de persistencia')
             except (urllib.error.URLError, TimeoutError, ValueError, OSError) as error:
                 code = error.code if isinstance(error, urllib.error.HTTPError) else None
+                retry_after = error.headers.get('Retry-After', '') if code in (429, 503) else ''
+                if isinstance(error, urllib.error.HTTPError):
+                    error.close()
                 reason = f'HTTP {code}' if code else type(error).__name__
                 delay = min(300, 5 * 2 ** min(row['attempts'], 6))
+                if re.fullmatch(r'[0-9]{1,5}', retry_after):
+                    delay = max(delay, min(3600, int(retry_after)))
+                pause_batch = code is None or code in (401, 403, 429) or 500 <= code < 600
                 with self.connection() as db:
                     db.execute('UPDATE captures SET attempts=attempts+1,last_error=?,next_attempt=? WHERE id=?',
                                (reason, time.time() + delay, row['id']))
+                    if pause_batch:
+                        db.execute('UPDATE delivery_config SET paused_capture_id=? WHERE id=1', (row['id'],))
                 # Preserve unconfirmed captures, including those queued against an older API.
-                if code in (None, 401, 403, 500, 502, 503):
+                if pause_batch:
+                    LOG.warning('Entrega en pausa por %s. Próximo intento en %s s.', reason, delay)
                     break
                 continue
             with self.connection() as db:
@@ -253,7 +280,9 @@ def capture(args):
     private = load_env(args.env_file)
     if not private.get('INGEST_KEY'):
         raise ValueError('Falta INGEST_KEY en archivo privado')
+    farm_id = private.get('INGEST_FARM_ID')
     archive = Archive(args.directory)
+    archive.bind_destination(args.url, farm_id)
     stop = threading.Event()
     status = {'capture_version': 2, 'receiver_profiles_version': 1, 'bus_version': 1,
               'receiver_mode': None, 'wire_format': None, 'last_bus': None, 'pid': os.getpid(), 'requested_port': args.port,
@@ -271,7 +300,7 @@ def capture(args):
     def background():
         while not stop.is_set():
             try:
-                archive.deliver(args.url, private['INGEST_KEY'], private.get('INGEST_FARM_ID'))
+                archive.deliver(args.url, private['INGEST_KEY'], farm_id)
             except Exception:
                 LOG.exception('Error en la entrega de telemetria; capturas conservadas')
             if not stop.is_set():

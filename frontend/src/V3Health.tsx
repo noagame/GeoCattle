@@ -1,12 +1,19 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { CalendarDays, Check, ClipboardList, FileHeart, Pencil, Plus, RefreshCw } from 'lucide-react';
-import { date, message, query, useData, write } from './api';
-import { Badge, Detail, Empty, ErrorNotice, Loading, Modal, PageTitle, Panel, PanelTitle, Submit } from './ui';
+import { ApiError, date, message, query, useData, write } from './api';
+import { Badge, Detail, Empty, ErrorNotice, Loading, Modal, PageTitle, Panel, PanelTitle, ScrollRegion, SectionTabs, Submit } from './ui';
 import type { Animal, Device, List } from './types';
 import type { Notify } from './App';
 import { Pagination } from './PagesAnimals';
-import type { AnimalRecord, Change, ClinicalEvent, Schedule, Treatment } from './v3types';
+import type { AnimalRecord, Change, ChangeDraft, ClinicalEvent, QueuedWrite, Schedule, Treatment } from './v3types';
 import { changeLabels, changeStates, healthLabels, operationLabels } from './v3types';
+import { FieldOnlyNotice, useMirror } from './MirrorMode';
+import { isDraftAction, isQueuedWrite, mirrorPollInterval, type WriteFeature } from './mirror';
+
+function changeFeature(action: string): WriteFeature {
+  if (isDraftAction(action)) return action;
+  return action === 'battery_replacement' ? 'hardware' : 'change';
+}
 
 export function ChangesPage({ worker, canReview, requestId, notify, onChange }: {
   worker: boolean;
@@ -15,6 +22,9 @@ export function ChangesPage({ worker, canReview, requestId, notify, onChange }: 
   notify: Notify;
   onChange: () => void;
 }) {
+  const { replica, canWrite } = useMirror();
+  const canDecide = canReview && canWrite('decision');
+  const canCreate = ((worker || canReview) && canWrite('change')) || (replica && canWrite('draft'));
   const [filter, setFilter] = useState('');
   const [offset, setOffset] = useState(0);
   const [creating, setCreating] = useState(false);
@@ -35,9 +45,9 @@ export function ChangesPage({ worker, canReview, requestId, notify, onChange }: 
       actions={<>
         {requestId && <a className="button secondary" href="#changes">Ver todas las solicitudes</a>}
         <button className="button secondary" onClick={refresh}><RefreshCw size={16} />Actualizar</button>
-        {!requestId && (worker || canReview) && <button className="button primary" onClick={() => setCreating(true)}><Plus size={17} />Registrar cambio</button>}
+        {!requestId && canCreate && <button className="button primary" onClick={() => setCreating(true)}><Plus size={17} />Registrar cambio</button>}
       </>} />
-    {!requestId && (worker || canReview) && <div className="notice"><ClipboardList size={19} /><span>
+    {!replica && !requestId && (worker || canReview) && <div className="notice"><ClipboardList size={19} /><span>
       {worker ? 'Las propuestas se envían al dueño. La confianza vigente permite aplicar directamente la acción autorizada.'
         : 'El historial efectivo se actualiza al aprobar una propuesta pendiente.'}
     </span></div>}
@@ -63,7 +73,7 @@ export function ChangesPage({ worker, canReview, requestId, notify, onChange }: 
               </Badge>
             </div>
             <ChangePayload change={change} />
-            {canReview && status === 'pending' && <button className="button secondary small" onClick={() => setReview(change)}>Revisar y decidir</button>}
+            {canDecide && status === 'pending' && <button className="button secondary small" onClick={() => setReview(change)}>Revisar y decidir</button>}
             {change.reason && <p className="form-intro">Motivo · {change.reason}</p>}
           </article>;
         })}
@@ -71,11 +81,11 @@ export function ChangesPage({ worker, canReview, requestId, notify, onChange }: 
       {!requestId && changes.data && (offset > 0 || changes.data.total > limit) &&
         <Pagination offset={offset} count={visible.length} total={changes.data.total} limit={limit} onChange={setOffset} />}
     </Panel>
-    {creating && <ChangeForm worker={worker} onClose={() => setCreating(false)} onSaved={result => {
+    {canCreate && creating && <ChangeForm worker={worker} onClose={() => setCreating(false)} notify={notify} onSaved={result => {
       setCreating(false); refresh();
       notify(result.status === 'pending' ? 'Solicitud enviada al dueño para aprobación.' : 'Cambio registrado en el historial.');
     }} />}
-    {review && <DecisionForm change={review} onClose={() => setReview(null)} onSaved={() => {
+    {canDecide && review && <DecisionForm change={review} onClose={() => setReview(null)} onSaved={() => {
       setReview(null);
       if (filter === 'pending' && offset && visible.length === 1) setOffset(Math.max(0, offset - limit));
       refresh(); notify('Decisión guardada con trazabilidad.');
@@ -85,22 +95,129 @@ export function ChangesPage({ worker, canReview, requestId, notify, onChange }: 
 function statusOf(change: Change) { if (change.applied_at || ['applied', 'approved', 'direct', 'trusted'].includes(change.status ?? change.decision ?? '')) return 'applied'; if ((change.status ?? change.decision) === 'rejected') return 'rejected'; return 'pending'; }
 const payloadLabels: Record<string, string> = { event_type: 'Evento', description: 'Descripción', diagnosis: 'Diagnóstico', operation: 'Operación', status: 'Estado vital', breed: 'Raza', color: 'Color', sex: 'Sexo', birth_date: 'Nacimiento', weight_kg: 'Peso (kg)', height_cm: 'Altura (cm)', battery_id: 'Batería', result: 'Resultado', kind: 'Atención', due_at: 'Fecha planificada', occurred_at: 'Fecha del hecho', target_event_id: 'Registro relacionado', target_schedule_id: 'Atención relacionada', completed_event_id: 'Evento de administración' };
 function valueLabel(value: unknown): string { if (typeof value === 'string') return healthLabels[value] ?? operationLabels[value] ?? ({ active: 'Activo', missing: 'Extraviado', dead: 'Muerto', slaughtered: 'Faenado', retired: 'Retirado', female: 'Hembra', male: 'Macho', unknown: 'Sin definir', checkup: 'Control' } as Record<string, string>)[value] ?? value; return String(value ?? 'Sin indicar'); }
-function ChangePayload({ change }: { change: Change }) { return <dl className="v3-payload">{change.animal_id && <div><dt>Bovino</dt><dd>{change.diio ? `DIIO ${change.diio}` : change.animal_id}</dd></div>}{change.device_id && <div><dt>Collar</dt><dd>{change.device_id}</dd></div>}{Object.entries(change.payload ?? {}).filter(([key]) => key !== 'treatments').map(([key, value]) => <div key={key}><dt>{payloadLabels[key] ?? key}</dt><dd>{valueLabel(value)}</dd></div>)}{Array.isArray(change.payload?.treatments) && change.payload.treatments.map((t: Record<string, unknown>, index: number) => <div key={`t-${index}`}><dt>Producto administrado</dt><dd>{String(t.product_name)} · {String(t.dose_value)} {String(t.dose_unit)} · vía {String(t.route)}{t.withdrawal_meat_until ? ` · resguardo carne hasta ${String(t.withdrawal_meat_until)}` : ''}{t.withdrawal_milk_until ? ` · resguardo leche hasta ${String(t.withdrawal_milk_until)}` : ''}</dd></div>)}</dl>; }
+function ChangePayload({ change, showTreatmentDetails = false }: { change: Pick<Change, 'animal_id' | 'device_id' | 'diio' | 'payload'>; showTreatmentDetails?: boolean }) { return <dl className="v3-payload">{change.animal_id && <div><dt>Bovino</dt><dd>{change.diio ? `DIIO ${change.diio}` : change.animal_id}</dd></div>}{change.device_id && <div><dt>Collar</dt><dd>{change.device_id}</dd></div>}{Object.entries(change.payload ?? {}).filter(([key]) => key !== 'treatments').map(([key, value]) => <div key={key}><dt>{payloadLabels[key] ?? key}</dt><dd>{valueLabel(value)}</dd></div>)}{Array.isArray(change.payload?.treatments) && change.payload.treatments.map((t: Record<string, unknown>, index: number) => <div key={`t-${index}`}><dt>Producto administrado</dt><dd>{String(t.product_name)} · {String(t.dose_value)} {String(t.dose_unit)} · vía {String(t.route)}{t.withdrawal_meat_until ? ` · resguardo carne hasta ${String(t.withdrawal_meat_until)}` : ''}{t.withdrawal_milk_until ? ` · resguardo leche hasta ${String(t.withdrawal_milk_until)}` : ''}{showTreatmentDetails && <>{t.administered_at ? ` · Administración ${date(String(t.administered_at))}` : ''}{t.product_registration ? ` · Registro ${String(t.product_registration)}` : ''}{t.batch_number ? ` · Lote ${String(t.batch_number)}` : ''}{t.withdrawal_basis ? ` · Fundamento ${String(t.withdrawal_basis)}` : ''}</>}</dd></div>)}</dl>; }
 function DecisionForm({ change, onClose, onSaved }: { change: Change; onClose: () => void; onSaved: () => void }) {
   const [decision, setDecision] = useState('approved'); const [reason, setReason] = useState(''); const [confirmed, setConfirmed] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
-  async function submit(e: FormEvent) { e.preventDefault(); setBusy(true); setError(''); try { await write(`/v3/changes/${change.id}/decision`, { decision, reason }); onSaved(); } catch (err) { setError(message(err)); } finally { setBusy(false); } }
+  async function submit(e: FormEvent) { e.preventDefault(); setBusy(true); setError(''); try { const result = await write(`/v3/changes/${change.id}/decision`, { decision, reason }); if (isQueuedWrite(result)) onClose(); else onSaved(); } catch (err) { setError(message(err)); } finally { setBusy(false); } }
   return <Modal title={`Revisar: ${changeLabels[change.action] ?? change.action}`} onClose={onClose} wide><form className="form-body" onSubmit={submit}><ChangePayload change={change} />{change.action === 'health_record' && <p className="notice notice-warning">Rechazar una propuesta administrativa no demuestra que el tratamiento no haya ocurrido. Revisa el resguardo provisional y verifica el hecho en terreno.</p>}<label>Decisión<select value={decision} onChange={e => setDecision(e.target.value)}><option value="approved">Aprobar y aplicar</option><option value="rejected">Rechazar propuesta</option></select></label><label>Motivo<textarea required maxLength={2000} rows={3} value={reason} onChange={e => setReason(e.target.value)} /></label><label className="checkbox-field"><input type="checkbox" required checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />Revisé la propuesta y confirmo esta decisión.</label><ErrorNotice error={error} /><div className="form-actions"><button type="button" className="button secondary" onClick={onClose}>Cancelar</button><Submit busy={busy}>Guardar decisión</Submit></div></form></Modal>;
 }
 
 type Composer = { action: string; operation?: string; targetEvent?: ClinicalEvent; targetSchedule?: Schedule };
-export function HealthPage({ worker = false, actorId, notify }: { worker?: boolean; actorId: string; notify: Notify }) {
+
+function DraftsPage({ notify }: { notify: Notify }) {
+  const { replica } = useMirror();
+  const drafts = useData<List<ChangeDraft>>('/v3/drafts', replica ? mirrorPollInterval : 0);
+  const [editing, setEditing] = useState<ChangeDraft | null>(null);
+  const [discarding, setDiscarding] = useState<ChangeDraft | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [awaitingRefresh, setAwaitingRefresh] = useState<List<ChangeDraft> | null>(null);
+  const actionsBusy = busy || (awaitingRefresh !== null && awaitingRefresh === drafts.data);
+  const items = drafts.data?.items ?? [];
+  const active = (draft: ChangeDraft) => draft.status === 'draft' || draft.status === 'pending_sync';
+  const byId = new Map(items.map(draft => [draft.id, draft]));
+  const groups = new Map<string, ChangeDraft[]>();
+  for (const draft of items) {
+    let root = draft;
+    while (root.conflict_of && byId.has(root.conflict_of)) root = byId.get(root.conflict_of)!;
+    const key = root.conflict_of ?? root.id;
+    const group = groups.get(key) ?? [];
+    group.push(draft);
+    groups.set(key, group);
+  }
+  const visibleGroups = [...groups].filter(([, versions]) => versions.some(active));
+
+  async function finish(draft: ChangeDraft, discard = false) {
+    setBusy(true);
+    setError('');
+    try {
+      const path = `/v3/drafts/${draft.id}`;
+      const body = { base_version: draft.version };
+      const result = discard ? await write(path, body, 'DELETE') : await write(`${path}/submit`, body);
+      setAwaitingRefresh(drafts.data);
+      setDiscarding(null);
+      drafts.reload();
+      if (!isQueuedWrite(result)) notify(discard ? 'Borrador descartado.' : 'Borrador enviado como solicitud.');
+    } catch (err) {
+      setError(message(err));
+      if (err instanceof ApiError && err.status === 409) {
+        setAwaitingRefresh(drafts.data);
+        setDiscarding(null);
+        drafts.reload();
+      }
+    } finally { setBusy(false); }
+  }
+
+  return <>
+    <PageTitle title="Mis borradores" actions={<a className="button secondary" href="#health">Volver a fichas y agenda</a>} />
+    <Panel>
+      <ErrorNotice error={drafts.error} retry={drafts.reload} />
+      {!discarding && <ErrorNotice error={error} />}
+      {drafts.loading && !drafts.data ? <Loading /> : visibleGroups.length ? <div className="v3-changes">
+        {visibleGroups.map(([id, versions]) => {
+          const conflict = versions.some(version => version.conflict_of);
+          return <section className="draft-group" key={id}>
+            {conflict && <p className="notice notice-warning">Hay versiones en conflicto. Revisa cada una y elige cuál enviar o descartar.</p>}
+            <div className={conflict ? 'draft-versions' : undefined}>
+              {[...versions].sort((a, b) => Number(!!a.conflict_of) - Number(!!b.conflict_of)).map(draft => {
+                const pending = replica && draft.status === 'pending_sync';
+                const terminal = pending && (draft.pending_operation === 'submit' || draft.pending_operation === 'discard');
+                return <article key={draft.id}>
+                  <div className="v3-change-header mirror-item-heading">
+                    <div><strong>{changeLabels[draft.action]}</strong>
+                      <small>{conflict && `${draft.conflict_of ? 'Versión en conflicto' : 'Borrador original'} · `}Versión {draft.version} · {date(draft.updated_at)}</small>
+                    </div>
+                    {pending && <Badge status="warning">Sincronizando con el campo{draft.pending_operation === 'submit' && ' · Envío pendiente'}{draft.pending_operation === 'discard' && ' · Descarte pendiente'}</Badge>}
+                    {draft.status === 'submitted' && <Badge status="normal">Enviado</Badge>}
+                    {draft.status === 'discarded' && <Badge status="unknown">Descartado</Badge>}
+                  </div>
+                  <ChangePayload change={draft} showTreatmentDetails />
+                  {active(draft) && !terminal && <div className="v3-inline-actions">
+                    <button className="button secondary small" disabled={actionsBusy} onClick={() => setEditing(draft)}>Continuar editando</button>
+                    <button className="button primary small" disabled={actionsBusy} onClick={() => void finish(draft)}>Enviar borrador</button>
+                    <button className="text-button" disabled={actionsBusy} onClick={() => { setError(''); setDiscarding(draft); }}>Descartar</button>
+                  </div>}
+                </article>;
+              })}
+            </div>
+          </section>;
+        })}
+      </div> : !drafts.error && <Empty title="Sin borradores pendientes" description="Puedes guardar un borrador al registrar un cambio de ficha o salud." />}
+    </Panel>
+    {editing && <ChangeForm draft={editing} notify={notify} onClose={() => setEditing(null)} onDraftChange={drafts.reload} />}
+    {discarding && <Modal title="Descartar borrador" onClose={() => { if (!busy) setDiscarding(null); }}>
+      <div className="form-body">
+        <p>Descartarás {changeLabels[discarding.action].toLowerCase()} · versión {discarding.version}.</p>
+        <ErrorNotice error={error} />
+        <div className="form-actions">
+          <button className="button secondary" disabled={busy} onClick={() => setDiscarding(null)}>Cancelar</button>
+          <button className="button primary" disabled={busy} onClick={() => void finish(discarding, true)}>{busy ? 'Descartando…' : 'Descartar borrador'}</button>
+        </div>
+      </div>
+    </Modal>}
+  </>;
+}
+export function HealthPage({ worker = false, actorId, notify, showDrafts = false }: { worker?: boolean; actorId: string; notify: Notify; showDrafts?: boolean }) {
+  const { replica, canWrite } = useMirror();
+  const [section, setSection] = useState('history');
+  const canRecord = canWrite('health_record');
+  const canPlan = !worker && canWrite('health_schedule');
+  const canEditProfile = !worker && canWrite('animal_profile');
+  const canDraft = !worker && canWrite('draft');
   const [search, setSearch] = useState(''); const animals = useData<List<Animal>>(`/animals${query({ limit: '100', q: search })}`); const [animalId, setAnimalId] = useState('');
   const record = useData<AnimalRecord>(animalId ? `/v3/animals/${animalId}/record` : null); const [composer, setComposer] = useState<Composer | null>(null); const data = record.data;
   useEffect(() => { if (!animalId && animals.data?.items.length) setAnimalId(animals.data.items[0].id); }, [animals.data, animalId]);
   const effectiveSchedules = data?.schedules.filter(s => s.effective !== false && ['plan', 'replace'].includes(s.operation ?? 'plan') && !data.schedules.some(other => other.target_schedule_id === s.id)) ?? [];
   const age = data?.animal.birth_date ? Math.max(0, Math.floor((Date.now() - new Date(data.animal.birth_date).getTime()) / (365.2425 * 86400000))) : null;
-  return <><PageTitle eyebrow={worker ? 'CONSULTA Y REPORTES' : 'CONTROL VETERINARIO'} title="Fichas y agenda sanitaria" description={worker ? 'Consulta el historial y reporta hechos para revisión del dueño.' : 'Gestiona fichas técnicas, tratamientos y próximas atenciones con historia trazable.'}
-    actions={data && <a className="button secondary" href={`#reports?animal=${encodeURIComponent(animalId)}`}>Reportes del bovino</a>} /><Panel className="v3-record-selector"><div className="list-toolbar"><label>Buscar animal<input placeholder="Nombre o DIIO" value={search} onChange={e => setSearch(e.target.value)} /></label><label>Bovino<select value={animalId} onChange={e => setAnimalId(e.target.value)}><option value="">Selecciona un bovino</option>{data && !animals.data?.items.some(a => a.id === animalId) && <option value={animalId}>{data.animal.name} · {data.animal.diio}</option>}{animals.data?.items.map(a => <option key={a.id} value={a.id}>{a.name || 'Sin nombre'} · {a.diio}</option>)}</select></label><button className="button secondary" disabled={!animalId} onClick={record.reload}><RefreshCw size={16} />Actualizar ficha</button></div><ErrorNotice error={animals.error} retry={animals.reload} /></Panel><ErrorNotice error={record.error} retry={record.reload} />{record.loading && animalId && <Loading label="Consultando ficha completa…" />}{!animalId && !animals.loading && <Panel><Empty title="Selecciona un animal" description="El historial clínico y las próximas atenciones aparecerán aquí." /></Panel>}{data && <><Panel><PanelTitle title={`${data.animal.name || 'Bovino'} · DIIO ${data.animal.diio}`} subtitle="Identificación y descripción técnica" action={!worker && <button className="button secondary small" onClick={() => setComposer({ action: 'animal_profile' })}><Pencil size={15} />Editar ficha técnica</button>} /><dl className="details-grid v3-record-details"><Detail label="Raza" value={data.animal.breed || 'Sin registrar'} /><Detail label="Color" value={data.animal.color || 'Sin registrar'} /><Detail label="Sexo" value={valueLabel(data.animal.sex || 'unknown')} /><Detail label="Nacimiento / edad" value={data.animal.birth_date ? `${data.animal.birth_date} · ${age} años` : 'Sin registrar'} /><Detail label="Estado vital" value={valueLabel(data.animal.lifecycle_status || data.animal.status)} /><Detail label="Mediciones" value={data.measurements.length ? `${data.measurements.length} registros fechados` : 'Sin mediciones'} /></dl></Panel>{data.pending.some(c => c.action === 'health_record') && <div className="notice notice-warning"><FileHeart size={19} /><span>Hay hechos sanitarios reportados pendientes. Revisa las dosis y los resguardos provisionales antes de disponer de leche o carne.</span></div>}<Panel><PanelTitle title="Historial sanitario" subtitle="Corregir o anular conserva el registro original y agrega una entrada." action={<button className="button primary small" onClick={() => setComposer({ action: 'health_record' })}><Plus size={16} />{worker ? 'Reportar administración' : 'Registrar evento'}</button>} />{data.health_events.length ? <div className="v3-clinical-list">{data.health_events.map(event => <article key={event.id}><div className="v3-change-header"><div><strong>{healthLabels[event.event_type] ?? event.event_type}</strong><small>{date(event.occurred_at || event.created_at)} · {operationLabels[event.operation ?? 'record'] ?? event.operation}{event.author_name && ` · ${event.author_name}`}{event.effective === false ? ' · Histórico sustituido o anulado' : ''}</small></div>{event.effective !== false && event.operation !== 'void' && (!worker || (event.recorded_by === actorId && ['vaccination', 'antibiotic'].includes(event.event_type))) && <div className="v3-inline-actions"><button className="text-button" onClick={() => setComposer({ action: 'health_record', operation: 'correct', targetEvent: event })}>Corregir</button><button className="text-button" onClick={() => setComposer({ action: 'health_record', operation: 'void', targetEvent: event })}>Anular</button></div>}</div><p>{event.description}</p>{event.diagnosis && <p><strong>{event.event_type === 'death' ? 'Causa de muerte:' : 'Diagnóstico:'}</strong> {event.diagnosis}</p>}{event.target_event_id && <small>Relacionado con el registro {event.target_event_id}</small>}{data.treatments.filter(t => t.health_event_id === event.id).map(t => <div className="v3-treatment" key={t.id}><strong>{t.product_name}</strong><span>{t.dose_value} {t.dose_unit} · {t.route} · {date(t.administered_at)}</span><small>Resguardo carne: {t.withdrawal_meat_until || 'Sin informar'} · leche: {t.withdrawal_milk_until || 'Sin informar'}</small></div>)}</article>)}</div> : <Empty title="Sin eventos sanitarios" description="Las vacunas, antibióticos, patologías y controles se registran aquí." />}</Panel><Panel><PanelTitle title="Próximas atenciones" subtitle="Una atención planificada no acredita la administración de un producto." action={!worker && <button className="button secondary small" onClick={() => setComposer({ action: 'health_schedule' })}><CalendarDays size={16} />Planificar atención</button>} />{effectiveSchedules.length ? <div className="v3-clinical-list">{effectiveSchedules.map(s => <article key={s.id}><div className="v3-change-header"><div><strong>{healthLabels[s.kind] ?? (s.kind === 'checkup' ? 'Control' : s.kind)}</strong><small>{date(s.due_at)}</small></div>{!worker && <div className="v3-inline-actions"><button className="text-button" onClick={() => setComposer({ action: 'health_schedule', operation: 'replace', targetSchedule: s })}>Reprogramar</button><button className="text-button" onClick={() => setComposer({ action: 'health_schedule', operation: 'complete', targetSchedule: s })}>Completar</button><button className="text-button" onClick={() => setComposer({ action: 'health_schedule', operation: 'cancel', targetSchedule: s })}>Cancelar</button></div>}</div><p>{s.description}</p></article>)}</div> : <Empty title="Sin atenciones pendientes" description="Planifica la siguiente vacuna, antibiótico o control." />}{data.schedules.length > effectiveSchedules.length && <details className="v3-history"><summary>Ver historial de agenda ({data.schedules.length})</summary><ol className="timeline">{data.schedules.map(s => <li key={s.id}><strong>{operationLabels[s.operation ?? 'plan']} · {s.description}</strong><small>{date(s.due_at)}</small></li>)}</ol></details>}</Panel><div className="v3-card-grid"><Panel><PanelTitle title="Peso y altura" subtitle="Mediciones registradas con fecha" />{data.measurements.length ? <div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Peso</th><th>Altura</th></tr></thead><tbody>{data.measurements.map(m => <tr key={m.id}><td>{date(m.measured_at || m.observed_at)}</td><td>{m.weight_kg != null ? `${m.weight_kg} kg` : 'Sin medir'}</td><td>{m.height_cm != null ? `${m.height_cm} cm` : 'Sin medir'}</td></tr>)}</tbody></table></div> : <Empty title="Sin mediciones" />}</Panel><Panel><PanelTitle title="Reportes de terreno" />{data.reports.length ? <div className="v3-clinical-list">{data.reports.map(r => <article key={r.id}><p>{r.description}</p><small>{date(r.reported_at || r.occurred_at || r.created_at)}</small></article>)}</div> : <Empty title="Sin reportes" />}</Panel></div>{data.pending.length > 0 && <Panel><PanelTitle title="Propuestas pendientes del bovino" /><div className="v3-changes">{data.pending.map(c => <article key={c.id}><strong>{changeLabels[c.action] ?? c.action}</strong><ChangePayload change={c} /></article>)}</div></Panel>}</>}{composer && <ChangeForm key={`${composer.action}-${composer.operation}-${composer.targetEvent?.id}-${composer.targetSchedule?.id}`} initial={composer} record={data ?? undefined} animalId={animalId} worker={worker} onClose={() => setComposer(null)} onSaved={result => { setComposer(null); record.reload(); notify(result.status === 'pending' ? 'Propuesta sanitaria enviada al dueño.' : 'Cambio guardado con autoría e historial.'); }} />}</>;
+  if (canDraft && showDrafts) return <DraftsPage notify={notify} />;
+  return <><PageTitle eyebrow={worker ? 'CONSULTA Y REPORTES' : 'CONTROL VETERINARIO'} title="Fichas y agenda sanitaria" description={!canRecord ? 'Consulta las fichas técnicas, el historial sanitario y las próximas atenciones.' : worker ? 'Consulta el historial y reporta hechos para revisión del dueño.' : 'Gestiona fichas técnicas, tratamientos y próximas atenciones con historia trazable.'}
+    actions={<>{data && <a className="button secondary" href={`#reports?animal=${encodeURIComponent(animalId)}`}>Reportes del bovino</a>}{canDraft && <a className="button secondary" href="#health?drafts"><ClipboardList size={16} />Mis borradores</a>}</>} />{replica && !canRecord && <FieldOnlyNotice />}<Panel className="v3-record-selector"><div className="list-toolbar"><label>Buscar animal<input placeholder="Nombre o DIIO" value={search} onChange={e => setSearch(e.target.value)} /></label><label>Bovino<select value={animalId} onChange={e => setAnimalId(e.target.value)}><option value="">Selecciona un bovino</option>{data && !animals.data?.items.some(a => a.id === animalId) && <option value={animalId}>{data.animal.name} · {data.animal.diio}</option>}{animals.data?.items.map(a => <option key={a.id} value={a.id}>{a.name || 'Sin nombre'} · {a.diio}</option>)}</select></label><button className="button secondary" disabled={!animalId} onClick={record.reload}><RefreshCw size={16} />Actualizar ficha</button></div><ErrorNotice error={animals.error} retry={animals.reload} /></Panel><ErrorNotice error={record.error} retry={record.reload} />{record.loading && animalId && <Loading label="Consultando ficha completa…" />}{!animalId && !animals.loading && <Panel><Empty title="Selecciona un animal" description="El historial clínico y las próximas atenciones aparecerán aquí." /></Panel>}{data && <><Panel><PanelTitle title={`${data.animal.name || 'Bovino'} · DIIO ${data.animal.diio}`} subtitle="Identificación y descripción técnica" action={canEditProfile && <button className="button secondary small" onClick={() => setComposer({ action: 'animal_profile' })}><Pencil size={15} />Editar ficha técnica</button>} /><dl className="details-grid v3-record-details"><Detail label="Raza" value={data.animal.breed || 'Sin registrar'} /><Detail label="Color" value={data.animal.color || 'Sin registrar'} /><Detail label="Sexo" value={valueLabel(data.animal.sex || 'unknown')} /><Detail label="Nacimiento / edad" value={data.animal.birth_date ? `${data.animal.birth_date} · ${age} años` : 'Sin registrar'} /><Detail label="Estado vital" value={valueLabel(data.animal.lifecycle_status || data.animal.status)} /><Detail label="Mediciones" value={data.measurements.length ? `${data.measurements.length} registros fechados` : 'Sin mediciones'} /></dl></Panel>{data.pending.some(c => c.action === 'health_record') && <div className="notice notice-warning"><FileHeart size={19} /><span>Hay hechos sanitarios reportados pendientes. Revisa las dosis y los resguardos provisionales antes de disponer de leche o carne.</span></div>}
+      <SectionTabs label="Registros del bovino" active={section} onChange={setSection} sections={[
+        { id: 'history', label: 'Historial sanitario', content: <Panel><PanelTitle title="Historial sanitario" subtitle="Corregir o anular conserva el registro original y agrega una entrada." action={canRecord && <button className="button primary small" onClick={() => setComposer({ action: 'health_record' })}><Plus size={16} />{worker ? 'Reportar administración' : 'Registrar evento'}</button>} />{data.health_events.length ? <div className="v3-clinical-list" role="region" aria-label="Eventos sanitarios" tabIndex={0}>{data.health_events.map(event => <article key={event.id}><div className="v3-change-header"><div><strong>{healthLabels[event.event_type] ?? event.event_type}</strong><small>{date(event.occurred_at || event.created_at)} · {operationLabels[event.operation ?? 'record'] ?? event.operation}{event.author_name && ` · ${event.author_name}`}{event.effective === false ? ' · Histórico sustituido o anulado' : ''}</small></div>{canRecord && event.effective !== false && event.operation !== 'void' && (!worker || (event.recorded_by === actorId && ['vaccination', 'antibiotic'].includes(event.event_type))) && <div className="v3-inline-actions"><button className="text-button" onClick={() => setComposer({ action: 'health_record', operation: 'correct', targetEvent: event })}>Corregir</button><button className="text-button" onClick={() => setComposer({ action: 'health_record', operation: 'void', targetEvent: event })}>Anular</button></div>}</div><p>{event.description}</p>{event.diagnosis && <p><strong>{event.event_type === 'death' ? 'Causa de muerte:' : 'Diagnóstico:'}</strong> {event.diagnosis}</p>}{event.target_event_id && <small>Relacionado con el registro {event.target_event_id}</small>}{data.treatments.filter(t => t.health_event_id === event.id).map(t => <div className="v3-treatment" key={t.id}><strong>{t.product_name}</strong><span>{t.dose_value} {t.dose_unit} · {t.route} · {date(t.administered_at)}</span><small>Resguardo carne: {t.withdrawal_meat_until || 'Sin informar'} · leche: {t.withdrawal_milk_until || 'Sin informar'}</small></div>)}</article>)}</div> : <Empty title="Sin eventos sanitarios" description="Las vacunas, antibióticos, patologías y controles se registran aquí." />}</Panel> },
+        { id: 'schedule', label: 'Agenda', content: <Panel><PanelTitle title="Próximas atenciones" subtitle="Una atención planificada no acredita la administración de un producto." action={canPlan && <button className="button secondary small" onClick={() => setComposer({ action: 'health_schedule' })}><CalendarDays size={16} />Planificar atención</button>} />{effectiveSchedules.length ? <div className="v3-clinical-list" role="region" aria-label="Agenda sanitaria" tabIndex={0}>{effectiveSchedules.map(s => <article key={s.id}><div className="v3-change-header"><div><strong>{healthLabels[s.kind] ?? (s.kind === 'checkup' ? 'Control' : s.kind)}</strong><small>{date(s.due_at)}</small></div>{canPlan && <div className="v3-inline-actions"><button className="text-button" onClick={() => setComposer({ action: 'health_schedule', operation: 'replace', targetSchedule: s })}>Reprogramar</button><button className="text-button" onClick={() => setComposer({ action: 'health_schedule', operation: 'complete', targetSchedule: s })}>Completar</button><button className="text-button" onClick={() => setComposer({ action: 'health_schedule', operation: 'cancel', targetSchedule: s })}>Cancelar</button></div>}</div><p>{s.description}</p></article>)}</div> : <Empty title="Sin atenciones pendientes" description="Planifica la siguiente vacuna, antibiótico o control." />}{data.schedules.length > effectiveSchedules.length && <details className="v3-history"><summary>Ver historial de agenda ({data.schedules.length})</summary><ol className="timeline">{data.schedules.map(s => <li key={s.id}><strong>{operationLabels[s.operation ?? 'plan']} · {s.description}</strong><small>{date(s.due_at)}</small></li>)}</ol></details>}</Panel> },
+        { id: 'extras', label: 'Mediciones y reportes', content: <div className="v3-card-grid health-record-extras"><Panel><PanelTitle title="Peso y altura" subtitle="Mediciones registradas con fecha" />{data.measurements.length ? <ScrollRegion label="Mediciones de peso y altura"><table><thead><tr><th>Fecha</th><th>Peso</th><th>Altura</th></tr></thead><tbody>{data.measurements.map(m => <tr key={m.id}><td>{date(m.measured_at || m.observed_at)}</td><td>{m.weight_kg != null ? `${m.weight_kg} kg` : 'Sin medir'}</td><td>{m.height_cm != null ? `${m.height_cm} cm` : 'Sin medir'}</td></tr>)}</tbody></table></ScrollRegion> : <Empty title="Sin mediciones" />}</Panel><Panel><PanelTitle title="Reportes de terreno" />{data.reports.length ? <div className="v3-clinical-list">{data.reports.map(r => <article key={r.id}><p>{r.description}</p><small>{date(r.reported_at || r.occurred_at || r.created_at)}</small></article>)}</div> : <Empty title="Sin reportes" />}</Panel></div> },
+      ]} />
+      {data.pending.length > 0 && <Panel><PanelTitle title="Propuestas pendientes del bovino" /><div className="v3-changes">{data.pending.map(c => <article key={c.id}><strong>{changeLabels[c.action] ?? c.action}</strong><ChangePayload change={c} /></article>)}</div></Panel>}</>}{composer && <ChangeForm key={`${composer.action}-${composer.operation}-${composer.targetEvent?.id}-${composer.targetSchedule?.id}`} initial={composer} record={data ?? undefined} animalId={animalId} worker={worker} notify={notify} onClose={() => setComposer(null)} onSaved={result => { setComposer(null); record.reload(); notify(result.status === 'pending' ? 'Propuesta sanitaria enviada al dueño.' : 'Cambio guardado con autoría e historial.'); }} />}</>;
 }
 
 type ProductPolicy = { required: boolean; routes: string[] | null };
@@ -141,30 +258,56 @@ function newTreatment(treatment?: Treatment, eventType?: string): TreatmentDraft
     withdrawal_basis: treatment?.withdrawal_basis ?? '',
   };
 }
-export function ChangeForm({ worker = false, initial, record, animalId: selectedAnimal = '', onClose, onSaved }: { worker?: boolean; initial?: Composer; record?: AnimalRecord; animalId?: string; onClose: () => void; onSaved: (result: Change) => void }) {
-  const [action, setAction] = useState(initial?.action ?? 'animal_report'); const [animalId, setAnimalId] = useState(selectedAnimal); const [deviceId, setDeviceId] = useState(''); const [search, setSearch] = useState('');
-  const animals = useData<List<Animal>>(!selectedAnimal ? `/animals${query({ limit: '100', q: search })}` : null); const devices = useData<List<Device>>(action === 'battery_replacement' ? '/devices' : null);
+export function ChangeForm({ worker = false, initial, record, animalId: selectedAnimal = '', draft, notify, onClose, onSaved, onDraftChange }: {
+  worker?: boolean; initial?: Composer; record?: AnimalRecord; animalId?: string; draft?: ChangeDraft; notify: Notify;
+  onClose: () => void; onSaved?: (result: Change) => void; onDraftChange?: () => void;
+}) {
+  const { replica, canWrite } = useMirror();
+  const actions = (worker ? ['animal_report', 'animal_status', 'health_record', 'battery_replacement'] : ['animal_profile', 'health_record', 'health_schedule', 'animal_status', 'animal_report', 'battery_replacement'])
+    .filter(action => canWrite(changeFeature(action)));
+  const [action, setAction] = useState(draft?.action ?? initial?.action ?? (actions.includes('animal_report') ? 'animal_report' : actions[0]));
+  const [animalId, setAnimalId] = useState(draft?.animal_id ?? selectedAnimal); const [deviceId, setDeviceId] = useState(''); const [search, setSearch] = useState('');
+  const animals = useData<List<Animal>>(!initial && !draft ? `/animals${query({ limit: '100', q: search })}` : null); const devices = useData<List<Device>>(action === 'battery_replacement' ? '/devices' : null);
   const selectedRecord = useData<AnimalRecord>(!record && animalId ? `/v3/animals/${animalId}/record` : null);
   const effectiveRecord = record ?? selectedRecord.data;
-  const operation = initial?.operation ?? (action === 'health_schedule' ? 'plan' : 'record');
-  const [description, setDescription] = useState(initial?.targetEvent?.description ?? initial?.targetSchedule?.description ?? ''); const [eventType, setEventType] = useState(initial?.targetEvent?.event_type ?? 'vaccination'); const [diagnosis, setDiagnosis] = useState(initial?.targetEvent?.diagnosis ?? ''); const [occurred, setOccurred] = useState(localTime(initial?.targetEvent?.occurred_at));
-  const [status, setStatus] = useState('active'); const [breed, setBreed] = useState(record?.animal.breed ?? ''); const [color, setColor] = useState(record?.animal.color ?? ''); const [sex, setSex] = useState(record?.animal.sex ?? 'unknown'); const [birth, setBirth] = useState(record?.animal.birth_date ?? ''); const [weight, setWeight] = useState(''); const [height, setHeight] = useState('');
-  const [battery, setBattery] = useState(''); const [kind, setKind] = useState(initial?.targetSchedule?.kind ?? 'vaccination'); const [due, setDue] = useState(localTime(initial?.targetSchedule?.due_at)); const [completedEvent, setCompletedEvent] = useState('');
+  const draftPayload = draft?.payload ?? {};
+  const draftString = (key: string, fallback = '') => key in draftPayload ? String(draftPayload[key] ?? '') : fallback;
+  const draftTime = (key: string, fallback?: string) => key in draftPayload ? (draftPayload[key] ? localTime(draftString(key)) : '') : localTime(fallback);
+  const operation = draftString('operation', initial?.operation ?? (action === 'health_schedule' ? 'plan' : 'record'));
+  const [description, setDescription] = useState(draftString('description', initial?.targetEvent?.description ?? initial?.targetSchedule?.description));
+  const [eventType, setEventType] = useState(draftString('event_type', initial?.targetEvent?.event_type ?? 'vaccination'));
+  const [diagnosis, setDiagnosis] = useState(draftString('diagnosis', initial?.targetEvent?.diagnosis ?? ''));
+  const [occurred, setOccurred] = useState(() => draftTime('occurred_at', initial?.targetEvent?.occurred_at));
+  const [status, setStatus] = useState('active'); const [breed, setBreed] = useState(draftString('breed', record?.animal.breed)); const [color, setColor] = useState(draftString('color', record?.animal.color)); const [sex, setSex] = useState(draftString('sex', record?.animal.sex ?? 'unknown')); const [birth, setBirth] = useState(draftString('birth_date', record?.animal.birth_date ?? '')); const [weight, setWeight] = useState(draftString('weight_kg')); const [height, setHeight] = useState(draftString('height_cm'));
+  const [battery, setBattery] = useState(''); const [kind, setKind] = useState(draftString('kind', initial?.targetSchedule?.kind ?? 'vaccination'));
+  const [due, setDue] = useState(() => draftTime('due_at', initial?.targetSchedule?.due_at));
+  const [completedEvent, setCompletedEvent] = useState(draftString('completed_event_id'));
   const [treatments, setTreatments] = useState<TreatmentDraft[]>(() => {
+    if (Array.isArray(draftPayload.treatments)) return draftPayload.treatments.map((treatment: Treatment) => ({
+      ...newTreatment(treatment, eventType), administered_at: treatment.administered_at ? localTime(treatment.administered_at) : '',
+    }));
     const target = initial?.operation === 'correct' ? initial.targetEvent : undefined;
     const source = target?.treatments ?? (target ? record?.treatments.filter(t => t.health_event_id === target.id) : undefined) ?? [];
     return source.map(treatment => newTreatment(treatment, target?.event_type));
   });
   const [confirmed, setConfirmed] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [idempotency] = useState(() => crypto.randomUUID());
-  const [profileDirty, setProfileDirty] = useState<Set<string>>(() => new Set());
+  const [draftId] = useState(() => draft?.id ?? crypto.randomUUID());
+  const [profileDirty, setProfileDirty] = useState(() => new Set(['breed', 'color', 'sex', 'birth_date'].filter(key => key in draftPayload)));
+  const canSaveDraft = !worker && canWrite('draft') && isDraftAction(action);
   const markProfile = (field: string) => setProfileDirty(prev => new Set([...prev, field]));
-  useEffect(() => { if (!effectiveRecord) return; setBreed(effectiveRecord.animal.breed ?? ''); setColor(effectiveRecord.animal.color ?? ''); setSex(effectiveRecord.animal.sex ?? 'unknown'); setBirth(effectiveRecord.animal.birth_date ?? ''); setProfileDirty(new Set()); setWeight(''); setHeight(''); }, [effectiveRecord?.animal.id]);
-  const actions = worker ? ['animal_report', 'animal_status', 'health_record', 'battery_replacement'] : ['animal_profile', 'health_record', 'health_schedule', 'animal_status', 'animal_report', 'battery_replacement'];
+  useEffect(() => {
+    if (!effectiveRecord) return;
+    if (!draft || !profileDirty.has('breed')) setBreed(effectiveRecord.animal.breed ?? '');
+    if (!draft || !profileDirty.has('color')) setColor(effectiveRecord.animal.color ?? '');
+    if (!draft || !profileDirty.has('sex')) setSex(effectiveRecord.animal.sex ?? 'unknown');
+    if (!draft || !profileDirty.has('birth_date')) setBirth(effectiveRecord.animal.birth_date ?? '');
+    if (!draft) { setProfileDirty(new Set()); setWeight(''); setHeight(''); }
+  }, [effectiveRecord?.animal.id]);
   const editingHealth = action === 'health_record' && operation !== 'void';
   const productPolicies = useData<Partial<Record<string, ProductPolicy>>>(editingHealth ? '/v3/health/product-policies' : null);
   const productPolicy = editingHealth ? productPolicies.data?.[eventType] : undefined;
   const eventFields = healthFields[eventType];
-  const historicalDetail = initial?.targetEvent?.event_type === eventType && initial.targetEvent.diagnosis;
+  const historicalDetail = (initial?.targetEvent?.event_type === eventType && initial.targetEvent.diagnosis) || (draft && diagnosis);
   const detailLabel = eventFields?.detail ?? (historicalDetail ? 'Detalle clínico (opcional)' : undefined);
   function changeEventType(nextType: string) {
     setEventType(nextType);
@@ -177,8 +320,62 @@ export function ChangeForm({ worker = false, initial, record, animalId: selected
         event.effective !== false && event.operation !== 'void' && (kind === 'checkup' || event.event_type === kind)) ?? []
     : [];
   function updateTreatment(index: number, key: keyof TreatmentDraft, value: string) { setTreatments(prev => prev.map((t, i) => i === index ? { ...t, [key]: value } : t)); }
+  function buildPayload(savingDraft: boolean): Record<string, unknown> {
+    const timestamp = (value: string) => value ? new Date(value).toISOString() : null;
+    if (action === 'animal_report') return { description };
+    if (action === 'animal_status') return { status };
+    if (action === 'battery_replacement') return { battery_id: battery || null, result: description };
+    if (action === 'animal_profile') {
+      const values: Record<string, unknown> = { breed, color, sex, birth_date: birth || null };
+      return { ...Object.fromEntries([...profileDirty].map(key => [key, values[key]])), ...(weight ? { weight_kg: Number(weight) } : {}), ...(height ? { height_cm: Number(height) } : {}) };
+    }
+    if (action === 'health_record') {
+      const target = initial?.targetEvent?.id ?? draftPayload.target_event_id;
+      return {
+        event_type: eventType, description, operation,
+        ...(target ? { target_event_id: target } : {}),
+        occurred_at: timestamp(occurred),
+        ...(!worker && editingHealth && diagnosis ? { diagnosis } : {}),
+        treatments: productPolicy || savingDraft ? treatments.map(t => ({
+          product_name: t.product_name, route: t.route, dose_unit: t.dose_unit,
+          dose_value: t.dose_value ? Number(t.dose_value) : null, administered_at: timestamp(t.administered_at),
+          withdrawal_meat_until: t.withdrawal_meat_until || null, withdrawal_milk_until: t.withdrawal_milk_until || null,
+          product_registration: t.product_registration || null, batch_number: t.batch_number || null,
+          withdrawal_basis: t.withdrawal_basis || null,
+        })) : [],
+      };
+    }
+    const target = initial?.targetSchedule?.id ?? draftPayload.target_schedule_id;
+    return { kind, description, due_at: timestamp(due), operation, ...(target ? { target_schedule_id: target } : {}), ...(operation === 'complete' ? { completed_event_id: completedEvent || null } : {}) };
+  }
+  async function saveDraft() {
+    if (!canSaveDraft || !animalId || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const payload = buildPayload(true);
+      const result = draft
+        ? await write(`/v3/drafts/${draft.id}`, { base_version: draft.version, payload }, 'PUT')
+        : await write('/v3/drafts', { id: draftId, action, animal_id: animalId, expected_version: effectiveRecord?.animal.version ?? effectiveRecord?.animal.row_version, payload });
+      onDraftChange?.();
+      onClose();
+      if (!isQueuedWrite(result)) notify('Borrador guardado. Puedes continuar desde Mis borradores.');
+    } catch (err) {
+      if (draft && err instanceof ApiError && err.status === 409) {
+        onDraftChange?.();
+        if (err.body && typeof err.body === 'object' && 'conflict_id' in err.body) {
+          onClose();
+          notify(message(err));
+          return;
+        }
+      }
+      setError(message(err));
+    } finally { setBusy(false); }
+  }
   async function submit(event: FormEvent) {
-    event.preventDefault(); setError('');
+    event.preventDefault();
+    if (draft || busy || !canWrite(changeFeature(action))) return;
+    setError('');
     if (action !== 'battery_replacement' && !effectiveRecord) { setError('Espera a que se cargue la ficha del bovino seleccionado.'); return; }
     if (editingHealth && !productPolicies.data) return;
     if (productPolicy?.required && !treatments.length) {
@@ -195,30 +392,14 @@ export function ChangeForm({ worker = false, initial, record, animalId: selected
       return;
     }
     setBusy(true);
-    let payload: Record<string, unknown> = {};
-    if (action === 'animal_report') payload = { description };
-    if (action === 'animal_status') payload = { status };
-    if (action === 'battery_replacement') payload = { battery_id: battery || null, result: description };
-    if (action === 'animal_profile') { const values: Record<string, unknown> = { breed, color, sex, birth_date: birth || null }; payload = { ...Object.fromEntries([...profileDirty].map(key => [key, values[key]])), ...(weight ? { weight_kg: Number(weight) } : {}), ...(height ? { height_cm: Number(height) } : {}) }; if (!Object.keys(payload).length) { setError('Modifica un dato de la ficha o registra una medición.'); setBusy(false); return; } }
-    if (action === 'health_record') {
-      payload = {
-        event_type: eventType, description, operation,
-        ...(initial?.targetEvent ? { target_event_id: initial.targetEvent.id } : {}),
-        occurred_at: new Date(occurred).toISOString(),
-        ...(!worker && editingHealth && diagnosis ? { diagnosis } : {}),
-        treatments: productPolicy ? treatments.map(t => ({
-          product_name: t.product_name, route: t.route, dose_unit: t.dose_unit,
-          dose_value: Number(t.dose_value), administered_at: new Date(t.administered_at).toISOString(),
-          withdrawal_meat_until: t.withdrawal_meat_until || null, withdrawal_milk_until: t.withdrawal_milk_until || null,
-          product_registration: t.product_registration || null, batch_number: t.batch_number || null,
-          withdrawal_basis: t.withdrawal_basis || null,
-        })) : [],
-      };
-    }
-    if (action === 'health_schedule') payload = { kind, description, due_at: new Date(due).toISOString(), operation, ...(initial?.targetSchedule ? { target_schedule_id: initial.targetSchedule.id } : {}), ...(operation === 'complete' ? { completed_event_id: completedEvent } : {}) };
-    try { const result = await write<Change>('/v3/changes', { action, ...(action === 'battery_replacement' ? { device_id: deviceId } : { animal_id: animalId }), ...(action !== 'battery_replacement' ? { expected_version: effectiveRecord?.animal.version ?? effectiveRecord?.animal.row_version } : {}), payload, idempotency_key: idempotency }); onSaved(result); } catch (err) { setError(message(err)); } finally { setBusy(false); }
+    try {
+      const payload = buildPayload(false);
+      if (action === 'animal_profile' && !Object.keys(payload).length) { setError('Modifica un dato de la ficha o registra una medición.'); return; }
+      const result = await write<Change | QueuedWrite>('/v3/changes', { action, ...(action === 'battery_replacement' ? { device_id: deviceId } : { animal_id: animalId }), ...(action !== 'battery_replacement' ? { expected_version: effectiveRecord?.animal.version ?? effectiveRecord?.animal.row_version } : {}), payload, idempotency_key: idempotency });
+      if (isQueuedWrite(result)) onClose(); else onSaved?.(result);
+    } catch (err) { setError(message(err)); } finally { setBusy(false); }
   }
-  return <Modal title={initial ? `${operationLabels[operation] ?? ''} · ${changeLabels[action]}` : 'Registrar cambio del predio'} onClose={onClose} wide><form className="form-body" onSubmit={submit}>{!initial && <label>Acción<select value={action} onChange={e => { setAction(e.target.value); setError(''); }} >{actions.map(a => <option key={a} value={a}>{changeLabels[a]}</option>)}</select></label>}{!selectedAnimal && action !== 'battery_replacement' && <><label>Buscar animal<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nombre o DIIO" /></label><label>Bovino<select value={animalId} onChange={e => setAnimalId(e.target.value)} required><option value="">Selecciona un bovino</option>{animals.data?.items.map(a => <option key={a.id} value={a.id}>{a.name} · {a.diio}</option>)}</select></label><ErrorNotice error={animals.error} retry={animals.reload} /></>}{action === 'animal_status' && <label>Estado vital reportado<select value={status} onChange={e => setStatus(e.target.value)}><option value="active">Activo</option><option value="missing">Extraviado</option><option value="dead">Muerto</option><option value="slaughtered">Faenado</option><option value="retired">Retirado</option></select><small>El estado de sensores y alertas se evalúa por separado.</small></label>}{action === 'animal_profile' && <><div className="form-grid"><label>Raza<input value={breed} maxLength={100} onChange={e => { setBreed(e.target.value); markProfile('breed'); }} /></label><label>Color<input value={color} maxLength={100} onChange={e => { setColor(e.target.value); markProfile('color'); }} /></label><label>Sexo<select value={sex} onChange={e => { setSex(e.target.value); markProfile('sex'); }}><option value="unknown">Sin definir</option><option value="female">Hembra</option><option value="male">Macho</option></select></label><label>Fecha de nacimiento<input type="date" value={birth} max={new Date().toISOString().slice(0, 10)} onChange={e => { setBirth(e.target.value); markProfile('birth_date'); }} /></label><label>Peso actual (kg)<input type="number" min="0.01" max="3000" step="0.01" value={weight} onChange={e => setWeight(e.target.value)} /></label><label>Altura actual (cm)<input type="number" min="0.01" max="300" step="0.01" value={height} onChange={e => setHeight(e.target.value)} /></label></div><p className="form-intro">El peso y la altura se agregan como mediciones fechadas. La edad se calcula desde el nacimiento.</p></>}{action === 'battery_replacement' && <><label>Collar intervenido<select required value={deviceId} onChange={e => setDeviceId(e.target.value)}><option value="">Selecciona un collar</option>{devices.data?.items.map(d => <option key={d.id} value={d.id}>{d.name} · {d.hardware_id}</option>)}</select></label><ErrorNotice error={devices.error} retry={devices.reload} /><label>Identificación de la batería<input value={battery} maxLength={100} onChange={e => setBattery(e.target.value)} /></label></>}{action === 'health_record' && <><div className="form-grid"><label>Tipo de evento<select value={eventType} onChange={e => changeEventType(e.target.value)} disabled={operation === 'void'}>{(worker ? ['vaccination', 'antibiotic', 'observation'] : ['examination', 'vaccination', 'antibiotic', 'pathology', 'diagnosis', 'procedure', 'injury', 'death', 'observation']).map(t => <option key={t} value={t}>{healthLabels[t] ?? ({ death: 'Muerte' } as Record<string, string>)[t] ?? t}</option>)}</select></label><label>Fecha del hecho<input type="datetime-local" required value={occurred} onChange={e => setOccurred(e.target.value)} /></label></div>{editingHealth && <ErrorNotice error={productPolicies.error} retry={productPolicies.reload} />}
+  return <Modal title={draft ? `Editar borrador · ${changeLabels[action]}` : initial ? `${operationLabels[operation] ?? ''} · ${changeLabels[action]}` : 'Registrar cambio del predio'} onClose={onClose} wide><form className="form-body" onSubmit={submit}>{draft && <p className="form-intro">{effectiveRecord ? `${effectiveRecord.animal.name || 'Bovino'} · DIIO ${effectiveRecord.animal.diio}` : 'Ficha del bovino'}</p>}{!initial && !draft && <label>Acción<select value={action} onChange={e => { setAction(e.target.value); setError(''); }} >{actions.map(a => <option key={a} value={a}>{changeLabels[a]}</option>)}</select></label>}{!selectedAnimal && !draft && action !== 'battery_replacement' && <><label>Buscar animal<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nombre o DIIO" /></label><label>Bovino<select value={animalId} onChange={e => setAnimalId(e.target.value)} required><option value="">Selecciona un bovino</option>{animals.data?.items.map(a => <option key={a.id} value={a.id}>{a.name} · {a.diio}</option>)}</select></label><ErrorNotice error={animals.error} retry={animals.reload} /></>}{action === 'animal_status' && <label>Estado vital reportado<select value={status} onChange={e => setStatus(e.target.value)}><option value="active">Activo</option><option value="missing">Extraviado</option><option value="dead">Muerto</option><option value="slaughtered">Faenado</option><option value="retired">Retirado</option></select><small>El estado de sensores y alertas se evalúa por separado.</small></label>}{action === 'animal_profile' && <><div className="form-grid"><label>Raza<input value={breed} maxLength={100} onChange={e => { setBreed(e.target.value); markProfile('breed'); }} /></label><label>Color<input value={color} maxLength={100} onChange={e => { setColor(e.target.value); markProfile('color'); }} /></label><label>Sexo<select value={sex} onChange={e => { setSex(e.target.value); markProfile('sex'); }}><option value="unknown">Sin definir</option><option value="female">Hembra</option><option value="male">Macho</option></select></label><label>Fecha de nacimiento<input type="date" value={birth} max={new Date().toISOString().slice(0, 10)} onChange={e => { setBirth(e.target.value); markProfile('birth_date'); }} /></label><label>Peso actual (kg)<input type="number" min="0.01" max="3000" step="0.01" value={weight} onChange={e => setWeight(e.target.value)} /></label><label>Altura actual (cm)<input type="number" min="0.01" max="300" step="0.01" value={height} onChange={e => setHeight(e.target.value)} /></label></div><p className="form-intro">El peso y la altura se agregan como mediciones fechadas. La edad se calcula desde el nacimiento.</p></>}{action === 'battery_replacement' && <><label>Collar intervenido<select required value={deviceId} onChange={e => setDeviceId(e.target.value)}><option value="">Selecciona un collar</option>{devices.data?.items.map(d => <option key={d.id} value={d.id}>{d.name} · {d.hardware_id}</option>)}</select></label><ErrorNotice error={devices.error} retry={devices.reload} /><label>Identificación de la batería<input value={battery} maxLength={100} onChange={e => setBattery(e.target.value)} /></label></>}{action === 'health_record' && <><div className="form-grid"><label>Tipo de evento<select value={eventType} onChange={e => changeEventType(e.target.value)} disabled={operation === 'void'}>{(worker ? ['vaccination', 'antibiotic', 'observation'] : ['examination', 'vaccination', 'antibiotic', 'pathology', 'diagnosis', 'procedure', 'injury', 'death', 'observation']).map(t => <option key={t} value={t}>{healthLabels[t] ?? ({ death: 'Muerte' } as Record<string, string>)[t] ?? t}</option>)}</select></label><label>Fecha del hecho<input type="datetime-local" required value={occurred} onChange={e => setOccurred(e.target.value)} /></label></div>{editingHealth && <ErrorNotice error={productPolicies.error} retry={productPolicies.reload} />}
             {editingHealth && productPolicies.loading && !productPolicies.data && <Loading label="Cargando opciones del registro…" />}
             {!worker && editingHealth && detailLabel && <label>{detailLabel}<textarea rows={2} value={diagnosis} maxLength={5000} onChange={e => setDiagnosis(e.target.value)} /></label>}
             {productPolicy && <section className="v3-treatments"><div className="v3-change-header"><h3>Productos administrados</h3><button type="button" className="button secondary small" disabled={treatments.length >= 20} onClick={() => setTreatments(prev => [...prev, newTreatment()])}><Plus size={14} />Agregar producto</button></div>
@@ -236,5 +417,5 @@ export function ChangeForm({ worker = false, initial, record, animalId: selected
                 <label>Fundamento del resguardo<input value={t.withdrawal_basis} onChange={e => updateTreatment(i, 'withdrawal_basis', e.target.value)} /></label>
                 <label>Administrado el<input required type="datetime-local" value={t.administered_at} onChange={e => updateTreatment(i, 'administered_at', e.target.value)} /></label><label>Resguardo carne hasta<input type="date" value={t.withdrawal_meat_until} onChange={e => updateTreatment(i, 'withdrawal_meat_until', e.target.value)} /></label><label>Resguardo leche hasta<input type="date" value={t.withdrawal_milk_until} onChange={e => updateTreatment(i, 'withdrawal_milk_until', e.target.value)} /></label></div><button type="button" className="text-button" onClick={() => setTreatments(prev => prev.filter((_, n) => n !== i))}>Quitar este producto</button></fieldset>)}</section>}</>}{action === 'health_schedule' && <><div className="form-grid"><label>Atención<select value={kind} disabled={operation === 'complete'} onChange={e => setKind(e.target.value)}><option value="vaccination">Vacuna</option><option value="antibiotic">Antibiótico</option><option value="checkup">Control</option></select></label><label>Fecha planificada<input required type="datetime-local" value={due} onChange={e => setDue(e.target.value)} /></label></div>{operation === 'complete' && <label>Evento que acredita la atención<select required value={completedEvent} onChange={e => setCompletedEvent(e.target.value)}><option value="">Selecciona el evento sanitario registrado</option>{completionEvents.map(e => <option key={e.id} value={e.id}>{healthLabels[e.event_type] ?? e.event_type} · {date(e.occurred_at)} · {e.description}</option>)}</select>
             {!completionEvents.length && <small>Registra primero un evento sanitario compatible en la ficha de este bovino.</small>}
-          </label>}</>}{['animal_report', 'battery_replacement', 'health_record', 'health_schedule'].includes(action) && <label>{operation === 'void' || operation === 'cancel' ? 'Motivo de la anulación' : action === 'battery_replacement' ? 'Resultado de la intervención' : action === 'health_record' ? eventFields?.description ?? 'Descripción del hecho' : 'Descripción del hecho o atención'}<textarea rows={3} required maxLength={['battery_replacement', 'health_schedule'].includes(action) ? 3000 : 4000} value={description} onChange={e => setDescription(e.target.value)} /></label>}<label className="checkbox-field"><input required type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />{worker ? 'Confirmo que los datos describen el hecho observado. El servidor aplicará el flujo autorizado.' : 'Revisé los datos y confirmo su aplicación directa al historial.'}</label><ErrorNotice error={error || selectedRecord.error} /><div className="form-actions"><button type="button" className="button secondary" onClick={onClose}>Cancelar</button><Submit busy={busy} disabled={editingHealth && !productPolicies.data}>{worker ? 'Enviar registro' : 'Confirmar y guardar'}</Submit></div></form></Modal>;
+          </label>}</>}{['animal_report', 'battery_replacement', 'health_record', 'health_schedule'].includes(action) && <label>{operation === 'void' || operation === 'cancel' ? 'Motivo de la anulación' : action === 'battery_replacement' ? 'Resultado de la intervención' : action === 'health_record' ? eventFields?.description ?? 'Descripción del hecho' : 'Descripción del hecho o atención'}<textarea rows={3} required maxLength={['battery_replacement', 'health_schedule'].includes(action) ? 3000 : 4000} value={description} onChange={e => setDescription(e.target.value)} /></label>}{!draft && <label className="checkbox-field"><input required type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />{replica ? 'Revisé los datos y confirmo el envío al PC del campo.' : worker ? 'Confirmo que los datos describen el hecho observado. El servidor aplicará el flujo autorizado.' : 'Revisé los datos y confirmo su aplicación directa al historial.'}</label>}<ErrorNotice error={error || selectedRecord.error} /><div className="form-actions"><button type="button" className="button secondary" onClick={onClose}>Cancelar</button>{canSaveDraft && <button type="button" className={draft ? 'button primary' : 'button secondary'} disabled={busy || !animalId} onClick={() => void saveDraft()}>{busy && draft ? 'Guardando…' : 'Guardar borrador'}</button>}{!draft && <Submit busy={busy} disabled={editingHealth && !productPolicies.data}>{replica ? 'Enviar al campo' : worker ? 'Enviar registro' : 'Confirmar y guardar'}</Submit>}</div></form></Modal>;
 }

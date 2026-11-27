@@ -2,6 +2,7 @@
 from pathlib import Path
 from sqlalchemy import text
 from .db import engine
+from .mirror_tables import mirror_tables
 from .settings import settings
 from psycopg import sql
 
@@ -26,5 +27,8 @@ def migrate():
             raw.execute("REVOKE UPDATE,DELETE ON telemetry,telemetry_receptions,event_actions,audit_log,notification_attempts,maintenance,change_requests,change_decisions,change_applications,animal_measurements,animal_reports,health_events,health_treatments,health_schedules,request_metrics,movement_status_events FROM geocattle_app")
             raw.execute("REVOKE INSERT,UPDATE,DELETE ON schema_migrations FROM geocattle_app")
             raw.execute("REVOKE UPDATE,DELETE ON gateway_bus_receipts FROM geocattle_app")
+            if settings().mirror_mode == 'replica':
+                tables = sql.SQL(', ').join(sql.Identifier(table) for table in mirror_tables())
+                raw.execute(sql.SQL('REVOKE INSERT,UPDATE,DELETE,TRUNCATE ON {} FROM geocattle_app').format(tables))
             raw.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
 if __name__ == "__main__": migrate()

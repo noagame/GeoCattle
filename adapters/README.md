@@ -1,5 +1,11 @@
 # Adaptador académico
 
+## Estación receptora
+
+Los XIAO bus_v1 reenvían LoRa a la T3 base. El adaptador del PC recibe USB, persiste en SQLite y entrega a la API local. La T3 tiene su propio búfer y entrega WiFi. El servidor de producción usa el mismo parser bus_v1 que el adaptador local. [Flujo de la T3](../firmware/README.md#base-t3-con-wifi-y-usb)
+
+## Puente académico local
+
 El receptor ESP32/XBee debe entregar una línea JSON por captura usando el contrato lógico del backend. El puente conserva el instante del nodo, sesión, secuencia e identidad del hardware; no calcula posiciones ni sustituye datos faltantes. JSON por serial es una decisión del adaptador académico, no el codec binario final de LoRaWAN.
 
 ```bash

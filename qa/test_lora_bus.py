@@ -10,7 +10,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
 
 REPO = Path(__file__).resolve().parents[1]
@@ -61,6 +61,60 @@ class BusProtocolTests(unittest.TestCase):
         self.assertEqual(checked.quality['transport']['radio_scope'], 'collar_to_first_receiver')
         self.assertEqual(checked.quality['radio']['rssi_dbm'], -53)
         self.assertEqual(json.loads(original), SAMPLE)
+
+    def test_cloud_batch_uses_usb_identity_and_reconstructs_clock(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from geocattle.db import get_db
+        from geocattle.hardware_api import capture_router
+        from geocattle.settings import settings
+
+        packet = {**SAMPLE, 'g': [None, None, -1, 0, None], 'f': 1}
+        serial_line = wire(bus(reading(packet)))
+        usb, _ = decode_many(serial_line, NOW).readings[0]
+        identity = tuple(usb[key] for key in ('hardware_id', 'session_id', 'seq'))
+        row = {'id': 'usb-receipt'}
+        receipts = {identity: row}
+        ingested = []
+
+        def saved(_db, payload, **_kwargs):
+            ingested.append(payload)
+            key = (payload.hardware_id, payload.session_id, payload.seq)
+            return receipts.setdefault(key, {'id': 'cloud-receipt'})
+
+        farm = '00000000-0000-4000-8000-000000000001'
+        app = FastAPI()
+        app.include_router(capture_router)
+        db = MagicMock()
+        app.dependency_overrides[get_db] = lambda: db
+        status = {'connected': True, 'wifi_ssid': 'qa', 'wifi_rssi_dbm': -55, 'firmware': 'qa',
+                  'buffer_capacity': 256, 'captured': 1, 'pending': 1, 'delivered': 0, 'dropped': 0,
+                  'updated_at': NOW.isoformat()}
+        entry = {'ref': 5, 'line': serial_line, 'received_at': NOW.isoformat(), 'clock': 'reconstructed'}
+        direct = wire(bus(reading({**packet, 'q': 2}, origin_gateway=0, hops=0, path=0)))
+        broken = wire(bus(reading(packet, origin_gateway=0, hops=1, path=0)))
+        path = '/api/v1/ingest/receiver-batch'
+        headers = {'X-Ingest-Key': settings().ingest_key, 'X-Farm-ID': farm}
+        with TestClient(app) as client, patch('geocattle.hardware_api.settings', return_value=SimpleNamespace(app_env='production')), \
+             patch('geocattle.hardware_api.capture_farm', return_value=farm), patch('geocattle.domain.ingest', side_effect=saved):
+            body = {'version': 1, 'status': status, 'records': [
+                entry, {**entry, 'ref': 6, 'line': direct}, {**entry, 'ref': 7, 'line': broken}]}
+            self.assertIn(client.post(path, json=body).status_code, (401, 403))
+            reply = client.post(path, json=body, headers=headers)
+            self.assertEqual(reply.status_code, 200)
+            # El collar oído directo por la T3 nube se guarda igual que en la base USB.
+            self.assertEqual(reply.json(), {'records': [{'ref': 5, 'ids': ['usb-receipt']},
+                                                        {'ref': 6, 'ids': ['cloud-receipt']},
+                                                        {'ref': 7, 'error': 422}]})
+            self.assertEqual(client.post(path, json={**body, 'records': [entry, entry]}, headers=headers).status_code, 422)
+        self.assertEqual(len(ingested), 2)
+        self.assertEqual(ingested[1].quality['transport']['origin_gateway'], 0)
+        self.assertEqual(ingested[0].observed_at, datetime.fromisoformat(usb['observed_at']))
+        self.assertTrue(ingested[0].quality['observed_at_estimated'])
+        self.assertEqual(ingested[0].quality['base_clock'], 'reconstructed')
+        self.assertIsNone(ingested[0].latitude)
+        self.assertIsNone(ingested[0].longitude)
+        db.execute.assert_called_once()
 
     def test_four_different_collars_preserve_all_readings(self):
         records = [reading({**SAMPLE, 'id': f'REAL0{i}'}) for i in range(1, 5)]

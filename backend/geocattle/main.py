@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, R
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError, TimeoutError as DatabaseTimeout
 from sqlalchemy.orm import aliased
@@ -17,6 +18,9 @@ from .db import get_db
 from .device_candidates import lock_device_identity
 from .device_inventory import create_inventory_device, delete_inventory_device, device_json, devices_json
 from .hardware_api import period as farm_day_period
+from .mirror_api import blocks_write, router as mirror_router
+from .mirror_policy import WRITE_DENIED
+from .mirror_replay import replay_for
 from .models import *
 from .report_exports import CsvDelimiter, EXPORT_LIMIT, ExportFormat, export_response
 from .schemas import *
@@ -24,8 +28,26 @@ from .security import admin_login_requires_mfa, current_user, owner, operator, s
 from .domain import ingest, append_audit, freshness, at_time, check_timeouts, clear_animal_monitoring, resolve_assignment_events, reset_pasture_monitoring, temperature_alert, low_activity_alert
 from .settings import settings
 
-app=FastAPI(title="GeoCattle API",version="0.1.0",docs_url="/api/docs",openapi_url="/api/openapi.json",redoc_url=None)
+api_docs_enabled = settings().app_env != 'production'
+app = FastAPI(
+    title='GeoCattle API', version='0.1.0',
+    docs_url='/api/docs' if api_docs_enabled else None,
+    openapi_url='/api/openapi.json' if api_docs_enabled else None,
+    redoc_url=None,
+)
+
+
+@app.middleware('http')
+async def replica_write_policy(request, call_next):
+    if blocks_write(request):
+        return JSONResponse(status_code=403, content={'detail': WRITE_DENIED})
+    return await call_next(request)
+
+
 app.add_middleware(CORSMiddleware,allow_origins=[s.strip() for s in settings().allowed_origins.split(",")],allow_credentials=True,allow_methods=["GET","POST","PATCH","PUT","DELETE"],allow_headers=["Content-Type","X-CSRF-Token","X-Operation-Token"])
+allowed_hosts = [host.strip() for host in settings().allowed_hosts.split(",") if host.strip()]
+if allowed_hosts:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts, www_redirect=False)
 api=APIRouter(prefix="/api/v1")
 login_attempts=defaultdict(deque)
 dummy_hash=hash_password(secrets.token_urlsafe(32))
@@ -59,6 +81,8 @@ async def security_headers(request,call_next):
     response.headers['X-Request-ID']=request.state.request_id
     response.headers["X-Content-Type-Options"]="nosniff"
     response.headers["Cache-Control"]="no-store"
+    if replay_for(request) is not None:
+        return response
     if getattr(app.state, 'native_local_app', False) and request.url.path.startswith(('/mapa-local/satelite/', '/mapa-local/osm/')):
         if response.status_code == 200 and request.url.path.endswith(('.webp', '.png')):
             response.headers["Cache-Control"]="public, max-age=86400"
@@ -203,17 +227,22 @@ def login(body:LoginIn,request:Request,response:Response,db=Depends(get_db, scop
     user=db.scalar(select(User).where(User.username==body.username.lower()))
     valid=verify_password(user.password_hash if user else dummy_hash,body.password)
     if not valid or not user or not user.active:raise HTTPException(401,"Credenciales inválidas")
-    if user.farm_id and db.get(Farm,user.farm_id).environment!=settings().app_env:raise HTTPException(403,"Cuenta de otro entorno")
-    from .v3_security import one,create_challenge
+    if user.farm_id:
+        home = db.get(Farm, user.farm_id)
+        if not home or home.environment != settings().visible_farm_environment:
+            raise HTTPException(403, 'Cuenta de otro entorno')
+    from .v3_security import one,create_challenge,lock_identity
     from .v3_auth import issue_session
     # Serialize issuing a session or challenge with credential resets.
     password_hash = user.password_hash
-    one(db, 'SELECT id FROM users WHERE id=:u FOR UPDATE', u=user.id)
+    lock_identity(db, user.id)
     db.refresh(user)
     if not user.active or user.password_hash != password_hash:
         raise HTTPException(401, "Credenciales inválidas")
     if user.mfa_enrollment_required or (user.role == 'admin' and admin_login_requires_mfa(request)):
         factor=one(db,"SELECT id FROM mfa_factors WHERE user_id=:u AND kind='totp' AND verified_at IS NOT NULL AND revoked_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1",u=user.id)
+        if settings().mirror_mode == 'replica' and (not factor or user.mfa_enrollment_required):
+            raise HTTPException(403, WRITE_DENIED)
         return create_challenge(db,user,'login' if factor else 'mfa_setup',setup=not bool(factor),factor_id=factor['id'] if factor else None)
     attempts.clear()
     return issue_session(db,user,response)
@@ -468,7 +497,7 @@ def config(device_id:UUID,body:ConfigIn,user=Depends(owner),db=Depends(get_db, s
 def settings_response(r,user):
     config=settings()
     return {**settings_json(r),"capabilities":{
-        "can_edit":bool(user.farm_id and user.role in ("owner","admin")),
+        "can_edit":bool(config.mirror_mode != 'replica' and user.farm_id and user.role in ("owner","admin")),
         "environment":config.app_env,
         "preventive_rules_validated":config.preventive_rules_validated,
         "preventive_rules_allowed":config.preventive_rules_allowed,
@@ -526,11 +555,17 @@ def audit(limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0),user=Depends
 @api.get("/notifications")
 def notifications(user=Depends(current_user),db=Depends(get_db, scope="function")):
     rows=db.scalars(select(Notification).join(Event).where(Event.farm_id==user.farm_id).order_by(Notification.created_at.desc()).limit(500)).all()
-    return {"items":[{"id":n.id,"event_id":n.event_id,"channel":n.channel,"status":n.status,"created_at":n.created_at,"attempts":[{k:getattr(a,k) for k in ["attempt","at","status","provider_id","error"]} for a in db.scalars(select(NotificationAttempt).where(NotificationAttempt.notification_id==n.id).order_by(NotificationAttempt.attempt)).all()]} for n in rows],"total":db.scalar(select(func.count()).select_from(Notification).join(Event).where(Event.farm_id==user.farm_id))}
+    read_ids = set()
+    if rows and settings().mirror_mode == 'replica':
+        read_ids = set(db.scalars(text("SELECT notification_id FROM mirror_notification_reads WHERE user_id=:u AND notification_id=ANY(:ids)"),
+                                  {'u': user.id, 'ids': [notice.id for notice in rows]}))
+    return {"items":[{"id":n.id,"event_id":n.event_id,"channel":n.channel,"status":'read' if n.id in read_ids else n.status,"created_at":n.created_at,"attempts":[{k:getattr(a,k) for k in ["attempt","at","status","provider_id","error"]} for a in db.scalars(select(NotificationAttempt).where(NotificationAttempt.notification_id==n.id).order_by(NotificationAttempt.attempt)).all()]} for n in rows],"total":db.scalar(select(func.count()).select_from(Notification).join(Event).where(Event.farm_id==user.farm_id))}
 @api.post("/telemetry",dependencies=[Depends(service_auth)],status_code=201)
 @api.post("/ingest/telemetry",dependencies=[Depends(service_auth)],status_code=201)
 def telemetry(body:TelemetryIn,db=Depends(get_db, scope="function"),
               farm_id:UUID|None=Header(default=None,alias="X-Farm-ID")):
+    if settings().app_env == 'production':
+        raise HTTPException(403, 'En producción la T3 entrega en /api/v1/ingest/receiver-batch')
     return ingest(db, body, detect_candidates=True, capture_farm_id=farm_id)
 
 @api.get("/reports/telemetry.{format}")
@@ -657,6 +692,7 @@ def patch_sector(ident:UUID,body:SectorPatch,user=Depends(owner),db=Depends(get_
 app.include_router(api)
 from .v3_auth import router as auth_v3_router
 from .v3_api import router as v3_router
+from .mirror_drafts import router as drafts_router
 from .v3_device_candidates import router as device_candidates_router
 from .v3_gateway_candidates import router as gateway_candidates_router
 from .v3_operation_auth import router as operation_auth_router
@@ -665,11 +701,14 @@ app.include_router(auth_v3_router)
 app.include_router(operation_auth_router)
 app.include_router(account_auth_router)
 app.include_router(v3_router)
+app.include_router(mirror_router)
+app.include_router(drafts_router)
 app.include_router(device_candidates_router)
 app.include_router(gateway_candidates_router)
 
-from .hardware_api import router as hardware_router
+from .hardware_api import capture_router, router as hardware_router
 app.include_router(hardware_router)
+app.include_router(capture_router)
 from .v3_animal_reports import router as animal_reports_router
 app.include_router(animal_reports_router)
 from .v3_owner_exports import router as owner_exports_router

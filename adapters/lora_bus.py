@@ -66,7 +66,7 @@ def _transport(value):
             'hops': hops, 'path': path}
 
 
-def decode_many(line, received_at, radio=None, receiver='PC-COM5'):
+def decode_many(line, received_at, radio=None, receiver='PC-COM5', *, reception='pc'):
     """Decode individual legacy frames or a bus of at most four readings.
 
     A malformed outer envelope rejects the complete line. Individual malformed
@@ -112,13 +112,13 @@ def decode_many(line, received_at, radio=None, receiver='PC-COM5'):
                                   allow_nan=False, separators=(',', ':'))
             payload, canonical_wire = decode_json(original, estimated_at, receiver=receiver)
             payload['quality'].update(
-                time_basis='pc_reception_minus_gateway_delay',
+                time_basis=f'{reception}_reception_minus_gateway_delay',
                 observed_at_estimated=True,
                 capture_received_at=received_at.isoformat(),
                 transport={**transport, 'estimated': True,
                            'bus_version': 1, 'batch': message['batch'],
                            'base_receiver': message['receiver'],
-                           'pc_received_at': received_at.isoformat(),
+                           f'{reception}_received_at': received_at.isoformat(),
                            'radio_scope': 'collar_to_first_receiver'},
             )
             readings.append((payload, canonical_wire))

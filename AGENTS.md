@@ -1,5 +1,7 @@
 # GeoCattle
 
+> **¿Vas a desplegar o administrar el servidor espejo (Debian) a partir de un paquete `geocattle-*.tar.gz`?** Sigue [docs/DESPLIEGUE_SERVIDOR_ESPEJO.md](docs/DESPLIEGUE_SERVIDOR_ESPEJO.md) y sus reglas: no edites código ni Compose, no crees cuentas en el servidor, no borres volúmenes y deja que el dueño del PC escriba los secretos. El resto de este archivo es para desarrollar GeoCattle.
+
 GeoCattle supervisa ganado por predio. Integra gestión bovina y sanitaria, mapas y geocercas, telemetría de collares, alertas y captura LoRa. Usa FastAPI con Python 3.11+, PostgreSQL/PostGIS y React con TypeScript, Vite y Leaflet. CI usa Python 3.12 y Node.js 22.
 
 ## Dónde trabajar
@@ -25,7 +27,9 @@ GeoCattle supervisa ganado por predio. Integra gestión bovina y sanitaria, mapa
 ## Arranque y verificación
 
 - **Simulación con Docker**, desde la raíz: `py -3 scripts/docker_project.py start` en Windows o `python3 scripts/docker_project.py start` en Linux. La web usa el puerto `8080` por defecto. Para entorno físico y prototipo Windows, consulta las configuraciones y los pasos del [README](README.md) y de [Desarrollo local](docs/DESARROLLO_LOCAL.md).
+- **Producción en Debian 12 o 13**, usa `docker_project.py --environment production --profile cloudflare` con la acción y el archivo privado del despliegue. La web y API se publican por Cloudflare sin puertos en el host. La T3 base entrega por USB al registro local y una segunda T3 (`GeoCattle_Nube_T3`) escucha los mismos lotes, hace de raíz de respaldo si la base está apagada y los entrega por WiFi a producción. Con `--profile mirror` el servidor es un espejo del PC del campo (`MIRROR_MODE`), que sigue como sistema principal y sin T3 nube. [Despliegue en Debian](docs/DESPLIEGUE_DEBIAN_CLOUDFLARE.md) · [Modo espejo](docs/planificacion/PLAN_MODO_ESPEJO.md)
 - Compose aplica topes de CPU y memoria y rota logs por servicio. El arranque base usa PostgreSQL/PostGIS, API, worker y web. Los perfiles explícitos habilitan servicios auxiliares. La generación OSM corre bajo demanda, fuera del arranque. [Recursos de Docker Desktop y WSL2](docs/DESARROLLO_LOCAL.md#recursos-de-docker-desktop-y-wsl2)
+- En Docker de desarrollo, `compose.usb.yaml` monta el estado USB para la API y el worker. El worker lo publica en modo `field` para el predio de captura. [Estado USB en modo espejo](docs/CONTRATO_API.md#estado-usb-en-modo-espejo)
 - **Frontend**, desde `frontend/`: `npm ci`, `npm test` y `npm run build`. El build incluye la comprobación de TypeScript.
 - **Reglas del backend**, desde `backend/`: `uv sync --extra test` y `uv run pytest tests/test_rules.py -q`.
 - **Integración del backend**, desde la raíz: `py -3 scripts/local_backend.py test --env-file RUTA_QA` en Windows o `python3 scripts/local_backend.py test --env-file RUTA_QA` en Linux. Usa una configuración de simulación que apunte a PostgreSQL/PostGIS de QA previamente migrado. Si ejecutas pytest directamente, apunta `TEST_DATABASE_URL` y `DATABASE_URL` a la misma base aislada. `qa/test_hardware_api.py` requiere además `GEOCATTLE_TEST_DATABASE=1` y fixtures preparados. [Verificación](docs/VERIFICACION.md)

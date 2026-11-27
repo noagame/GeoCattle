@@ -9,6 +9,7 @@ Este directorio contiene el paquete FastAPI, el contenedor, las dependencias y p
 - Revisa qué flujos consumen cada archivo de dependencias al cambiar una versión. CI instala `requirements.lock` y el desarrollo con uv usa `uv.lock`.
 - XlsxWriter genera las exportaciones en ejecución. openpyxl pertenece al extra `test` y al target Docker `test`, donde comprueba los archivos en las pruebas de integración.
 - Los cambios en esquema se coordinan con [database](../database/AGENTS.md) y los cambios de arranque con [scripts](../scripts/AGENTS.md).
+- La imagen incluye los adaptadores para compartir el parser bus_v1 con el endpoint de lotes HTTPS de la T3.
 
 ## Verificación
 

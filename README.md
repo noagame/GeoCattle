@@ -10,7 +10,7 @@ Ejecuta los comandos desde la raíz del repositorio. [Repositorio GeoCattle](htt
 
 Con la instalación ya preparada, abre [`Abrir-GeoCattle.cmd`](Abrir-GeoCattle.cmd). El lanzador inicia PostgreSQL/PostGIS, aplica las migraciones pendientes, levanta la API y el proceso de alertas, y abre [GeoCattle en localhost:8084](http://localhost:8084/). El acceso inicial está en el archivo privado `.runtime/acceso_prototipo.json`.
 
-El prototipo nativo usa el entorno `development`, la configuración privada `.env.academic`, PostgreSQL/PostGIS local en `127.0.0.1:55434`, el entorno Python `.venv` y la interfaz compilada en `frontend/dist`. Si cambias el frontend, vuelve a compilarlo con `npm run build` dentro de `frontend` antes de abrir el lanzador. Para detener los servicios conservando los datos, ejecuta `.\Detener-Prototipo.ps1`. [Desarrollo local en Windows](docs/DESARROLLO_LOCAL.md)
+El prototipo nativo usa el entorno `development`, la configuración privada `.env.academic`, PostgreSQL/PostGIS local en `127.0.0.1:55434`, el entorno Python `.venv` y la interfaz compilada en `frontend/dist`. Si el código de `frontend` es más nuevo que `frontend/dist`, el lanzador lo recompila (con `npm` o, sin Node, con Docker Desktop y la imagen `node:22-alpine`), y si el backend cambió después de iniciar la API o el worker, los reinicia. Para detener los servicios conservando los datos, ejecuta `.\Detener-Prototipo.ps1`. [Desarrollo local en Windows](docs/DESARROLLO_LOCAL.md)
 
 ### Inicio rápido en Linux
 
@@ -313,6 +313,8 @@ docs/                   Arquitectura, operación, informes y evidencias
 ```
 
 ## Documentación
+
+- [Despliegue de producción en Debian 12 o 13 con Cloudflare Tunnel](docs/DESPLIEGUE_DEBIAN_CLOUDFLARE.md)
 
 - [Revisión Docker y portabilidad Windows/Linux](docs/REVISION_DOCKER_PORTABILIDAD.md).
 

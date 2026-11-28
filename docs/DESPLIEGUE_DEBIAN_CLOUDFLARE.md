@@ -33,7 +33,7 @@ Mantén cerrados los puertos de entrada de la aplicación en el firewall del ser
 
 ## Código y archivo privado
 
-Con Git, clona el remoto autorizado en `/srv/GeoCattle`. Sin acceso al remoto, genera un paquete en el equipo de desarrollo con `py -3 scripts/empaquetar_despliegue.py`, que lo deja en la carpeta hermana `GeoCattle-Despliegue/paquete/`. Contiene los archivos versionados y los nuevos que Git no ignora, con finales LF, y excluye `.env*`, `.runtime/`, respaldos, colas y el `config.h` de la T3. Copia el `.tar.gz` y su `.sha256` al servidor.
+Con Git, clona el remoto autorizado en `/srv/GeoCattle`. Sin acceso al remoto, genera un paquete en el equipo de desarrollo con `py -3 scripts/empaquetar_despliegue.py`, que lo deja en la carpeta hermana `GeoCattle-Despliegue/paquete/`. Por defecto contiene solo lo que usa el servidor espejo. Para esta instalación sin espejo, con su temporizador de respaldos, agrega `--completo` y el paquete llevará todos los archivos versionados y los nuevos que Git no ignora. En ambos casos usa finales LF y excluye `.env*`, `.runtime/`, respaldos, colas y el `config.h` de la T3. Copia el `.tar.gz` y su `.sha256` al servidor.
 
 ```bash
 sha256sum -c geocattle-AAAAmmddTHHMMSSZ.tar.gz.sha256

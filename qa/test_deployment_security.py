@@ -82,10 +82,33 @@ class DeploymentSecurityTests(unittest.TestCase):
             git = subprocess.CompletedProcess([], 0, stdout='\0'.join(names).encode())
             with patch.object(empaquetar_despliegue, 'ROOT', root), \
                  patch.object(empaquetar_despliegue.subprocess, 'run', return_value=git):
-                package, count, _ = empaquetar_despliegue.build(root / 'output')
+                package, count, _ = empaquetar_despliegue.build(root / 'output', full=True)
             with tarfile.open(package) as archive:
                 self.assertEqual(archive.getnames(), ['.env.example', 'app.py'])
             self.assertEqual(count, 2)
+
+    def test_server_package_keeps_only_what_the_server_uses(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            names = ('Abrir-GeoCattle.cmd', 'README.md', 'AGENTS.md', 'compose.yaml', 'backend/geocattle/main.py',
+                     'backend/tests/test_rules.py', 'backend/AGENTS.md', 'database/migrations/001_schema.sql',
+                     'docs/OPERACION.md', 'docs/DESPLIEGUE_SERVIDOR_ESPEJO.md', 'firmware/sketch.ino',
+                     'frontend/src/App.tsx', 'frontend/tests/mirror.test.mjs', 'qa/test_x.py',
+                     'scripts/mirror.py', 'scripts/prototype_windows.py')
+            for name in names:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('fixture', encoding='utf-8')
+            git = subprocess.CompletedProcess([], 0, stdout='\0'.join(names).encode())
+            with patch.object(empaquetar_despliegue, 'ROOT', root),                  patch.object(empaquetar_despliegue.subprocess, 'run', return_value=git):
+                package, _, _ = empaquetar_despliegue.build(root / 'output')
+            with tarfile.open(package) as archive:
+                self.assertEqual(sorted(archive.getnames()), [
+                    'AGENTS.md', 'backend/geocattle/main.py', 'compose.yaml', 'database/migrations/001_schema.sql',
+                    'docs/DESPLIEGUE_SERVIDOR_ESPEJO.md', 'frontend/src/App.tsx', 'scripts/mirror.py'])
+                agents = archive.extractfile('AGENTS.md').read().decode('utf-8')
+            self.assertIn('Parte A', agents)
+            self.assertNotEqual(agents, 'fixture')
 
     def test_tracked_private_paths_abort_before_creating_package(self):
         with tempfile.TemporaryDirectory() as folder:

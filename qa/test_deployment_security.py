@@ -110,6 +110,12 @@ class DeploymentSecurityTests(unittest.TestCase):
             self.assertIn('Parte A', agents)
             self.assertNotEqual(agents, 'fixture')
 
+    def test_server_guide_passes_scripts_to_the_service_account_intact(self):
+        # sudo -i re-escapes `bash -c` arguments; a multi-line script then exits 0 without running.
+        guide = (ROOT / 'docs/DESPLIEGUE_SERVIDOR_ESPEJO.md').read_text(encoding='utf-8')
+        self.assertNotRegex(guide, r"sudo -i\S* \S+ bash -c")
+        self.assertIn("sudo -u geocattle -H bash -c '", guide)
+
     def test_tracked_private_paths_abort_before_creating_package(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder).resolve()

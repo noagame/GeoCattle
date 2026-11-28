@@ -156,7 +156,7 @@ sudo sshd -T -C user=geocattle,host=localhost,addr=127.0.0.1 \
 Crea el túnel y su nombre público con HTTP `web:80` como origen. Deja solo el token, en una línea, en `~geocattle/.geocattle-tunnel-token` (propietario `geocattle`, permisos `600`). A4 lo incorporará a `.env.pilot` y retirará esa copia temporal. Con un gestor de secretos puedes provisionar el archivo directamente. Si copias el token desde el panel, este comando permite pegarlo sin eco en una consola privada.
 
 ```bash
-sudo -iu geocattle bash -c '
+cd / && sudo -u geocattle -H bash -c '
   umask 077
   IFS= read -rsp "Token de Cloudflare: " token || exit 1
   printf "\n" >&2
@@ -171,11 +171,12 @@ sudo -iu geocattle bash -c '
 sudo -iu geocattle bash -se <<'BASH'
 cd /tmp/geocattle-envio
 sha256sum --strict -c geocattle-*.tar.gz.sha256
+umask 022
 tar -xzf geocattle-*.tar.gz -C /srv/GeoCattle
 BASH
 ```
 
-La suma debe indicar `OK` antes de extraer. Lee `/srv/GeoCattle/AGENTS.md` para confirmar el alcance del despliegue.
+La suma debe indicar `OK` antes de extraer. La máscara `022` de este bloque permite que el usuario sin privilegios de la imagen lea el código y las migraciones. Lee `/srv/GeoCattle/AGENTS.md` para confirmar el alcance del despliegue.
 
 ### A4. Configuración y arranque
 

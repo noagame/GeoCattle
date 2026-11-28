@@ -74,7 +74,18 @@ Usa `DOMINIO` (por ejemplo `geocattle.ejemplo.cl`) y la cuenta del dueño del PC
 
 ### A1. Docker y cuenta
 
-Instala Docker Engine desde el repositorio oficial ([guía](DESPLIEGUE_DEBIAN_CLOUDFLARE.md#instalar-docker-engine-y-compose)). Crea la cuenta del dueño del PC con la llave pública **personal** que él te mandó, agrégala al grupo `docker`, revisa el reenvío TCP ([requisitos](#requisitos-del-servidor)) y crea `/srv/GeoCattle` con esa cuenta como dueña. Comprueba `docker compose version` desde la cuenta.
+Instala Docker Engine desde el repositorio oficial ([guía](DESPLIEGUE_DEBIAN_CLOUDFLARE.md#instalar-docker-engine-y-compose)). El envío trae la llave pública **personal** del dueño del PC en `llave-ssh-dueno.pub`. Copia el contenido del envío a `/tmp/geocattle-envio/` y crea la cuenta `geocattle` con esa llave:
+
+```bash
+sudo adduser --disabled-password --gecos GeoCattle geocattle
+sudo usermod -aG docker geocattle
+sudo install -d -m 700 -o geocattle -g geocattle /home/geocattle/.ssh
+sudo install -m 600 -o geocattle -g geocattle /tmp/geocattle-envio/llave-ssh-dueno.pub /home/geocattle/.ssh/authorized_keys
+sudo install -d -o geocattle -g geocattle /srv/GeoCattle
+sudo -iu geocattle docker compose version
+```
+
+Revisa el reenvío TCP de la cuenta ([requisitos](#requisitos-del-servidor)). Si ya existe una cuenta `geocattle`, agrega la llave a su `authorized_keys` sin borrar las líneas que tenga.
 
 ### A2. Cloudflare
 
@@ -83,8 +94,8 @@ Crea el túnel y el nombre público `DOMINIO` → HTTP `web:80` ([Cloudflare](#c
 ### A3. Paquete
 
 ```bash
-cd /tmp && sha256sum -c geocattle-*.tar.gz.sha256        # debe decir OK
-tar -xzf /tmp/geocattle-*.tar.gz -C /srv/GeoCattle && cd /srv/GeoCattle
+cd /tmp/geocattle-envio && sha256sum -c geocattle-*.tar.gz.sha256        # debe decir OK
+tar -xzf /tmp/geocattle-envio/geocattle-*.tar.gz -C /srv/GeoCattle && cd /srv/GeoCattle
 ```
 
 ### A4. Configuración y arranque

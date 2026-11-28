@@ -305,6 +305,27 @@ def test_remote_change_waits_for_owner_preserves_authorship_and_keeps_reads_loca
             assert one(db, 'SELECT read_at FROM notifications WHERE id=:i', i=notice['id'])['read_at'] is None
 
 
+def test_replica_reuses_change_outbox_for_same_idempotency_key(mirror):
+    with TestClient(app) as vet:
+        mirror.login(vet, 'vet')
+        payload = {'action': 'animal_profile', 'animal_id': str(mirror.animal), 'expected_version': mirror.version,
+                   'idempotency_key': str(uuid4()), 'payload': {'breed': 'QA reintento'}}
+        ident = queued(vet.post(CHANGES, json=payload))
+        item, = inbox(vet)
+        assert queued(vet.post(CHANGES, json=payload)) == ident
+        altered = vet.post(CHANGES, json={**payload, 'payload': {'breed': 'QA distinta'}})
+        assert altered.status_code == 409
+        assert inbox(vet) == [item]
+        assert vet.get(MIRROR + '/submissions').json()['total'] == 1
+        with mirror.db.begin() as db:
+            assert one(db, 'SELECT count(*) AS n FROM mirror_audit_log WHERE object_id=:i', i=ident)['n'] == 1
+        mirror.switch('field')
+        assert mirror_sync.apply_submission(item) == 'pending_owner'
+        assert mirror_sync.apply_submission(item) == 'pending_owner'
+        with mirror.db.begin() as db:
+            assert one(db, 'SELECT count(*) AS n FROM change_requests WHERE idempotency_key=:i', i=item.id)['n'] == 1
+
+
 def test_replica_totp_uses_local_counter_with_production_security(mirror, monkeypatch):
     mirror.switch('field')
     factor_id = uuid4()
@@ -403,6 +424,13 @@ def test_queued_draft_create_save_and_submit_replay_in_order(mirror):
         with mirror.db.begin() as db:
             request = one(db, 'SELECT payload,idempotency_key FROM change_requests WHERE id=:i', i=UUID(final['request_id']))
             assert request == {'payload': {'breed': 'QA revisión web'}, 'idempotency_key': UUID(ident)}
+        with TestClient(app) as owner:
+            mirror.login(owner, 'owner')
+            approved = owner.post(f"{CHANGES}/{final['request_id']}/decision", json={'decision': 'approved'})
+            assert approved.status_code == 200 and approved.json()['status'] == 'applied'
+        mirror.switch('replica')
+        received = vet.get(MIRROR + '/submissions').json()['items']
+        assert next(row for row in received if row['outbox_id'] == str(items[2].id))['status'] == 'applied'
 
 
 def test_field_cycle_refreshes_heartbeat_after_failed_fetch(mirror, monkeypatch):

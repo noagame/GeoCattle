@@ -37,7 +37,9 @@
 - `account_maintenance.py` expone comandos locales para probar SMTP y restablecer TOTP. El restablecimiento invalida todas las sesiones e impone una nueva inscripción antes de abrir la próxima sesión.
 - Cambiar o restablecer la contraseña con `v3_account.py` revoca las sesiones y consume los desafíos de autenticación y los enlaces de recuperación pendientes bajo el bloqueo de la identidad.
 - En modo espejo `mirror_policy.py` comparte la lista de escrituras entre servidor y PC. Encola las escrituras después de los controles de sesión, rol, predio y MFA aplicables a la ruta. La réplica guarda sesiones, desafíos, contadores TOTP, marcas de lectura, auditoría y bandeja en tablas locales. El entorno del origen solo gobierna la visibilidad de los predios.
+- `POST /v3/changes` en la réplica serializa los reintentos por autor y clave de idempotencia. Reutiliza el folio del mismo cuerpo y predio y devuelve `409` si la clave se presenta con otros datos.
 - `mirror_sync.py` reproduce la petición en la API del campo con el transporte privado de `mirror_replay.py`. Revalida el actor y el predio. Confirma los cambios y el resultado en una transacción por UUID. Los borradores verifican la versión y el resultado de la revisión que precede a cada envío. [Contrato](../../docs/CONTRATO_API.md#modo-espejo)
+- «Mis envíos» sigue la decisión sobre la solicitud creada por el borrador mediante `request_id` en el resultado de la revisión. Para cambios enviados directamente usa `id` del resultado.
 - El alta de soporte en la réplica se encola como `support_request` con la cuenta autenticada y sin predio. El PC valida la cuenta activa y el cuerpo, usa el UUID del envío como folio y registra el envío como `applied` al crear el caso de soporte pendiente. `MIRROR_REMOTE_CHANGES` controla este envío.
 
 ## Verificación

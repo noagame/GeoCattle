@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from .db import get_db
-from .mirror_policy import CREATE_OWNER, WRITE_DENIED, kind_enabled, owner_password_cipher, write_kind, write_target
+from .mirror_policy import CHANGES, CREATE_OWNER, WRITE_DENIED, kind_enabled, owner_password_cipher, write_kind, write_target
 from .mirror_tables import SUBSCRIPTION
 from .models import utcnow
 from .security import current_user, matches_secret_header
@@ -27,6 +27,18 @@ def blocks_write(request):
             and write_target(request.method, path) is None)
 
 
+def previous_change(db, user, path, payload):
+    key = payload['idempotency_key']
+    execute(db, 'SELECT pg_advisory_xact_lock(hashtextextended(:key,0))',
+            key=f'geocattle:mirror-change:{user.id}:{key}')
+    previous = one(db, """SELECT id,farm_id,body FROM mirror_outbox
+        WHERE actor_id=:u AND method='POST' AND path=:p AND body->>'idempotency_key'=:k
+        ORDER BY created_at,id LIMIT 1""", u=user.id, p=path, k=key)
+    if previous is not None and (previous['farm_id'] != user.farm_id or previous['body'] != payload):
+        raise HTTPException(409, 'La clave de idempotencia ya representa otra operación')
+    return previous
+
+
 def queue_write(request, db, user, body):
     config = settings()
     if config.mirror_mode != 'replica':
@@ -37,6 +49,9 @@ def queue_write(request, db, user, body):
                       veterinarian=user.role == 'veterinarian' and user.farm_id is not None)
     if kind is None or not kind_enabled(kind):
         raise HTTPException(403, WRITE_DENIED)
+    previous = previous_change(db, user, path, payload) if path == CHANGES else None
+    if previous is not None:
+        return JSONResponse(status_code=202, content={'queued': True, 'outbox_id': str(previous['id']), 'status': 'queued'})
     ident = uuid4()
     if path == CREATE_OWNER:
         # Keep the temporary password out of the durable queue and audit in clear text.
@@ -87,8 +102,9 @@ def submissions(limit: int = Query(100, ge=1, le=100), offset: int = Query(0, ge
              ELSE r.result END AS result,
         coalesce(d.created_at,r.applied_at) AS applied_at
         FROM mirror_outbox o LEFT JOIN mirror_inbox_results r ON r.outbox_id=o.id
-        LEFT JOIN change_decisions d ON r.status='pending_owner' AND r.result->>'id' ~ '^[0-9a-f-]{36}$'
-             AND d.request_id=(r.result->>'id')::uuid
+        LEFT JOIN LATERAL (SELECT CASE WHEN r.kind='draft_revision' THEN r.result->>'request_id'
+                                     ELSE r.result->>'id' END AS id) change ON r.status='pending_owner'
+        LEFT JOIN change_decisions d ON d.request_id=CASE WHEN change.id ~ '^[0-9a-f-]{36}$' THEN change.id::uuid END
         WHERE o.actor_id=:u
         ORDER BY o.created_at DESC,o.id DESC LIMIT :limit OFFSET :offset""", u=user.id, limit=limit, offset=offset)
     total = one(db, 'SELECT count(*) AS n FROM mirror_outbox WHERE actor_id=:u', u=user.id)['n']

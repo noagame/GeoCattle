@@ -279,6 +279,8 @@ def main(argv=None):
                 print('Simulacion preparada. Acceso demo y contrasena: archivo privado seleccionado.')
             elif args.owner_email:
                 run(tools + ['bootstrap', 'python', '-c', OWNER_BOOTSTRAP, args.owner_email, args.farm], env)
+            elif 'mirror' in args.profile:
+                print('Las cuentas de GeoCattle llegan del PC cuando el dueño ejecuta pc-connect.')
             elif not args.admin_email:
                 print('No se crearon cuentas. Para preparar un propietario, usa --owner-email CORREO --farm "Nombre del predio".')
             if args.owner_email or args.admin_email:
@@ -292,7 +294,7 @@ def main(argv=None):
                 print('La captura USB se inicia aparte en el anfitrion; no se cargan datos sinteticos.')
             if args.admin_email:
                 print('El administrador V3 debe inscribir TOTP para acceder.')
-            else:
+            elif 'mirror' not in args.profile:
                 print('Para aprovisionar el administrador V3 consulta la guía del entorno.')
         elif args.action == 'stop':
             run(command + ['down'], env)

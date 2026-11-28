@@ -150,6 +150,22 @@ class DockerProjectTests(unittest.TestCase):
         self.assertEqual(admin[-4:], ['-m', 'geocattle.seed_v3', '--admin-email', 'admin@example.invalid'])
         self.assertNotIn('qa-tunnel', self.output.getvalue())
 
+    def test_mirror_start_explains_that_accounts_arrive_from_the_pc(self):
+        args = ['--environment', 'production', '--profile', 'cloudflare', '--profile', 'mirror']
+        self.assertEqual(self.invoke('prepare', *args, '--domain', 'geocattle.example.invalid'), 0)
+        with (self.root / '.env.pilot').open('a', encoding='utf-8') as private:
+            private.write(f'TUNNEL_TOKEN=qa-tunnel\nMIRROR_SYNC_KEY={"x" * 40}\n')
+        authorized_keys = self.root / '.runtime/espejo/authorized_keys'
+        authorized_keys.parent.mkdir(parents=True)
+        authorized_keys.touch()
+
+        self.assertEqual(self.invoke('start', *args), 0)
+        self.assertEqual(len(self.calls()), 2)
+        output = self.output.getvalue()
+        self.assertIn('Las cuentas de GeoCattle llegan del PC', output)
+        self.assertNotIn('--owner-email', output)
+        self.assertNotIn('aprovisionar el administrador', output)
+
     def test_stop_preserves_volumes_and_does_not_seed(self):
         self.invoke('prepare')
         self.runner.reset_mock()

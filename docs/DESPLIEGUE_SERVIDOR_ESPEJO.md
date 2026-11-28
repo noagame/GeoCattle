@@ -2,10 +2,10 @@
 
 Esta guía es el procedimiento completo para instalar GeoCattle como **servidor espejo** en un Debian ajeno. Tiene dos partes:
 
-- **[Parte A](#parte-a--servidor-administrador-o-su-ia-sin-esperas)**: la hace el administrador del servidor, o su IA, completa y sin esperar a nadie. Termina con la web publicada y con los datos de acceso para el dueño del PC.
+- **[Parte A](#parte-a--servidor-administrador-o-su-ia)**. El administrador del servidor o su agente publica la web y entrega los datos de acceso al dueño del PC.
 - **[Parte B](#parte-b--conexión-con-el-pc-dueño-del-pc-con-su-acceso-ssh)**: el dueño conecta desde Windows con un solo comando y su acceso SSH personal.
 
-Si eres un agente de IA que configura el servidor: haz **solo la Parte A**, en orden, y respeta las [reglas](#reglas-que-no-se-negocian). Los comandos de las secciones de referencia están en [Despliegue en Debian](DESPLIEGUE_DEBIAN_CLOUDFLARE.md#modo-espejo-el-pc-del-campo-como-sistema-principal).
+Si administras el servidor, ejecuta solo la Parte A, en orden, y respeta las [reglas](#reglas-que-no-se-negocian).
 
 ## Qué se está desplegando
 
@@ -48,14 +48,14 @@ Internet ──► Cloudflare ──► cloudflared (contenedor) ──► web:8
 ## Requisitos del servidor
 
 - Debian 12 o 13, `amd64` (`uname -m` → `x86_64`). Para `arm64` la imagen `postgis/postgis:16-3.4` no sirve sin cambios: detente y avisa.
-- 2 GB de RAM y 5 GB de disco libres. `python3` (viene con Debian).
+- 2 GB de RAM y 5 GB de disco libres. Acceso administrativo a Debian con `sudo` o una consola de root.
 - **Docker Engine nativo** con el plugin Compose 2.24 o superior. No sirven Docker rootless, Docker Desktop ni Docker dentro de otra VM, porque la cuenta SSH debe alcanzar la IP del contenedor `172.30.248.19` desde el host.
 - Subredes Docker `172.30.248.0/28` y `172.30.248.16/28` libres (`docker network inspect` de las redes existentes).
 - Salida a internet HTTPS y TCP/UDP 7844 hacia Cloudflare. Sin puertos de entrada nuevos.
 - **Una cuenta Linux para el dueño del PC** (por ejemplo `geocattle`), con:
   - acceso por SSH con su llave personal;
   - pertenencia al grupo `docker`;
-  - reenvío TCP permitido: `AllowTcpForwarding yes` (valor por defecto) y sin `DisableForwarding`, `PermitOpen none` ni `Match` que lo anulen para esa cuenta. Revisa con `sudo sshd -T -C user=geocattle,host=x,addr=127.0.0.1 | grep -Ei 'forwarding|permitopen'`.
+  - reenvío TCP local permitido, con `AllowTcpForwarding yes` o `local`, `DisableForwarding no` y `PermitOpen any` o un permiso para `172.30.248.19:22`. Si hay reglas `Match`, verifica que se cumplan desde la dirección de origen del PC.
 - **Todos los comandos de GeoCattle se ejecutan con esa cuenta**, desde `/srv/GeoCattle`. `authorize --host-account` escribe en el `~/.ssh/authorized_keys` de quien lo ejecuta, y esa debe ser la cuenta a la que entra el PC.
 
 ### Cloudflare
@@ -66,55 +66,161 @@ Hace falta un dominio en Cloudflare y un túnel administrado desde el panel (Zer
 2. Agrega un *Public hostname*, por ejemplo `geocattle.ejemplo.cl`, con servicio **HTTP** y URL `web:80`.
 3. No instales `cloudflared` en el host: corre como contenedor del paquete.
 
-Quien administre el dominio decide quién crea el túnel. Si no eres tú, pide el token por un canal privado y que lo pegue directamente en `.env.pilot`.
+Para publicar la web se necesita acceso al dominio y al túnel. Si los gestiona otra persona, coordina con ella A2 mientras avanzas con Debian y el paquete.
 
-## Parte A · Servidor (administrador o su IA, sin esperas)
+## Parte A · Servidor (administrador o su IA)
 
-Usa `DOMINIO` (por ejemplo `geocattle.ejemplo.cl`) y la cuenta del dueño del PC (por ejemplo `geocattle`). **Todo desde el paso A3 se ejecuta como esa cuenta** (`sudo -iu geocattle`), para que después él pueda administrar `/srv/GeoCattle` y su `.env.pilot`.
+Los bloques usan Bash y la cuenta `geocattle`. Ejecútalos en el Debian del servidor. Desde A3, los comandos de GeoCattle corren como esa cuenta para que el dueño del PC pueda administrar `/srv/GeoCattle`.
+
+### A0. Abrir la entrega
+
+Si recibiste el ZIP, cópialo a `/tmp/GeoCattle-servidor-espejo.zip` en Debian y extrae su contenido en un directorio nuevo. En una consola root puedes omitir `sudo`.
+
+```bash
+sudo apt-get update
+sudo apt-get install -y unzip
+sudo mkdir -m 755 /tmp/geocattle-envio &&
+  sudo unzip -q /tmp/GeoCattle-servidor-espejo.zip -d /tmp/geocattle-envio &&
+  sudo chmod a+r /tmp/geocattle-envio/*
+```
+
+Si ya tienes los archivos extraídos, pon en `/tmp/geocattle-envio/` el TAR, su SHA-256 y `llave-ssh-dueno.pub` con permiso de lectura para `geocattle`. Usa un solo paquete por directorio.
 
 ### A1. Docker y cuenta
 
-Instala Docker Engine desde el repositorio oficial ([guía](DESPLIEGUE_DEBIAN_CLOUDFLARE.md#instalar-docker-engine-y-compose)). El envío trae la llave pública **personal** del dueño del PC en `llave-ssh-dueno.pub`. Copia el contenido del envío a `/tmp/geocattle-envio/` y crea la cuenta `geocattle` con esa llave:
+En Debian limpio, configura el repositorio oficial e instala Docker Engine y Compose. Si ya tienes Docker Engine nativo, conserva esa instalación y ejecuta solo las dos primeras órdenes del bloque. Verifica Docker y Compose al crear la cuenta. [Instalación oficial de Docker en Debian](https://docs.docker.com/engine/install/debian/)
 
 ```bash
-sudo adduser --disabled-password --gecos GeoCattle geocattle
-sudo usermod -aG docker geocattle
-sudo install -d -m 700 -o geocattle -g geocattle /home/geocattle/.ssh
-sudo install -m 600 -o geocattle -g geocattle /tmp/geocattle-envio/llave-ssh-dueno.pub /home/geocattle/.ssh/authorized_keys
-sudo install -d -o geocattle -g geocattle /srv/GeoCattle
-sudo -iu geocattle docker compose version
+sudo apt-get update
+sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl python3
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+sudo tee /etc/apt/sources.list.d/docker.sources >/dev/null <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/debian
+Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+sudo apt-get update
+sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+sudo docker info --format 'Docker {{.ServerVersion}}'
 ```
 
-Revisa el reenvío TCP de la cuenta ([requisitos](#requisitos-del-servidor)). Si ya existe una cuenta `geocattle`, agrega la llave a su `authorized_keys` sin borrar las líneas que tenga.
+Comprueba que `python3 --version` y `curl --version` funcionen. Revisa que no haya redes que se solapen con las del espejo.
+
+```bash
+sudo docker network ls -q | xargs -r sudo docker network inspect \
+  --format '{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}'
+```
+
+Usa el servicio SSH del Debian. Si administras un Debian limpio desde consola y falta el servicio, instálalo con `sudo apt-get install -y openssh-server` y actívalo con `sudo systemctl enable --now ssh`.
+
+Instala la llave pública **personal** del dueño del PC. El bloque conserva las llaves que ya estén autorizadas. El grupo `docker` da acceso administrativo al servidor. [Permisos de Docker](https://docs.docker.com/engine/install/linux-postinstall/)
+
+```bash
+if ! id geocattle >/dev/null 2>&1; then
+  sudo adduser --disabled-password --gecos GeoCattle geocattle
+fi
+sudo usermod -aG docker geocattle
+sudo install -d -o geocattle -g geocattle /srv/GeoCattle
+sudo -iu geocattle bash -se <<'BASH'
+umask 077
+install -d -m 700 "$HOME/.ssh"
+authorized="$HOME/.ssh/authorized_keys"
+key=$(cat /tmp/geocattle-envio/llave-ssh-dueno.pub)
+test -n "$key"
+touch "$authorized"
+chmod 600 "$authorized"
+if ! grep -Fxq -- "$key" "$authorized"; then
+  printf '\n%s\n' "$key" >> "$authorized"
+fi
+docker compose version
+docker info --format 'Docker {{.ServerVersion}}'
+BASH
+```
+
+Revisa la configuración efectiva de SSH. Si usas reglas `Match`, sustituye `host` y `addr` por el nombre y la IP con los que el servidor verá al PC. Consulta [Requisitos del servidor](#requisitos-del-servidor).
+
+```bash
+sudo sshd -T -C user=geocattle,host=localhost,addr=127.0.0.1 \
+  | grep -E '^(pubkeyauthentication|allowtcpforwarding|disableforwarding|permitopen|authorizedkeysfile) '
+```
 
 ### A2. Cloudflare
 
-Crea el túnel y el nombre público `DOMINIO` → HTTP `web:80` ([Cloudflare](#cloudflare)) y guarda el token para A4.
+Crea el túnel y su nombre público con HTTP `web:80` como origen. Deja solo el token, en una línea, en `~geocattle/.geocattle-tunnel-token` (propietario `geocattle`, permisos `600`). A4 lo incorporará a `.env.pilot` y retirará esa copia temporal. Con un gestor de secretos puedes provisionar el archivo directamente. Si copias el token desde el panel, este comando permite pegarlo sin eco en una consola privada.
+
+```bash
+sudo -iu geocattle bash -c '
+  umask 077
+  IFS= read -rsp "Token de Cloudflare: " token || exit 1
+  printf "\n" >&2
+  printf "%s\n" "$token" > "$HOME/.geocattle-tunnel-token"
+  chmod 600 "$HOME/.geocattle-tunnel-token"
+'
+```
 
 ### A3. Paquete
 
 ```bash
-cd /tmp/geocattle-envio && sha256sum -c geocattle-*.tar.gz.sha256        # debe decir OK
-tar -xzf /tmp/geocattle-envio/geocattle-*.tar.gz -C /srv/GeoCattle && cd /srv/GeoCattle
+sudo -iu geocattle bash -se <<'BASH'
+cd /tmp/geocattle-envio
+sha256sum --strict -c geocattle-*.tar.gz.sha256
+tar -xzf geocattle-*.tar.gz -C /srv/GeoCattle
+BASH
 ```
+
+La suma debe indicar `OK` antes de extraer. Lee `/srv/GeoCattle/AGENTS.md` para confirmar el alcance del despliegue.
 
 ### A4. Configuración y arranque
 
+Reemplaza `geocattle.ejemplo.cl` por el nombre público de A2, sin `https://`.
+
 ```bash
-python3 scripts/docker_project.py prepare --environment production --env-file .env.pilot --domain DOMINIO
+sudo -iu geocattle bash -se -- geocattle.ejemplo.cl <<'BASH'
+cd /srv/GeoCattle
+domain=$1
+python3 scripts/docker_project.py prepare --environment production --env-file .env.pilot --domain "$domain"
 python3 scripts/mirror.py server-init --skip-secrets
 chmod 600 .env.pilot
-nano .env.pilot      # en TUNNEL_TOKEN= reemplaza TOKEN_FICTICIO_DE_CLOUDFLARE por el token de A2
+python3 - <<'PY'
+from pathlib import Path
+import re
+
+config = Path(".env.pilot")
+token_file = Path.home() / ".geocattle-tunnel-token"
+lines = config.read_text(encoding="utf-8").splitlines()
+entries = [index for index, line in enumerate(lines) if line.startswith("TUNNEL_TOKEN=")]
+if len(entries) != 1:
+    raise SystemExit("Comprueba que .env.pilot tenga una sola línea TUNNEL_TOKEN=.")
+entry = entries[0]
+if token_file.exists():
+    if token_file.stat().st_mode & 0o077:
+        raise SystemExit("Aplica chmod 600 al archivo privado del token de A2.")
+    token = token_file.read_text(encoding="utf-8").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_+/=.-]+", token) or token == "TOKEN_FICTICIO_DE_CLOUDFLARE":
+        raise SystemExit("Introduce un token válido en el archivo privado de A2.")
+    lines[entry] = f"TUNNEL_TOKEN={token}"
+    config.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    token_file.unlink()
+elif lines[entry] in ("TUNNEL_TOKEN=", "TUNNEL_TOKEN=TOKEN_FICTICIO_DE_CLOUDFLARE"):
+    raise SystemExit("Falta el token de Cloudflare. Completa A2 y vuelve a ejecutar A4.")
+PY
 python3 scripts/docker_project.py start --environment production --env-file .env.pilot --profile cloudflare --profile mirror
-curl -fsS https://DOMINIO/api/v1/health
+docker compose --env-file .env.pilot \
+  -f compose.yaml -f compose.cloudflare.yaml -f compose.mirror.yaml \
+  --profile cloudflare --profile mirror ps --all
+curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 15 \
+  "https://$domain/api/v1/health"
+BASH
 ```
 
-`prepare` crea `.env.pilot` con contraseñas aleatorias y nunca reemplaza un archivo existente. `server-init --skip-secrets` genera `MIRROR_SYNC_KEY` y `.runtime/espejo/authorized_keys`. La primera construcción tarda varios minutos. Deben quedar *healthy* `database`, `api`, `worker`, `web`, `cloudflared` y `espejo-ssh`, y `migrate` termina con código 0. Para comandos `docker compose` directos:
-
-```bash
-export COMPOSE_FILE=compose.yaml:compose.cloudflare.yaml:compose.mirror.yaml COMPOSE_ENV_FILES=.env.pilot COMPOSE_PROFILES=cloudflare,mirror
-docker compose ps
-```
+`prepare` crea `.env.pilot` con valores nuevos en la primera ejecución y lo conserva al repetir A4. `server-init --skip-secrets` genera `MIRROR_SYNC_KEY` y `.runtime/espejo/authorized_keys`. La primera construcción tarda varios minutos. Comprueba que `database`, `api`, `web`, `cloudflared` y `espejo-ssh` estén *healthy*, que `worker` esté *Up* y que `migrate` haya terminado con `Exited (0)`. El endpoint público debe responder HTTP 200.
 
 ### A5. Entrega
 
@@ -122,7 +228,7 @@ La web queda publicada pero **vacía y sin cuentas**: es lo esperado. Los datos 
 
 - la cuenta SSH, la IP o nombre del servidor y el puerto SSH;
 - el dominio público;
-- la salida de `docker compose ps` y de `curl -fsS https://DOMINIO/api/v1/health`.
+- la salida de `docker compose ps --all` y la respuesta de salud de A4.
 
 Aquí termina tu parte. El dueño conectará desde su PC con la cuenta SSH entregada.
 

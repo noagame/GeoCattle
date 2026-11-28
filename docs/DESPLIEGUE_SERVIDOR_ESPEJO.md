@@ -156,7 +156,7 @@ Si falla un paso, corrige la causa indicada y repite el mismo comando. Se conser
 
 Al terminar, `pc-connect` muestra el `status` remoto. Comprueba «Suscripción: activa», un último mensaje del PC de hace pocos segundos y un pulso del campo reciente. Luego abre `https://DOMINIO` y comprueba lo siguiente.
 
-- Al entrar con una cuenta aparece «Espejo del campo · datos al … (hace N s)» y el pie dice «Conectado al servidor web».
+- Al entrar con una cuenta aparece «Datos del campo al … (hace N s)» y el pie dice «Conectado al servidor web».
 - Los mapas ofrecen OpenStreetMap y «Satélite en línea». Los mapas locales no existen en el servidor; es lo esperado.
 - El administrador entra con contraseña y TOTP. Una solicitud de soporte enviada desde la web pasa a «Aplicado» en «Mis envíos».
 - Con la captura USB del PC en marcha, **Hardware → Receptor USB** muestra en la web «Captura activa» con los mismos contadores que el PC. Esos contadores llegan en `receiver_status` y vencen 90 s después de que la captura se detiene. Si el PC tiene varios predios físicos activos, necesita `INGEST_FARM_ID` en su `.env.academic`. Los collares nuevos se aprueban en el PC; en la web solo se ven como detección pendiente.

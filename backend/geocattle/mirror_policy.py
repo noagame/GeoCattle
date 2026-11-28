@@ -15,7 +15,7 @@ DRAFTS = V3 + '/drafts'
 CREATE_OWNER = V3 + '/admin/owners'
 SUPPORT_REQUESTS = '/api/v1/auth/support-requests'
 CHANGE_ACTIONS = frozenset({'animal_profile', 'health_record', 'health_schedule'})
-WRITE_DENIED = 'Modo espejo: registra este cambio en el PC del campo'
+WRITE_DENIED = 'Este cambio se registra en el PC del campo'
 
 _LOCAL_POSTS = frozenset('/api/v1/auth/' + suffix for suffix in (
     'login', 'logout', 'mfa/verify', 'context', 'step-up',

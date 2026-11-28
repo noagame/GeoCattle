@@ -51,5 +51,5 @@ export function freshnessText(info: MirrorInfo, now: number) {
   if (!Number.isFinite(heartbeat)) return 'Campo sin conexión · esperando el primer registro';
   if (!info.field_online) return `Campo sin conexión desde ${timeWithMinutes.format(heartbeat)} · mostrando lo último recibido`;
   const elapsed = Math.max(0, Math.floor((now - heartbeat) / 1000));
-  return `Espejo del campo · datos al ${timeWithSeconds.format(heartbeat)} (hace ${elapsed} s)`;
+  return `Datos del campo al ${timeWithSeconds.format(heartbeat)} (hace ${elapsed} s)`;
 }

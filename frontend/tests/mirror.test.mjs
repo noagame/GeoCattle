@@ -65,7 +65,7 @@ test('el cliente entrega la respuesta 202 encolada y emite el aviso pendiente', 
   assert.equal(isQueuedWrite(await write('/v3/invitations', {})), false);
   assert.deepEqual(calls, [queuedMessage, supportQueuedMessage]);
 
-  const denied = 'Modo espejo: registra este cambio en el PC del campo';
+  const denied = 'Este cambio se registra en el PC del campo';
   globalThis.fetch = async () => Response.json({ detail: denied }, { status: 403 });
   await assert.rejects(write('/devices', {}), error => error instanceof ApiError && error.status === 403 && error.message === denied);
   assert.deepEqual(calls, [queuedMessage, supportQueuedMessage]);
@@ -81,8 +81,8 @@ test('Mis envíos traduce todos los estados de la bandeja', () => {
 test('el banner muestra el pulso con hora de Chile y distingue conexión y ausencia de pulso', () => {
   const info = { mode: 'replica', source_environment: 'development', field_online: true, heartbeat_at: '2026-11-26T17:32:10Z' };
   const now = Date.parse(info.heartbeat_at) + 8000;
-  assert.equal(freshnessText(info, now), 'Espejo del campo · datos al 14:32:10 (hace 8 s)');
-  assert.equal(freshnessText(info, now + 1000), 'Espejo del campo · datos al 14:32:10 (hace 9 s)');
+  assert.equal(freshnessText(info, now), 'Datos del campo al 14:32:10 (hace 8 s)');
+  assert.equal(freshnessText(info, now + 1000), 'Datos del campo al 14:32:10 (hace 9 s)');
   assert.equal(freshnessText({ ...info, field_online: false }, now), 'Campo sin conexión desde 14:32 · mostrando lo último recibido');
   assert.equal(freshnessText({ ...info, heartbeat_at: null, field_online: false }, now), 'Campo sin conexión · esperando el primer registro');
   assert.equal(freshnessText({ ...info, mode: 'field' }, now), '');

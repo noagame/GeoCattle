@@ -230,17 +230,20 @@ def alive(pid):
     return code.value == 259
 
 
-def restart_if_outdated(names):
+def restart_if_outdated(names, *, reload_configuration=False):
     """Detiene la API y el worker si el código del backend cambió después de iniciarlos."""
-    code = newest([ROOT / 'backend' / 'geocattle', ROOT / 'adapters'], '*.py')
+    updated = newest([ROOT / 'backend' / 'geocattle', ROOT / 'adapters'], '*.py')
+    if reload_configuration:
+        updated = max(updated, CONFIG.stat().st_mtime)
+    stopped = False
     for name in names:
         pidfile = ROOT / '.runtime' / f'{name}.pid'
         try:
             pid = int(pidfile.read_text())
         except (OSError, ValueError):
             continue
-        if alive(pid) and code > pidfile.stat().st_mtime:
-            print(f'{name}: hay cambios en el código; reiniciando', flush=True)
+        if alive(pid) and updated > pidfile.stat().st_mtime:
+            print(f'{name}: hay cambios pendientes; reiniciando', flush=True)
             if os.name == 'nt':
                 subprocess.run(['taskkill', '/PID', str(pid), '/T', '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             else:
@@ -250,10 +253,21 @@ def restart_if_outdated(names):
                     break
                 time.sleep(0.25)
             pidfile.unlink(missing_ok=True)
-    for _ in range(40):
-        if not listening(8084):
-            break
-        time.sleep(0.25)
+            stopped = True
+    if stopped:
+        for _ in range(40):
+            if not listening(8084):
+                break
+            time.sleep(0.25)
+
+
+def start_app(*, reload_configuration=False):
+    restart_if_outdated(('prototype-api', 'prototype-worker'), reload_configuration=reload_configuration)
+    env = environment()
+    if not listening(8084):
+        spawn('prototype-api', [sys.executable, '-m', 'uvicorn', 'geocattle.local_app:app',
+                               '--host', '127.0.0.1', '--port', '8084'], env)
+    spawn('prototype-worker', [sys.executable, '-m', 'geocattle.worker'], env)
 
 
 def main():
@@ -277,12 +291,7 @@ def main():
         provision()
     if args.action == 'start':
         ensure_frontend()
-        restart_if_outdated(('prototype-api', 'prototype-worker'))
-        env = environment()
-        if not listening(8084):
-            spawn('prototype-api', [sys.executable, '-m', 'uvicorn', 'geocattle.local_app:app',
-                                   '--host', '127.0.0.1', '--port', '8084'], env)
-        spawn('prototype-worker', [sys.executable, '-m', 'geocattle.worker'], env)
+        start_app()
     if args.action in ('capture', 'start') and not args.no_usb:
         active = False
         try:

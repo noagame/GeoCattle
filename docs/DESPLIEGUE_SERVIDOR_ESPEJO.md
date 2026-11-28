@@ -1,6 +1,11 @@
 # Desplegar el servidor espejo (guía para el administrador del servidor o su agente de IA)
 
-Esta guía es el procedimiento completo para instalar GeoCattle como **servidor espejo** en un Debian ajeno. Si eres un agente de IA que configura el servidor: síguela en orden, respeta las [reglas](#reglas-que-no-se-negocian) y detente en cada paso marcado **[ESPERA AL DUEÑO DEL PC]**. Los comandos de las secciones de referencia están en [Despliegue en Debian](DESPLIEGUE_DEBIAN_CLOUDFLARE.md#modo-espejo-el-pc-del-campo-como-sistema-principal).
+Esta guía es el procedimiento completo para instalar GeoCattle como **servidor espejo** en un Debian ajeno. Tiene dos partes:
+
+- **[Parte A](#parte-a--servidor-administrador-o-su-ia-sin-esperas)**: la hace el administrador del servidor, o su IA, completa y sin esperar a nadie. Termina con la web publicada y con los datos de acceso para el dueño del PC.
+- **[Parte B](#parte-b--conexión-con-el-pc-dueño-del-pc-con-su-acceso-ssh)**: el dueño conecta desde Windows con un solo comando y su acceso SSH personal.
+
+Si eres un agente de IA que configura el servidor: haz **solo la Parte A**, en orden, y respeta las [reglas](#reglas-que-no-se-negocian). Los comandos de las secciones de referencia están en [Despliegue en Debian](DESPLIEGUE_DEBIAN_CLOUDFLARE.md#modo-espejo-el-pc-del-campo-como-sistema-principal).
 
 ## Qué se está desplegando
 
@@ -32,13 +37,13 @@ Internet ──► Cloudflare ──► cloudflared (contenedor) ──► web:8
 
 ## Reglas que no se negocian
 
-1. **Secretos.** `MFA_ENCRYPTION_KEY`, `MIRROR_REPLICA_PASSWORD`, `MIRROR_SYNC_KEY`, `TUNNEL_TOKEN` y las contraseñas de `.env.pilot` nunca se escriben en el chat, en registros, en tickets ni en Git. Los comandos que los piden (`server-init`, `subscribe`) los leen **sin eco**: deja que el dueño del PC los escriba en su propia sesión SSH. Para comprobar que existen usa `grep -c '^CLAVE=' .env.pilot`, nunca muestres su valor. `.env.pilot` queda con `chmod 600`.
-2. **No crear cuentas en el servidor.** Las cuentas, predios y factores TOTP llegan del PC. No uses `--admin-email` ni `--owner-email` (el script los rechaza con el perfil `mirror`) ni insertes usuarios en la base.
+1. **Secretos.** `MFA_ENCRYPTION_KEY`, `MIRROR_REPLICA_PASSWORD`, `MIRROR_SYNC_KEY`, `TUNNEL_TOKEN` y las contraseñas de `.env.pilot` nunca se escriben en el chat, en registros, en tickets ni en Git. `pc-connect` intercambia las claves necesarias por la sesión SSH personal. Para comprobar que existen usa `grep -c '^CLAVE=' .env.pilot`, sin mostrar su valor. `.env.pilot` queda con `chmod 600`.
+2. **Cuentas de GeoCattle.** Crea la cuenta Linux para SSH en A1. Las cuentas de la aplicación, los predios y los factores TOTP llegan del PC. El perfil `mirror` rechaza `--admin-email` y `--owner-email`.
 3. **No borrar volúmenes.** Nunca `docker compose down -v`, `docker volume rm` ni `docker system prune --volumes`. En especial `espejo-ssh-keys`: si sus llaves cambian, el PC deja de conectarse porque fijó la huella. Tampoco regeneres las llaves SSH del host (`/etc/ssh/ssh_host_*`).
 4. **No abrir puertos** ni publicar `5432`, `15432`, `18084` u otros en el host. La web sale solo por Cloudflare Tunnel.
 5. **No editar** los `compose*.yaml`, el código ni `scripts/` del paquete. Si algo falla, informa el error tal cual al dueño del PC.
 6. **No ejecutar en el servidor** los comandos del PC (`pc-setup`, `pc-admin`, `keygen`, `tunnel`, `install-task`, `pc-status`, `pc-drop-slot`).
-7. Las llaves del PC se autorizan **solo** con `scripts/mirror.py authorize … --host-account`, no editando `authorized_keys` a mano.
+7. Usa la llave **personal** para habilitar el acceso SSH en A1. `pc-connect` usa `authorize --host-account` para instalar la llave **del túnel** con permisos limitados.
 
 ## Requisitos del servidor
 
@@ -63,114 +68,82 @@ Hace falta un dominio en Cloudflare y un túnel administrado desde el panel (Zer
 
 Quien administre el dominio decide quién crea el túnel. Si no eres tú, pide el token por un canal privado y que lo pegue directamente en `.env.pilot`.
 
-## Procedimiento
+## Parte A · Servidor (administrador o su IA, sin esperas)
 
-Usa `DOMINIO` (por ejemplo `geocattle.ejemplo.cl`) y `CUENTA@SERVIDOR`: la cuenta del dueño del PC y la IP o nombre del servidor, con `:PUERTO` si SSH no usa el 22.
+Usa `DOMINIO` (por ejemplo `geocattle.ejemplo.cl`) y la cuenta del dueño del PC (por ejemplo `geocattle`). **Todo desde el paso A3 se ejecuta como esa cuenta** (`sudo -iu geocattle`), para que después él pueda administrar `/srv/GeoCattle` y su `.env.pilot`.
 
-### 1. Docker y cuenta (administrador del servidor)
+### A1. Docker y cuenta
 
-Instala Docker Engine desde el repositorio oficial ([guía](DESPLIEGUE_DEBIAN_CLOUDFLARE.md#instalar-docker-engine-y-compose)), crea la cuenta del dueño del PC con su llave pública personal, agrégala al grupo `docker` y crea `/srv/GeoCattle` con esa cuenta como dueña. Comprueba `docker compose version` desde la cuenta.
+Instala Docker Engine desde el repositorio oficial ([guía](DESPLIEGUE_DEBIAN_CLOUDFLARE.md#instalar-docker-engine-y-compose)). Crea la cuenta del dueño del PC con la llave pública **personal** que él te mandó, agrégala al grupo `docker`, revisa el reenvío TCP ([requisitos](#requisitos-del-servidor)) y crea `/srv/GeoCattle` con esa cuenta como dueña. Comprueba `docker compose version` desde la cuenta.
 
-### 2. Paquete
+### A2. Cloudflare
 
-El dueño del PC entrega `geocattle-AAAAmmddTHHMMSSZ.tar.gz` y su `.sha256`:
+Crea el túnel y el nombre público `DOMINIO` → HTTP `web:80` ([Cloudflare](#cloudflare)) y guarda el token para A4.
+
+### A3. Paquete
 
 ```bash
 cd /tmp && sha256sum -c geocattle-*.tar.gz.sha256        # debe decir OK
 tar -xzf /tmp/geocattle-*.tar.gz -C /srv/GeoCattle && cd /srv/GeoCattle
 ```
 
-### 3. Configuración privada, primera parte
+### A4. Configuración y arranque
 
 ```bash
 python3 scripts/docker_project.py prepare --environment production --env-file .env.pilot --domain DOMINIO
 python3 scripts/mirror.py server-init --skip-secrets
 chmod 600 .env.pilot
-```
-
-`prepare` crea `.env.pilot` con contraseñas aleatorias y nunca reemplaza un archivo existente. Esta primera pasada de `server-init` genera `MIRROR_SYNC_KEY` y `.runtime/espejo/authorized_keys`, sin pedir nada.
-
-### 4. [ESPERA AL DUEÑO DEL PC] Configuración del PC
-
-El dueño del PC, en su propia sesión SSH, lee la clave con `grep ^MIRROR_SYNC_KEY= /srv/GeoCattle/.env.pilot` y luego, en Windows y con GeoCattle cerrado:
-
-```bat
-.venv\Scripts\python.exe scripts\compartir_base.py exportar --verificar
-.venv\Scripts\python.exe scripts\mirror.py pc-setup --ssh-jump CUENTA@SERVIDOR
-.venv\Scripts\python.exe scripts\mirror.py keygen
-```
-
-`pc-setup` activa la replicación lógica y pide sin eco la `MIRROR_SYNC_KEY`. Además crea en `.env.academic` la `MFA_ENCRYPTION_KEY` y la `MIRROR_REPLICA_PASSWORD`. `keygen` imprime una línea `ssh-ed25519 …` pública: el dueño la envía como archivo `id_ed25519.pub`. **No es secreta.**
-
-### 5. [ESPERA AL DUEÑO DEL PC] Configuración privada, segunda parte
-
-El dueño del PC ejecuta en el servidor, en su sesión:
-
-```bash
-cd /srv/GeoCattle && python3 scripts/mirror.py server-init
-```
-
-Esta vez pide sin eco la `MFA_ENCRYPTION_KEY` de su `.env.academic`. Sin ella los códigos TOTP de las cuentas no funcionan en la web. Después, quien tenga el token lo pega en `TUNNEL_TOKEN=` de `.env.pilot` (reemplaza `TOKEN_FICTICIO_DE_CLOUDFLARE`).
-
-Comprueba sin mostrar valores:
-
-```bash
-for k in MIRROR_SYNC_KEY MFA_ENCRYPTION_KEY TUNNEL_TOKEN; do printf '%s ' "$k"; grep -c "^$k=" .env.pilot; done
-grep -c '^TUNNEL_TOKEN=TOKEN_FICTICIO' .env.pilot      # debe dar 0
-```
-
-### 6. Arranque
-
-```bash
+nano .env.pilot      # en TUNNEL_TOKEN= reemplaza TOKEN_FICTICIO_DE_CLOUDFLARE por el token de A2
 python3 scripts/docker_project.py start --environment production --env-file .env.pilot --profile cloudflare --profile mirror
-docker builder prune -f
 curl -fsS https://DOMINIO/api/v1/health
 ```
 
-La primera vez construye las imágenes (varios minutos). Deben quedar *healthy* `database`, `api`, `worker`, `web`, `cloudflared` y `espejo-ssh`. `migrate` termina con código 0. Para los comandos `docker compose` directos, exporta antes:
+`prepare` crea `.env.pilot` con contraseñas aleatorias y nunca reemplaza un archivo existente. `server-init --skip-secrets` genera `MIRROR_SYNC_KEY` y `.runtime/espejo/authorized_keys`. La primera construcción tarda varios minutos. Deben quedar *healthy* `database`, `api`, `worker`, `web`, `cloudflared` y `espejo-ssh`, y `migrate` termina con código 0. Para comandos `docker compose` directos:
 
 ```bash
 export COMPOSE_FILE=compose.yaml:compose.cloudflare.yaml:compose.mirror.yaml COMPOSE_ENV_FILES=.env.pilot COMPOSE_PROFILES=cloudflare,mirror
 docker compose ps
 ```
 
-### 7. Autorizar la llave del PC
+### A5. Entrega
 
-Copia `id_ed25519.pub` a `/srv/GeoCattle/` y, **con la cuenta del dueño del PC**:
+La web queda publicada pero **vacía y sin cuentas**: es lo esperado. Los datos y las cuentas llegan cuando el dueño conecta su PC en la Parte B. Entrega al dueño del PC:
 
-```bash
-python3 scripts/mirror.py authorize id_ed25519.pub --host-account
-tail -n 1 ~/.ssh/authorized_keys     # debe empezar con restrict,port-forwarding,permitopen="172.30.248.19:22",command="/bin/false"
-```
+- la cuenta SSH, la IP o nombre del servidor y el puerto SSH;
+- el dominio público;
+- la salida de `docker compose ps` y de `curl -fsS https://DOMINIO/api/v1/health`.
 
-### 8. [ESPERA AL DUEÑO DEL PC] Túnel y primer administrador
+Aquí termina tu parte. El dueño conectará desde su PC con la cuenta SSH entregada.
 
-En el PC: abrir `Abrir-GeoCattle.cmd`, crear el administrador con `scripts\mirror.py pc-admin --email CORREO` y activar su TOTP en **Mi perfil → Activar doble verificación**. Después deja el túnel permanente:
+## Parte B · Conexión con el PC (dueño del PC, con su acceso SSH)
+
+`CUENTA@SERVIDOR` es la cuenta recibida, con `:PUERTO` si SSH no usa el 22. En el PC los comandos se ejecutan desde la carpeta de GeoCattle con `.venv\Scripts\python.exe`.
+
+### B1. Administrador y TOTP en el PC
+
+Abre `Abrir-GeoCattle.cmd`. Si aún no tienes un administrador de plataforma, créalo en el PC. `pc-admin` pide una contraseña de al menos 12 caracteres sin eco. Luego entra en `http://localhost:8084` con esa cuenta y activa el TOTP en **Mi perfil → Activar doble verificación**.
 
 ```bat
-.venv\Scripts\python.exe scripts\mirror.py install-task
-schtasks /Run /TN "GeoCattle Espejo"
+.venv\Scripts\python.exe scripts\mirror.py pc-admin --email CORREO
 ```
 
-El primer túnel guarda las huellas SSH del servidor y de `espejo-ssh` en el PC.
+En el primer enlace, conserva un respaldo verificado del PC. [Respaldos del prototipo](OPERACION.md#compartir-una-copia-del-prototipo)
 
-### 9. [ESPERA AL DUEÑO DEL PC] Suscripción
+### B2. Conectar el espejo desde Windows
 
-Con el túnel abierto, el dueño del PC ejecuta en el servidor, en su sesión:
-
-```bash
-cd /srv/GeoCattle && python3 scripts/mirror.py subscribe --pc-database geocattle_academic
+```bat
+.venv\Scripts\python.exe scripts\mirror.py pc-connect --ssh-jump CUENTA@SERVIDOR
 ```
 
-Pide sin eco la `MIRROR_REPLICA_PASSWORD` del PC. Comprueba que ambos lados tengan las mismas migraciones, respalda la base del servidor y copia la del PC. `geocattle_academic` es el `POSTGRES_DB` del PC.
+Usa OpenSSH de Windows con tu llave personal en el agente SSH o en `~/.ssh`. Si tiene frase de paso, cárgala con `ssh-add` antes de conectar. Si está en otra ruta, indica `--identity-file RUTA`. Si el paquete se instaló fuera de `/srv/GeoCattle`, indica `--server-dir RUTA`.
 
-### 10. Verificación final
+El comando verifica el modo réplica del servidor, activa la publicación en el PC y configura la clave MFA y la llave restringida del túnel en el servidor. Si se actualiza la clave MFA, vuelve a ejecutar el arranque del servidor para aplicarla. Instala y ejecuta la tarea de Windows «GeoCattle Espejo», que mantiene el túnel y vuelve a iniciarlo al entrar a Windows. Al crear la suscripción comprueba las migraciones, respalda la base del servidor y espera la copia inicial. Confirma esa primera copia cuando el comando lo pida o usa `--yes` para confirmarla al invocarlo. Las huellas SSH quedan en `.runtime\espejo\known_hosts`.
 
-```bash
-python3 scripts/mirror.py status
-```
+Si falla un paso, corrige la causa indicada y repite el mismo comando. Se conserva una suscripción existente y se informa su estado. `--no-task` mantiene el túnel en segundo plano durante la sesión de Windows, sin registrarlo para el próximo inicio.
 
-Debe mostrar «Suscripción: activa», un último mensaje del PC de hace pocos segundos y un pulso del campo reciente. Luego, en `https://DOMINIO`:
+### B3. Verificación
+
+Al terminar, `pc-connect` muestra el `status` remoto. Comprueba «Suscripción: activa», un último mensaje del PC de hace pocos segundos y un pulso del campo reciente. Luego abre `https://DOMINIO` y comprueba lo siguiente.
 
 - Al entrar con una cuenta aparece «Espejo del campo · datos al … (hace N s)» y el pie dice «Conectado al servidor web».
 - Los mapas ofrecen OpenStreetMap y «Satélite en línea». Los mapas locales no existen en el servidor; es lo esperado.
@@ -178,7 +151,14 @@ Debe mostrar «Suscripción: activa», un último mensaje del PC de hace pocos s
 - Con la captura USB del PC en marcha, **Hardware → Receptor USB** muestra en la web «Captura activa» con los mismos contadores que el PC. Esos contadores llegan en `receiver_status` y vencen 90 s después de que la captura se detiene. Si el PC tiene varios predios físicos activos, necesita `INGEST_FARM_ID` en su `.env.academic`. Los collares nuevos se aprueban en el PC; en la web solo se ven como detección pendiente.
 - `curl -s -o /dev/null -w '%{http_code}' -X POST https://DOMINIO/api/v1/ingest/telemetry` responde `403` o `401`: la web no acepta ingesta.
 
-Informa al dueño del PC: la salida de `status`, `docker compose ps`, y que no quedaron puertos nuevos (`ss -tlnp` sin `15432`, `18084` ni `5432` en interfaces públicas).
+## Apéndice · Conexión manual
+
+Si necesitas ejecutar los pasos por separado, usa el orden siguiente con la Parte A completa y tu acceso SSH personal.
+
+1. En el PC, ejecuta `mirror.py pc-setup --ssh-jump CUENTA@SERVIDOR`. Cuando pida `MIRROR_SYNC_KEY`, introdúcela desde el `.env.pilot` privado del servidor. Ejecuta `mirror.py keygen` y transfiere solo `id_ed25519.pub`.
+2. En el servidor, ejecuta `python3 scripts/mirror.py server-init` e introduce la `MFA_ENCRYPTION_KEY` de tu archivo privado del PC. Ejecuta `python3 scripts/mirror.py authorize id_ed25519.pub --host-account`. Si agregaste la clave MFA, repite `start` del paso A4.
+3. Reinicia GeoCattle en el PC para cargar su configuración y ejecuta `mirror.py install-task` y `schtasks /Run /TN "GeoCattle Espejo"`.
+4. En el servidor, ejecuta `python3 scripts/mirror.py subscribe --pc-database NOMBRE_DE_POSTGRES_DB_DEL_PC`. Introduce `MIRROR_REPLICA_PASSWORD` cuando se pida y comprueba con `python3 scripts/mirror.py status`.
 
 ## Operación
 
@@ -186,7 +166,7 @@ Informa al dueño del PC: la salida de `status`, `docker compose ps`, y que no q
 | --- | --- |
 | `status` sin mensajes recientes | El PC está apagado o sin internet: es normal y se pone al día solo. Si el PC está encendido, revisa `docker compose logs espejo-ssh` y pide al dueño su `.runtime\espejo\tunel.log`. |
 | «Errores aplicar» sube durante un corte | Normal: son conexiones rechazadas mientras el PC no está. Si sube con el PC conectado, revisa `docker compose logs database`: distintas migraciones en PC y servidor (ver Actualizar). |
-| TOTP rechazado solo en la web | `MFA_ENCRYPTION_KEY` del servidor distinta de la del PC. El dueño la corrige en `.env.pilot` y se repite el paso 6. |
+| TOTP rechazado solo en la web | El dueño comprueba que `MFA_ENCRYPTION_KEY` coincida en ambos archivos privados y, si corrige la del servidor, repite el arranque de A4. |
 | El PC estuvo desconectado más de lo que caben 2 GB de cambios | El dueño ejecuta en el servidor `python3 scripts/mirror.py resync --pc-database geocattle_academic`. |
 | Reinicio del servidor | Los contenedores vuelven solos (`restart: unless-stopped`). Comprueba con `status`. |
 

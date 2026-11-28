@@ -136,7 +136,13 @@ Cada lado valida al otro: el PC fija las huellas SSH de la cuenta del servidor y
 
 ### Solo SSH
 
-La cuenta SSH del servidor debe permitir el reenvío TCP (`AllowTcpForwarding yes`, valor por defecto en Debian) y usar Docker. Cloudflare solo publica la web (`geocattle.example.com`). En el PC usa `pc-setup --ssh-jump usuario@servidor.example.com` (agrega `:PUERTO` si no es 22) en lugar de `--server-url` y `--ssh-host`; fija `MIRROR_SERVER_URL=http://127.0.0.1:18095`. En el servidor autoriza la llave con `mirror.py authorize id_ed25519.pub --host-account`: además de `espejo-ssh`, la agrega a `~/.ssh/authorized_keys` de esa cuenta con `restrict`, `permitopen="172.30.248.19:22"` y `command="/bin/false"`, sin consola ni otros destinos. El túnel abre dos procesos `ssh` y los reintenta juntos.
+La cuenta SSH del servidor debe pertenecer al grupo `docker` y permitir el reenvío TCP (`AllowTcpForwarding yes`, valor por defecto en Debian). Cloudflare publica la web (`geocattle.example.com`). Tras completar la Parte A de la guía, el dueño ejecuta el comando siguiente en Windows desde la raíz de GeoCattle. Agrega `:PUERTO` si SSH usa un puerto distinto de 22.
+
+```bat
+.venv\Scripts\python.exe scripts\mirror.py pc-connect --ssh-jump usuario@servidor.example.com
+```
+
+El comando entra con la llave SSH personal y autoriza una llave distinta para el túnel. La segunda llave queda limitada al salto a `172.30.248.19:22` en la cuenta del servidor. También configura `MIRROR_SERVER_URL=http://127.0.0.1:18095`, instala la tarea de Windows y comprueba la réplica. Para crear el administrador con TOTP o verificar el resultado sigue la Parte B. [Despliegue del servidor espejo](DESPLIEGUE_SERVIDOR_ESPEJO.md)
 
 ### Cloudflare Access (alternativa)
 
@@ -151,23 +157,21 @@ El service token del PC se entrega al túnel como `TUNNEL_SERVICE_TOKEN_ID` y `T
 
 ### Servidor
 
-El procedimiento paso a paso, con los momentos en que el dueño del PC escribe los secretos, está en [Despliegue del servidor espejo](DESPLIEGUE_SERVIDOR_ESPEJO.md). En una instalación nueva el PC aún no tiene `MFA_ENCRYPTION_KEY`, porque la crea `pc-setup`. Por eso ejecuta primero `server-init --skip-secrets`, luego `pc-setup` en el PC y después `server-init` otra vez, que solo pide la clave que falta.
+El administrador del servidor completa estos pasos con la misma cuenta Linux que entregará al dueño del PC. La web queda lista para recibir la suscripción. `pc-connect` transfiere la clave MFA en la sesión SSH y aplica el cambio a los servicios. Para Cloudflare Access, sigue el procedimiento manual e introduce la clave MFA con `server-init` antes de suscribir. [Despliegue del servidor espejo](DESPLIEGUE_SERVIDOR_ESPEJO.md)
 
 ```bash
 cd /srv/GeoCattle
 python3 scripts/docker_project.py prepare --environment production --env-file .env.pilot --domain geocattle.example.com
 python3 scripts/mirror.py server-init --skip-secrets   # MIRROR_SYNC_KEY y entorno de origen
-# En el PC: pc-setup (pide MIRROR_SYNC_KEY). Luego, en el servidor:
-python3 scripts/mirror.py server-init          # pide la MFA_ENCRYPTION_KEY del PC
 # Pega TUNNEL_TOKEN en .env.pilot.
 python3 scripts/docker_project.py start --environment production --env-file .env.pilot --profile cloudflare --profile mirror
 export COMPOSE_FILE=compose.yaml:compose.cloudflare.yaml:compose.mirror.yaml
 export COMPOSE_ENV_FILES=.env.pilot COMPOSE_PROFILES=cloudflare,mirror
 ```
 
-En el servidor espejo no uses `--owner-email` ni `--admin-email`: las cuentas, los predios y el TOTP llegan del PC. Crea en el PC al administrador de plataforma con `mirror.py pc-admin --email CORREO` (pide la contraseña sin eco, 12 caracteres o más, y no altera una cuenta existente). Después entra a GeoCattle en el PC con esa cuenta y activa el TOTP en **Mi perfil → Activar doble verificación**. La web no permite inscribir ni cambiar factores y rechaza al administrador sin TOTP. `server-init` pide la `MFA_ENCRYPTION_KEY` del PC porque los factores TOTP llegan cifrados con ella.
+Las cuentas de GeoCattle, los predios y los factores TOTP llegan del PC. Crea el administrador de plataforma en el PC con `mirror.py pc-admin --email CORREO` y activa TOTP en **Mi perfil → Activar doble verificación**. La web espejo exige TOTP para el administrador y los factores se gestionan en el PC.
 
-### PC del campo
+### Conexión manual con Cloudflare Access
 
 Con GeoCattle cerrado, desde la raíz y con el Python de `.venv`:
 
@@ -182,17 +186,18 @@ Con GeoCattle cerrado, desde la raíz y con el Python de `.venv`:
 Copia la línea pública que imprime `keygen` al servidor y autorízala:
 
 ```bash
+python3 scripts/mirror.py server-init  # introduce la MFA_ENCRYPTION_KEY del PC sin eco
 python3 scripts/mirror.py authorize id_ed25519.pub
 ```
 
-La clave queda limitada a reenviar los puertos 15432 y 18084, sin shell. En el PC, abre GeoCattle con `Abrir-GeoCattle.cmd` y deja el túnel como tarea de Windows:
+Repite el `start` de la sección Servidor si agregaste la clave MFA. La llave queda limitada a los reenvíos del túnel. En el PC, abre GeoCattle con `Abrir-GeoCattle.cmd` y deja el túnel como tarea de Windows.
 
 ```bat
 .venv\Scripts\python.exe scripts\mirror.py install-task
 schtasks /Run /TN "GeoCattle Espejo"
 ```
 
-### Suscribir y verificar
+### Suscribir manualmente y verificar
 
 ```bash
 python3 scripts/mirror.py subscribe --pc-database NOMBRE_DE_POSTGRES_DB_DEL_PC

@@ -42,10 +42,13 @@ const invitationMailLabels: Record<InvitationMailStatus, string> = {
 };
 
 function TeamContent({ notify, admin }: { notify: Notify; admin: boolean }) {
-  const canWrite = useMirror().canWrite('farm');
+  const { replica, canWrite: canWriteFeature } = useMirror();
+  const canWrite = canWriteFeature('farm');
   const [showExpired, setShowExpired] = useState(false);
   const members = useData<List<Member>>('/v3/memberships');
-  const invites = useData<List<InvitationListEntry>>(`/v3/invitations?view=${showExpired ? 'expired' : 'main'}`, 60000);
+  const invites = useData<List<InvitationListEntry>>(
+    replica ? null : `/v3/invitations?view=${showExpired ? 'expired' : 'main'}`, 60000,
+  );
   const trust = useData<List<Trust>>('/v3/trust');
   const [editing, setEditing] = useState<Member | null>(null); const [inviting, setInviting] = useState(false); const [granting, setGranting] = useState(false); const [revoking, setRevoking] = useState<Trust | null>(null); const [link, setLink] = useState('');
   const refresh = () => { members.reload(); invites.reload(); trust.reload(); };
@@ -58,7 +61,9 @@ function TeamContent({ notify, admin }: { notify: Notify; admin: boolean }) {
       : 'Invitación creada. Copia el enlace y envíalo al destinatario.');
   }
 
-  const invitationPanel = <Panel>
+  const invitationPanel = replica ? <Panel>
+    <PanelTitle title="Invitaciones" subtitle="Consulta el historial de invitaciones en el PC del campo." />
+  </Panel> : <Panel>
     <PanelTitle
       title={showExpired ? 'Invitaciones vencidas' : 'Invitaciones'}
       subtitle={showExpired ? undefined : 'Consulta la vigencia, la aceptación y el estado de cada correo.'}

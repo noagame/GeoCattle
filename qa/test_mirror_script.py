@@ -3,9 +3,12 @@ import base64
 import contextlib
 import importlib.util
 import io
+import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +25,9 @@ mirror = load('mirror_script', ROOT / 'scripts/mirror.py')
 docker_project = load('docker_project_mirror', ROOT / 'scripts/docker_project.py')
 BLOB = base64.b64encode(b'\0\0\0\x0bssh-ed25519\0\0\0\x20' + bytes(range(32))).decode()
 KEY = f'ssh-ed25519 {BLOB} geocattle-campo'
+SYNC_KEY = 'clave-ficticia-de-sincronizacion-del-servidor'
+MFA_KEY = 'clave-ficticia-de-mfa-que-viene-del-pc'
+REPLICA_PASSWORD = 'clave-ficticia-de-replica-del-pc'
 
 
 class MirrorScriptTest(unittest.TestCase):
@@ -144,6 +150,159 @@ class MirrorScriptTest(unittest.TestCase):
         for line in ('PasswordAuthentication no', 'AllowTcpForwarding yes', 'PermitOpen web:80', 'PermitTTY no',
                      'PermitListen 0.0.0.0:15432 0.0.0.0:18084', 'ForceCommand /sbin/nologin', 'AllowUsers espejo'):
             self.assertIn(line, config)
+
+    def test_pc_connect_orders_steps_and_sends_secrets_only_over_ssh_stdin(self):
+        steps = []
+
+        def run(argv, **kwargs):
+            self.assertFalse(any(secret in ' '.join(argv) for secret in (SYNC_KEY, MFA_KEY, REPLICA_PASSWORD)))
+            action = argv[-1].split()[-1]
+            steps.append(action)
+            payload = json.loads(kwargs['input'])
+            self.assertIn('IdentitiesOnly=yes', argv)
+            self.assertIn('StrictHostKeyChecking=accept-new', argv)
+            self.assertIn(f'UserKnownHostsFile="{known_hosts.as_posix()}"', argv)
+            self.assertIn('operador@servidor.example.org', argv)
+            if action == 'inspect':
+                self.assertEqual(payload, {})
+                stdout = json.dumps({'sync_key': SYNC_KEY, 'subscribed': False})
+            elif action == 'configure':
+                self.assertEqual(payload, {'sync_key': SYNC_KEY, 'mfa_key': MFA_KEY, 'pubkey': KEY})
+                stdout = 'Llave instalada.'
+            else:
+                self.assertEqual(payload, {'sync_key': SYNC_KEY, 'pc_database': 'geocattle_campo',
+                                           'password': REPLICA_PASSWORD})
+                stdout = 'Suscripción: activa'
+            return subprocess.CompletedProcess(argv, 0, stdout, '')
+
+        with tempfile.TemporaryDirectory() as folder, contextlib.redirect_stdout(io.StringIO()) as output:
+            runtime = Path(folder)
+            key = runtime / 'id_ed25519'
+            key.with_suffix('.pub').write_text(KEY, encoding='utf-8')
+            known_hosts = runtime / 'known_hosts.ensayo'
+            path = runtime / 'campo.env'
+            path.write_text(f'POSTGRES_DB=geocattle_campo\nMFA_ENCRYPTION_KEY={MFA_KEY}\n'
+                            f'MIRROR_REPLICA_PASSWORD={REPLICA_PASSWORD}\n', encoding='utf-8')
+            with mock.patch.multiple(mirror, RUNTIME=runtime, KEY=key), \
+                    mock.patch.object(mirror.subprocess, 'run', side_effect=run), \
+                    mock.patch.object(mirror, 'pc_setup', side_effect=lambda *a, **k: steps.append('pc-setup')) as setup, \
+                    mock.patch.object(mirror, 'keygen', side_effect=lambda *a: steps.append('keygen')), \
+                    mock.patch.object(mirror, 'start_pc_tunnel', side_effect=lambda *a: steps.append('tunnel')):
+                self.assertEqual(mirror.main(['pc-connect', '--ssh-jump', 'operador@servidor.example.org:2201',
+                                              '--env-file', str(path), '--known-hosts', str(known_hosts), '--yes',
+                                              '--no-task', '--identity-file', str(runtime / 'personal')]), 0)
+            self.assertEqual(setup.call_args.kwargs, {'sync_key': SYNC_KEY})
+            self.assertEqual(steps, ['inspect', 'pc-setup', 'keygen', 'configure', 'tunnel', 'subscribe'])
+            self.assertIn('Suscripción: activa', output.getvalue())
+            for secret in (SYNC_KEY, MFA_KEY, REPLICA_PASSWORD):
+                self.assertNotIn(secret, output.getvalue())
+
+    def test_pc_connect_rejects_non_mirror_before_preparing_the_pc(self):
+        result = subprocess.CompletedProcess([], 1, '', 'Error: La API no está en modo réplica.')
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(mirror, 'RUNTIME', Path(folder)), \
+                mock.patch.object(mirror.subprocess, 'run', return_value=result) as run, \
+                mock.patch.object(mirror, 'pc_setup') as setup, \
+                contextlib.redirect_stderr(io.StringIO()) as output:
+            self.assertEqual(mirror.main(['pc-connect', '--ssh-jump', 'operador@servidor', '--no-task', '--yes']), 1)
+        self.assertEqual(run.call_count, 1)
+        setup.assert_not_called()
+        self.assertIn('no está en modo réplica', output.getvalue())
+        self.assertIn('repite el mismo comando pc-connect', output.getvalue())
+
+    def test_mfa_env_can_fill_empty_value_and_is_never_printed(self):
+        with tempfile.TemporaryDirectory() as folder, contextlib.redirect_stdout(io.StringIO()) as output:
+            runtime = Path(folder)
+            env = runtime / '.env.pilot'
+            env.write_text('MFA_ENCRYPTION_KEY=\n', encoding='utf-8')
+            with mock.patch.object(mirror, 'RUNTIME', runtime), \
+                    mock.patch.dict(mirror.os.environ, {'MIRROR_PC_MFA_KEY': MFA_KEY}), \
+                    mock.patch.object(mirror.getpass, 'getpass') as ask:
+                self.assertEqual(mirror.main(['server-init', '--env-file', str(env)]), 0)
+                ask.assert_not_called()
+                self.assertEqual(mirror.read_env(env)['MFA_ENCRYPTION_KEY'], MFA_KEY)
+            self.assertNotIn(MFA_KEY, output.getvalue())
+
+    def test_pc_connect_installs_and_runs_the_windows_task(self):
+        with tempfile.TemporaryDirectory() as folder, contextlib.redirect_stdout(io.StringIO()):
+            runtime = Path(folder)
+            path = runtime / 'campo.env'
+            hosts = runtime / 'known_hosts.ensayo'
+            args = SimpleNamespace(no_task=False, env_file=path, known_hosts=hosts)
+            with mock.patch.object(mirror, 'os', SimpleNamespace(name='nt')), \
+                    mock.patch.object(mirror, 'RUNTIME', runtime), \
+                    mock.patch.object(mirror.subprocess, 'run') as run:
+                mirror.start_pc_tunnel(args)
+            create, start = (call.args[0] for call in run.call_args_list)
+            self.assertEqual(create[:5], ['schtasks', '/Create', '/F', '/TN', mirror.TASK_NAME])
+            self.assertEqual(start, ['schtasks', '/Run', '/TN', mirror.TASK_NAME])
+            script = (runtime / 'tunel.cmd').read_text(encoding='utf-8')
+            self.assertIn(f'"--env-file" "{path}"', script)
+            self.assertIn(f'"--known-hosts" "{hosts}"', script)
+
+    def test_remote_repeat_preserves_subscription_mfa_and_tunnel_config(self):
+        with tempfile.TemporaryDirectory() as folder, contextlib.redirect_stdout(io.StringIO()):
+            runtime = Path(folder)
+            keys = runtime / 'host_keys'
+            args = SimpleNamespace(host_account=True, host_keys=keys, env_file=None, compose_file=None)
+            with mock.patch.object(mirror, 'RUNTIME', runtime), \
+                    mock.patch.object(mirror, 'compose', return_value=(['docker', 'compose'], {}, {})), \
+                    mock.patch.object(mirror.subprocess, 'run') as run, \
+                    mock.patch('docker_project.main') as start, \
+                    mock.patch.object(mirror, 'server_init') as init, \
+                    mock.patch.object(mirror, 'pc_reachable', return_value=True), \
+                    mock.patch.object(mirror, 'subscription_exists', return_value=True), \
+                    mock.patch.object(mirror, 'psql', return_value='1'), \
+                    mock.patch.object(mirror, 'wait_sync') as wait, \
+                    mock.patch.object(mirror, 'status', return_value=0) as status, \
+                    mock.patch.object(mirror, 'subscribe') as subscribe:
+                mirror.authorize(args, line=KEY)
+                run.assert_called_once()
+                run.reset_mock()
+                self.assertEqual(mirror.configure_server(args, {'MFA_ENCRYPTION_KEY': MFA_KEY},
+                                                         {'mfa_key': MFA_KEY, 'pubkey': KEY}), 0)
+                self.assertEqual(mirror.subscribe_from_pc(args, {'pc_database': 'geocattle_campo'}), 0)
+                run.assert_not_called()
+                init.assert_not_called()
+                start.assert_not_called()
+                subscribe.assert_not_called()
+                wait.assert_called_once_with(args)
+                status.assert_called_once_with(args)
+                self.assertEqual(keys.read_text(encoding='utf-8').splitlines(), [mirror.host_account_line(KEY)])
+
+    def test_remote_retries_interrupted_mfa_restart(self):
+        with tempfile.TemporaryDirectory() as folder, contextlib.redirect_stdout(io.StringIO()):
+            runtime = Path(folder)
+            path = runtime / '.env.pilot'
+            path.write_text(f'MIRROR_SYNC_KEY={SYNC_KEY}\n', encoding='utf-8')
+            args = SimpleNamespace(env_file=path, skip_secrets=False, managed=True)
+            payload = {'mfa_key': MFA_KEY, 'pubkey': KEY}
+            with mock.patch.object(mirror, 'RUNTIME', runtime), mock.patch.object(mirror, 'authorize'), \
+                    mock.patch('docker_project.main', side_effect=[1, 0]) as start:
+                with self.assertRaisesRegex(mirror.MirrorError, 'quedó pendiente'):
+                    mirror.configure_server(args, mirror.read_env(path), payload)
+                self.assertEqual(mirror.read_env(path)['MFA_ENCRYPTION_KEY'], MFA_KEY)
+                self.assertTrue(mirror.mfa_restart_pending().exists())
+                mirror.configure_server(args, mirror.read_env(path), payload)
+                self.assertFalse(mirror.mfa_restart_pending().exists())
+                self.assertEqual(start.call_count, 2)
+
+    def test_remote_applies_a_changed_mfa_key_once(self):
+        with tempfile.TemporaryDirectory() as folder, contextlib.redirect_stdout(io.StringIO()) as output:
+            runtime = Path(folder)
+            path = runtime / '.env.pilot'
+            previous_key = 'clave-ficticia-anterior-para-factores-totp'
+            path.write_text(f'MIRROR_SYNC_KEY={SYNC_KEY}\nMFA_ENCRYPTION_KEY={previous_key}\n', encoding='utf-8')
+            args = SimpleNamespace(env_file=path, skip_secrets=False, managed=True)
+            payload = {'mfa_key': MFA_KEY, 'pubkey': KEY}
+            with mock.patch.object(mirror, 'RUNTIME', runtime), mock.patch.object(mirror, 'authorize'), \
+                    mock.patch('docker_project.main', return_value=0) as start:
+                mirror.configure_server(args, mirror.read_env(path), payload)
+                mirror.configure_server(args, mirror.read_env(path), payload)
+            self.assertEqual(mirror.read_env(path)['MFA_ENCRYPTION_KEY'], MFA_KEY)
+            start.assert_called_once()
+            self.assertNotIn(previous_key, output.getvalue())
+            self.assertNotIn(MFA_KEY, output.getvalue())
 
 
 if __name__ == '__main__':

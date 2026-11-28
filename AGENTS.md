@@ -1,6 +1,6 @@
 # GeoCattle
 
-> **¿Vas a desplegar o administrar el servidor espejo (Debian) a partir de un paquete `geocattle-*.tar.gz`?** Sigue [docs/DESPLIEGUE_SERVIDOR_ESPEJO.md](docs/DESPLIEGUE_SERVIDOR_ESPEJO.md) y sus reglas: no edites código ni Compose, no crees cuentas en el servidor, no borres volúmenes y deja que el dueño del PC escriba los secretos. El resto de este archivo es para desarrollar GeoCattle.
+> **¿Vas a desplegar o administrar el servidor espejo (Debian) a partir de un paquete `geocattle-*.tar.gz`?** Completa la Parte A de [Despliegue del servidor espejo](docs/DESPLIEGUE_SERVIDOR_ESPEJO.md) y entrega el acceso SSH al dueño del PC. Las cuentas de GeoCattle llegan del PC cuando el dueño ejecuta `pc-connect`. Conserva el código, Compose y los volúmenes del servidor. El resto de este archivo es para desarrollar GeoCattle.
 
 GeoCattle supervisa ganado por predio. Integra gestión bovina y sanitaria, mapas y geocercas, telemetría de collares, alertas y captura LoRa. Usa FastAPI con Python 3.11+, PostgreSQL/PostGIS y React con TypeScript, Vite y Leaflet. CI usa Python 3.12 y Node.js 22.
 
